@@ -4,6 +4,7 @@ import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
 import com.sammwy.retrocraft.server.console.*;
+import com.sammwy.retrocraft.server.block.*;
 import com.sammwy.retrocraft.server.item.*;
 import com.sammwy.retrocraft.server.net.Packets;
 import com.sammwy.retrocraft.server.screen.*;
@@ -53,6 +54,8 @@ public final class InstanceManager implements AutoCloseable {
     private static final class VideoWatcher {
         long lastSeen = System.nanoTime(), lastSent, lastAcknowledged, lastResync;
         boolean needsKeyframe = true;
+        /** Attached by proximity to an in-world screen (television / arcade cabinet) instead of by opening the play screen. */
+        boolean ambient;
     }
     private static final class AudioWatcher {
         float gain;
@@ -192,14 +195,25 @@ public final class InstanceManager implements AutoCloseable {
         if (!cartridge.isOf(host.definition().cartridge())) { error(player, "insert_cartridge"); return; }
         RomIndex.Game game = roms.find(host.definition().cartridge(), CartridgeItem.gameId(cartridge));
         if (game == null) { error(player, "invalid_rom"); return; }
+        TvBlockEntity tv = null;
+        if (host.definition().usesTelevision()) {
+            if (!(host instanceof DockedConsoleBlockEntity console) || (tv = Televisions.nearestFree(console)) == null) { error(player, "no_tv"); return; }
+        }
         try {
             CoreManager.Prepared prepared = preparedCores.get(config.coreId(game.cartridge().id().toString()));
             if (prepared == null) { error(player, "core_preparing"); return; }
             Path core = prepared.path();
             var data = store.create(player.getUuid(), host.definition().id().toString(), game.id(), game.name(), core);
             host.instance(data.id());
+            if (tv != null) Televisions.bind((DockedConsoleBlockEntity) host, tv, data.id());
             sessions.put(data.id(), new Session(data, game, host));
         } catch (IOException | IllegalArgumentException ex) { Retrocraft.LOG.error("Cannot power on console", ex); error(player, "storage_failed"); }
+    }
+
+    /** A bound television was broken: its console goes dark too. */
+    public void televisionRemoved(TvBlockEntity tv) {
+        if (tv.console() == null || tv.getWorld() == null) return;
+        if (tv.getWorld().getBlockEntity(tv.console()) instanceof DockedConsoleBlockEntity console && tv.getPos().equals(console.tv())) powerOff(console);
     }
 
     /** Restore a powered item/block after joining, chunk load, inventory transfer or server restart. */
@@ -221,6 +235,7 @@ public final class InstanceManager implements AutoCloseable {
         UUID id = host.instance();
         if (id == null) return;
         host.instance(null);
+        if (host instanceof DockedConsoleBlockEntity console) Televisions.unbind(console);
         failedDiscovery.remove(id);
         Session session = sessions.get(id);
         if (session != null) {
@@ -240,7 +255,8 @@ public final class InstanceManager implements AutoCloseable {
         Session session = sessions.get(host.instance());
         if (session == null || session.destroy || session.failure != null) { error(player, "invalid_instance"); return; }
         detachVideo(player.getUuid());
-        session.videoWatchers.put(player.getUuid(), new VideoWatcher());
+        VideoWatcher existing = session.videoWatchers.get(player.getUuid());
+        if (existing != null) existing.ambient = false; else session.videoWatchers.put(player.getUuid(), new VideoWatcher());
         videoWatching.put(player.getUuid(), session.data.id());
         session.forceKeyframe = true;
         claimInput(player, session.data.id());
@@ -263,6 +279,11 @@ public final class InstanceManager implements AutoCloseable {
         Session session = sessions.get(inputSessions.remove(player));
         if (session != null && session.inputSource != null && session.inputSource.player.equals(player)) { returnOwnership(session); session.inputSource = null; notifyRoles(session); }
     }
+    /** The picture is drawn on a block: the arcade cabinet's own CRT or the television bound to a docked console. */
+    private static boolean inWorld(Session session) {
+        var definition = session.host.definition();
+        return definition.type() == ConsoleType.DOCKED && (!definition.usesTelevision() || session.host instanceof DockedConsoleBlockEntity console && console.tv() != null);
+    }
     private void detachVideo(UUID player) {
         Session session = sessions.get(videoWatching.remove(player));
         if (session != null) {
@@ -275,7 +296,7 @@ public final class InstanceManager implements AutoCloseable {
         for (Session session : sessions.values()) if (player.equals(session.ownership.owner())) revoke(session, false);
         readyClients.remove(player); clientGenerations.remove(player); outbound.remove(player);
         detachVideo(player);
-        for (Session session : sessions.values()) session.audioWatchers.remove(player);
+        for (Session session : sessions.values()) { session.audioWatchers.remove(player); session.videoWatchers.remove(player); }
     }
 
     public void request(ServerPlayerEntity player, Packets.Request packet) {
@@ -290,6 +311,12 @@ public final class InstanceManager implements AutoCloseable {
             case Packets.AUDIO_ACK -> {
                 AudioWatcher watcher = session.audioWatchers.get(playerId);
                 if (watcher != null) watcher.lastAcknowledged = Math.max(watcher.lastAcknowledged, Math.min(watcher.lastSent, packet.acknowledgedSequence()));
+            }
+            case Packets.VIDEO_ACK -> {
+                if (video != null) {
+                    video.lastSeen = now;
+                    video.lastAcknowledged = Math.max(video.lastAcknowledged, Math.min(video.lastSent, packet.acknowledgedSequence()));
+                }
             }
             case Packets.INPUT -> {
                 if (video != null) {
@@ -370,19 +397,30 @@ public final class InstanceManager implements AutoCloseable {
         for (UUID id : List.copyOf(session.videoWatchers.keySet())) {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(id);
             VideoWatcher watcher = session.videoWatchers.get(id);
-            if (!valid || player == null || !session.host.canAccess(player)
+            if (!valid || player == null || (!watcher.ambient && !session.host.canAccess(player))
                     || now - watcher.lastSeen > TimeUnit.SECONDS.toNanos(config.watcherTimeoutSeconds)) {
+                if (watcher.ambient) { session.videoWatchers.remove(id); continue; }
                 if (player != null) send(player, stopped(session));
                 detachVideo(id);
             }
         }
         Set<UUID> listeners = new HashSet<>();
+        boolean inWorld = inWorld(session);
         if (valid && session.failure == null) for (var player : server.getPlayerManager().getPlayerList()) {
             if (player.getWorld() != session.host.world() || !ServerPlayNetworking.canSend(player, Packets.Audio.ID)) continue;
-            double distance = player.getPos().distanceTo(session.host.position());
+            double distance = player.getPos().distanceTo(session.host.soundPosition());
             if (distance >= config.audioRadius) continue;
             listeners.add(player.getUuid());
             session.audioWatchers.computeIfAbsent(player.getUuid(), ignored -> new AudioWatcher(1)).gain = (float) (1 - distance / config.audioRadius);
+            // Anyone near a television or arcade cabinet sees the picture on the block without opening the play screen.
+            if (inWorld && !session.videoWatchers.containsKey(player.getUuid())) {
+                VideoWatcher watcher = new VideoWatcher(); watcher.ambient = true;
+                session.videoWatchers.put(player.getUuid(), watcher); session.forceKeyframe = true;
+            }
+        }
+        for (var entry : List.copyOf(session.videoWatchers.entrySet())) if (entry.getValue().ambient && (!inWorld || !listeners.contains(entry.getKey()))) {
+            session.videoWatchers.remove(entry.getKey());
+            if (session.videoWatchers.isEmpty()) { session.encoder.clear(); session.forceKeyframe = true; }
         }
         for (UUID id : List.copyOf(session.audioWatchers.keySet())) if (!listeners.contains(id)) {
             session.audioWatchers.remove(id);
@@ -475,6 +513,7 @@ public final class InstanceManager implements AutoCloseable {
         Path log = store.directory(session.data.id()).resolve("worker.log");
         try { return new WorkerProcess(workerJar, core, rom, state, log); }
         catch (IOException ex) {
+            if (ex instanceof EOFException && workerLogSays(log, "Core rejected ROM")) throw new RomRejectedException(ex);
             if (!Files.exists(store.backup(session.data.id()))) throw ex;
             Retrocraft.LOG.warn("Latest checkpoint rejected for {}; restoring previous complete state", session.data.id());
             byte[] previous = Files.readAllBytes(store.backup(session.data.id()));
@@ -483,11 +522,18 @@ public final class InstanceManager implements AutoCloseable {
         }
     }
 
+    /** The worker died before the handshake and its log names the cause (e.g. MAME 2003-Plus rejecting a mismatched romset). */
+    static final class RomRejectedException extends IOException { RomRejectedException(Throwable cause) { super("Core rejected ROM", cause); } }
+    private static boolean workerLogSays(Path log, String needle) {
+        try { return Files.exists(log) && Files.readString(log).contains(needle); } catch (IOException ex) { return false; }
+    }
+
     private void finish(Session session) {
         if (!session.finished) return;
         session.thread = null; session.finished = false; session.encoder.clear(); session.forceKeyframe = true;
         if (session.failure != null) {
-            for (UUID id : session.videoWatchers.keySet()) { var player = server.getPlayerManager().getPlayer(id); if (player != null) error(player, "failed"); }
+            String key = session.failure instanceof RomRejectedException ? "rom_rejected" : "failed";
+            for (UUID id : session.videoWatchers.keySet()) { var player = server.getPlayerManager().getPlayer(id); if (player != null) error(player, key); }
             stopSubscribers(session);
         }
     }
@@ -497,6 +543,7 @@ public final class InstanceManager implements AutoCloseable {
             if (player != null) send(player, stopped(session));
             detachVideo(id);
         }
+        session.videoWatchers.clear();
         if (session.inputSource != null) releaseInput(session.inputSource.player);
         for (UUID id : session.audioWatchers.keySet()) { var player = server.getPlayerManager().getPlayer(id); if (player != null) send(player, new Packets.AudioStop(session.data.id())); }
         session.audioWatchers.clear();
@@ -505,9 +552,9 @@ public final class InstanceManager implements AutoCloseable {
         for (UUID id : session.videoWatchers.keySet()) { var player = server.getPlayerManager().getPlayer(id); if (player != null) send(player, status(session, player, Packets.ROLE)); }
     }
     private Packets.Ui status(Session session, ServerPlayerEntity player, int mode) {
-        return new Packets.Ui(mode, session.data.id(), session.host.definition().id().getPath(), session.game.name(), isInputSource(player.getUuid(), session.data.id()), session.host.canAccess(player));
+        return new Packets.Ui(mode, session.data.id(), session.host.definition().id().getPath(), session.game.name(), isInputSource(player.getUuid(), session.data.id()), session.host.canAccess(player), inWorld(session));
     }
-    private static Packets.Ui stopped(Session session) { return new Packets.Ui(Packets.STOP, session.data.id(), "", "", false, false); }
+    private static Packets.Ui stopped(Session session) { return new Packets.Ui(Packets.STOP, session.data.id(), "", "", false, false, false); }
     private void destroyFiles(UUID id) { try { store.destroy(id); } catch (IOException ex) { Retrocraft.LOG.error("Cannot destroy console instance {}", id, ex); } }
     private static void send(ServerPlayerEntity player, net.minecraft.network.packet.CustomPayload packet) { ServerPlayNetworking.send(player, packet); }
     private static void error(ServerPlayerEntity player, String key) { player.sendMessage(Text.translatable("message.retrocraft." + key), false); }

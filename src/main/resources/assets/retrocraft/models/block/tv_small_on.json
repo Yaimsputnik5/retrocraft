@@ -1,0 +1,7 @@
+{
+  "parent": "retrocraft:block/tv_small",
+  "textures": {
+    "indicator": "retrocraft:block/console/power_on",
+    "screen": "retrocraft:block/console/crt_on"
+  }
+}

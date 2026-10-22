@@ -15,6 +15,8 @@ public interface ConsoleHost {
     void instance(UUID id);
     ServerWorld world();
     Vec3d position();
+    /** Where listeners hear the console: the bound television for docked sets, the console itself otherwise. */
+    default Vec3d soundPosition() { return position(); }
     boolean valid();
     boolean canAccess(ServerPlayerEntity player);
 }

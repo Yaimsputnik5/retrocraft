@@ -11,7 +11,7 @@ import net.minecraft.util.Identifier;
 import java.util.*;
 
 public final class Packets {
-    public static final int CLOSE = 1, INPUT = 2, POWER_OFF = 3, RESYNC = 4, CLAIM_INPUT = 6, AUDIO_ACK = 7, EJECT = 8;
+    public static final int CLOSE = 1, INPUT = 2, POWER_OFF = 3, RESYNC = 4, CLAIM_INPUT = 6, AUDIO_ACK = 7, EJECT = 8, VIDEO_ACK = 9;
     public static final int PLAY = 1, STOP = 2, ROLE = 3;
 
     public record Request(int action, UUID instance, int buttons, long acknowledgedSequence) implements CustomPayload {
@@ -24,11 +24,12 @@ public final class Packets {
         public static Request of(int action, UUID id) { return new Request(action, id, 0, 0); }
     }
 
-    public record Ui(int mode, UUID instance, String console, String title, boolean controller, boolean canManage) implements CustomPayload {
+    /** {@code inWorld}: the picture is shown on a block (arcade cabinet or bound television), so the client draws no overlay. */
+    public record Ui(int mode, UUID instance, String console, String title, boolean controller, boolean canManage, boolean inWorld) implements CustomPayload {
         public static final Id<Ui> ID = new Id<>(Identifier.of("retrocraft", "ui"));
         public static final PacketCodec<RegistryByteBuf, Ui> CODEC = new PacketCodec<>() {
-            public Ui decode(RegistryByteBuf b) { return new Ui(b.readVarInt(), b.readUuid(), b.readString(64), b.readString(200), b.readBoolean(), b.readBoolean()); }
-            public void encode(RegistryByteBuf b, Ui p) { b.writeVarInt(p.mode); b.writeUuid(p.instance); b.writeString(p.console, 64); b.writeString(p.title, 200); b.writeBoolean(p.controller); b.writeBoolean(p.canManage); }
+            public Ui decode(RegistryByteBuf b) { return new Ui(b.readVarInt(), b.readUuid(), b.readString(64), b.readString(200), b.readBoolean(), b.readBoolean(), b.readBoolean()); }
+            public void encode(RegistryByteBuf b, Ui p) { b.writeVarInt(p.mode); b.writeUuid(p.instance); b.writeString(p.console, 64); b.writeString(p.title, 200); b.writeBoolean(p.controller); b.writeBoolean(p.canManage); b.writeBoolean(p.inWorld); }
         };
         @Override public Id<? extends CustomPayload> getId() { return ID; }
     }

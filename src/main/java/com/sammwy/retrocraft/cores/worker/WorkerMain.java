@@ -27,6 +27,9 @@ public final class WorkerMain {
     private final Libretro.AudioBatch batch = this::batch;
     private final Libretro.InputPoll poll = () -> {};
     private final Libretro.InputState buttons = this::inputState;
+    // Some cores (MAME 2003-Plus) call the log callback unconditionally, so one must always be provided.
+    private final Libretro.Log log = (level, format) -> { if (level >= 2) System.err.println("[core] " + format.strip()); };
+    private final Pointer logPointer = CallbackReference.getFunctionPointer(log);
     private short inputState(int port, int device, int index, int id) {
         if (port != 0) return 0;
         if ((device & 255) == 1 && index == 0) return (short) (id == 256 ? input : id >= 0 && id < 16 ? (input >>> id) & 1 : 0);
@@ -151,6 +154,7 @@ public final class WorkerMain {
                 pixelFormat = format;
             }
             case 11, 18, 35, 37 -> { }
+            case 27 -> data.setPointer(0, logPointer); // RETRO_ENVIRONMENT_GET_LOG_INTERFACE
             case 15 -> {
                 String key = data.getPointer(0).getString(0);
                 Memory value = variables.get(key);

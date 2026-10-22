@@ -54,6 +54,7 @@ public final class HybridClient {
 
     HybridClient(AudioStreams remoteAudio) { this.remoteAudio = remoteAudio; }
     boolean owns(UUID id) { Local local = locals.get(id); return local != null && local.phase == Phase.ACTIVE; }
+    List<UUID> active() { List<UUID> ids = new ArrayList<>(); for (var e : locals.entrySet()) if (e.getValue().phase == Phase.ACTIVE) ids.add(e.getKey()); return ids; }
     FrameCodec.Frame frame(UUID id) { Local local = locals.get(id); return local != null && local.phase == Phase.ACTIVE ? local.frame : null; }
 
     void settings(HybridPackets.Settings packet) {

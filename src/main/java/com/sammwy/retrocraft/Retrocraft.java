@@ -48,11 +48,13 @@ public final class Retrocraft implements ModInitializer {
         ConsoleRegistry.registerConsole(Identifier.of("retrocraft", "genesis_console"), "Genesis", ConsoleType.DOCKED, megadrive);
         registerSystem("n64", "Nintendo 64", ConsoleType.DOCKED);
         registerSystem("mame", "Arcade Machine", ConsoleType.DOCKED);
+        ConsoleRegistry.registerTelevisions();
         CREATIVE_GROUP = Registry.register(Registries.ITEM_GROUP, Identifier.of("retrocraft", "consoles"), FabricItemGroup.builder()
                 .displayName(Text.translatable("itemGroup.retrocraft.consoles"))
                 .icon(() -> new ItemStack(Registries.ITEM.get(NES_HANDHELD.id())))
                 .entries((context, entries) -> {
                     for (var console : ConsoleRegistry.consoles()) entries.add(Registries.ITEM.get(console.id()));
+                    for (var tv : ConsoleRegistry.televisions()) entries.add(tv.asItem());
                     for (var game : RomCatalog.clientEntries()) {
                         CartridgeItem cartridge = ConsoleRegistry.cartridge(Identifier.of(game.cartridge()));
                         if (cartridge != null) entries.add(cartridge.game(game.gameId(), game.name()));

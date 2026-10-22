@@ -654,6 +654,71 @@ def small_textures():
     for y in range(0, 16, 2): d.line((0, y, 15, y), fill=None)
     im.save(out / 'crt_on.png')
 
+# ---------------------------------------------------------------- televisions (front = north; screen rectangles mirrored in TvBlock.Size)
+
+TVS = {
+    # name: (atlas size, footprint x0,x1, height, depth z0,z1, screen x0,x1,y0,y1, screen z)
+    'tv_small':  dict(size=128, body=(1, 15, 0, 13, 3, 13), screen=(2.5, 13.5, 3, 11.25), z=2.9),
+    'tv_medium': dict(size=256, body=(-8, 24, 0, 24, 2, 14), screen=(-5, 21, 3.25, 22.75), z=1.9),
+    'tv_large':  dict(size=256, body=(-16, 32, 0, 32, 0, 16), screen=(-7, 23, 4.5, 27), z=-.1),
+}
+
+def television(name, atlas):
+    t = TVS[name]; m = Model(atlas); x0, x1, y0, y1, z0, z1 = t['body']; sx0, sx1, sy0, sy1 = t['screen']; sz = t['z']
+    if name == 'tv_small':
+        # Portable set: warm grey plastic, carry handle, channel dial and a speaker grille beside the tube.
+        shell, dark = '#c9c3b3', '#2b2b30'
+        m.box((x0, 1, z0), (x1, y1, z1), shell, {'north': (shell, rect(.5, .5, 13.5, 11.5, dark, bevel=-8)),
+                                                 'south': (shell, many(vents(2, 2, 12, 9, 8, '#8f8a7c', True), rect(3, 10, 5, 11.5, '#1d1d20'))),
+                                                 'east': (shell, vents(2, 2, 8, 9, 5, '#8f8a7c')), 'west': (shell, vents(2, 2, 8, 9, 5, '#8f8a7c'))}, bevel=8)
+        m.box((x0 + 1, y1, 5), (x1 - 1, y1 + .6, 6), '#5c5a58', bevel=6); m.box((x0 + 1, y1, 10), (x1 - 1, y1 + .6, 11), '#5c5a58', bevel=6)
+        m.box((x0 + 1, y1 + .6, 5), (x0 + 2, y1 + 2.5, 11), '#5c5a58', bevel=6); m.box((x1 - 2, y1 + .6, 5), (x1 - 1, y1 + 2.5, 11), '#5c5a58', bevel=6)
+        m.box((x0 + 1, y1 + 2.5, 5), (x1 - 1, y1 + 3, 11), '#5c5a58', bevel=6)
+        for x in (x0 + 1, x1 - 2.5): m.box((x, 0, z0 + 1), (x + 1.5, 1, z1 - 1), dark, bevel=0)
+        m.box((sx0 - .7, sy0 - .7, 2.7), (sx1 + .7, sy1 + .7, 3), dark, {'north': (dark, rect(.3, .3, sx1 - sx0 + 1.1, sy1 - sy0 + 1.1, '#15161c', bevel=-8))}, bevel=0)
+        m.box((sx0, sy0, sz), (sx1, sy1, 3), '#101216', {'north': '#screen'}, bevel=0)
+        m.box((x0 + 1, 1.3, 2.6), (x1 - 1, 2.6, 3), shell, {'north': (shell, many(holes(1, .3, 10, 2, .5, '#6a665c'), rect(9.5, .2, 10.7, 1.1, '#3b3b42', bevel=-8), rect(11.5, .3, 12.3, 1, '#3b3b42', bevel=-8)))}, bevel=4)
+        m.lamp((x1 - 2.2, 1.6, 2.55), (x1 - 1.8, 2, 2.65))
+    elif name == 'tv_medium':
+        # Nineties black CRT, two blocks wide: curved-looking bezel, silver control strip and stereo grilles.
+        shell, dark, silver = '#26262b', '#0f0f13', '#8a8a92'
+        m.box((x0, 1, z0 + 1), (x1, y1, z1), shell, {'north': (shell, rect(1, 1, 31, 20, dark, bevel=-10)),
+                                                     'south': (shell, many(vents(4, 3, 28, 12, 14, '#3a3a40', True), rect(6, 16, 10, 19, '#1d1d20'), rect(12, 16.5, 20, 18.5, '#3a3a40'))),
+                                                     'east': (shell, vents(2, 3, 10, 14, 7, '#3a3a40')), 'west': (shell, vents(2, 3, 10, 14, 7, '#3a3a40'))}, bevel=8)
+        for x in (x0 + 2, x1 - 4): m.box((x, 0, z0 + 2), (x + 2, 1, z1 - 2), dark, bevel=0)
+        m.box((sx0 - 1.5, sy0 - 1.5, z0 + .6), (sx1 + 1.5, sy1 + 1.5, z0 + 1), dark, {'north': (dark, rect(.5, .5, sx1 - sx0 + 2.5, sy1 - sy0 + 2.5, '#15161c', bevel=-10))}, bevel=0)
+        m.box((sx0, sy0, sz), (sx1, sy1, z0 + 1), '#101216', {'north': '#screen'}, bevel=0)
+        m.box((x0 + 1, 1, z0 + .4), (x1 - 1, 3, z0 + 1), silver, {'north': (silver, many(holes(1, .4, 8, 3, .6, '#3b3b42'), holes(24, .4, 8, 3, .6, '#3b3b42'), rect(10, .5, 14, 1.5, '#1d1d20', bevel=-6), rect(16, .6, 17, 1.4, '#1d1d20'), rect(18, .6, 19, 1.4, '#1d1d20'), rect(20, .6, 21, 1.4, '#1d1d20')))}, bevel=4)
+        m.lamp((x1 - 3.5, 1.7, z0 + .35), (x1 - 3, 2.2, z0 + .45))
+    else:
+        # Seventies console television, three blocks wide and two tall: walnut cabinet, cloth speaker panels, dial column.
+        wood, grain, cloth, dark = '#6b4a2f', '#4f3520', '#a89170', '#15161a'
+        def planks(F):
+            w, h = F.units
+            for i in range(int(h // 2)): F.rect(0, i * 2 + .9, w, i * 2 + 1.1, grain)
+        m.box((x0, 2, z0 + 1), (x1, y1, z1), wood, {'north': (wood, rect(1, 1, 47, 29, dark, bevel=-8)), 'south': (wood, many(planks, rect(6, 22, 42, 28, '#2b2b30', bevel=-6), vents(8, 23, 40, 27, 10, '#101216'))),
+                                                    'east': (wood, planks), 'west': (wood, planks), 'up': (wood, planks)}, bevel=8)
+        for x in (x0 + 1, x1 - 3): m.box((x, 0, z0 + 2), (x + 2, 2, z0 + 4), grain, bevel=0); m.box((x, 0, z1 - 4), (x + 2, 2, z1 - 2), grain, bevel=0)
+        m.box((sx0 - 2, sy0 - 2, z0 + .5), (sx1 + 2, sy1 + 2, z0 + 1), dark, {'north': (dark, rect(.7, .7, sx1 - sx0 + 3.3, sy1 - sy0 + 3.3, '#1c1d24', bevel=-10))}, bevel=0)
+        m.box((sx0, sy0, sz), (sx1, sy1, z0 + 1), '#101216', {'north': '#screen'}, bevel=0)
+        w = (sx0 - 2.5) - (x0 + 1)
+        m.box((x0 + 1, 3, z0 + .7), (x0 + 1 + w, y1 - 1, z0 + 1), cloth, {'north': (cloth, holes(.5, .5, int(w * 2) - 1, int((y1 - 4) * 2) - 1, .5, tint(cloth, -35)))}, bevel=4)
+        m.box((sx1 + 2.5, 3, z0 + .7), (x1 - 1, y1 - 1, z0 + 1), grain, {'north': (grain, many(rect(1, 1, w - .5, 6, '#2b2b30', bevel=-6), rect(1, 7.5, w - .5, 12.5, '#2b2b30', bevel=-6), rect(1, 18, w - .5, y1 - 6, cloth)))}, bevel=4)
+        for y in (y1 - 7.5, y1 - 14): m.box((sx1 + 3.5, y, z0 + .2), (sx1 + 3.5 + w - 2.5, y + w - 2.5, z0 + .7), '#3b3b42', {'north': ('#3b3b42', rect((w - 2.5) / 2 - .2, .3, (w - 2.5) / 2 + .2, (w - 2.5) / 2, '#c9c3b3'))}, bevel=8)
+        m.lamp((sx1 + 4.2, 15, z0 + .45), (sx1 + 4.8, 15.6, z0 + .55))
+    r = finish(m, name, 'block'); r['textures']['screen'] = 'retrocraft:block/console/crt_off'
+    scale = {'tv_small': .95, 'tv_medium': .5, 'tv_large': .33}[name]
+    r['display'] = {
+        'gui': {'rotation': [25, 225, 0], 'translation': [0, 1 if name == 'tv_small' else -1, 0], 'scale': [scale] * 3},
+        'ground': {'translation': [0, 3, 0], 'scale': [scale * .5] * 3},
+        'fixed': {'rotation': [0, 180, 0], 'translation': [0, 0 if name == 'tv_small' else -3, 0], 'scale': [scale] * 3},
+        'thirdperson_righthand': {'rotation': [75, 45, 0], 'translation': [0, 2.5, 0], 'scale': [scale * .375] * 3},
+        'thirdperson_lefthand': {'rotation': [75, 45, 0], 'translation': [0, 2.5, 0], 'scale': [scale * .375] * 3},
+        'firstperson_righthand': {'rotation': [0, 45, 0], 'translation': [0, 0, 0], 'scale': [scale * .4] * 3},
+        'firstperson_lefthand': {'rotation': [0, 225, 0], 'translation': [0, 0, 0], 'scale': [scale * .4] * 3},
+    }
+    return r
+
 def write(kind, name, data):
     path = ASSETS / kind / f'{name}.json'; path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + '\n')
@@ -682,6 +747,18 @@ def generate():
         atlas.save()
         used = sum(r['h'] for r in atlas.rows)
         print(f'{family}: atlas rows use {used}/{atlas.size} texels')
-    print('Generated 8 cartridge models, 4 handhelds, 6 consoles and 15 original textures.')
+    for name in TVS:
+        atlas = Atlas(name, TVS[name]['size'])
+        write('models/block', name, television(name, atlas))
+        write('models/block', name + '_on', {'parent': f'retrocraft:block/{name}', 'textures': {'indicator': 'retrocraft:block/console/power_on', 'screen': 'retrocraft:block/console/crt_on'}})
+        write('models/item', name, {'parent': f'retrocraft:block/{name}'})
+        variants = {}
+        for facing, angle in [('north', 0), ('east', 90), ('south', 180), ('west', 270)]:
+            for powered in [False, True]: variants[f'facing={facing},powered={str(powered).lower()}'] = {'model': f'retrocraft:block/{name}' + ('_on' if powered else ''), 'y': angle}
+        write('blockstates', name, {'variants': variants})
+        write('../../data/retrocraft/loot_table/blocks', name, {'type': 'minecraft:block', 'pools': [{'rolls': 1, 'entries': [{'type': 'minecraft:item', 'name': f'retrocraft:{name}'}], 'conditions': [{'condition': 'minecraft:survives_explosion'}]}]})
+        atlas.save()
+        print(f'{name}: atlas rows use {sum(r["h"] for r in atlas.rows)}/{atlas.size} texels')
+    print('Generated 8 cartridge models, 4 handhelds, 6 consoles, 3 televisions and 18 original textures.')
 
 if __name__ == '__main__': generate()

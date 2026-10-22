@@ -22,19 +22,22 @@ import java.util.*;
 
 public final class RetrocraftClient implements ClientModInitializer {
     private final AudioStreams audio = new AudioStreams();
+    private final VideoStreams video = new VideoStreams();
+    static VideoStreams VIDEO;
     public static HybridClient EMULATION;
     private final List<RomCatalog.Entry> pendingCatalog = new ArrayList<>();
     private int catalogGeneration;
     private boolean catalogDirty;
 
     @Override public void onInitializeClient() {
-        EMULATION = new HybridClient(audio);
+        EMULATION = new HybridClient(audio); VIDEO = video;
         for (var console : ConsoleRegistry.consoles()) {
             if (console.type() == ConsoleType.HANDHELD)
                 FabricModelPredicateProviderRegistry.register(Registries.ITEM.get(console.id()), Identifier.of("retrocraft", "powered"),
                         (stack, world, entity, seed) -> HandheldConsoleItem.instance(stack) == null ? 0 : 1);
             else BlockEntityRendererFactories.register(((DockedConsoleBlock) Registries.BLOCK.get(console.id())).entityType(), DockedConsoleRenderer::new);
         }
+        for (var tv : ConsoleRegistry.televisions()) BlockEntityRendererFactories.register(tv.entityType(), TvRenderer::new);
         ClientPlayNetworking.registerGlobalReceiver(HybridPackets.Settings.ID, (packet, context) -> EMULATION.settings(packet));
         ClientPlayNetworking.registerGlobalReceiver(HybridPackets.Lease.ID, (packet, context) -> EMULATION.lease(packet));
         ClientPlayNetworking.registerGlobalReceiver(HybridPackets.Blob.ID, (packet, context) -> EMULATION.blob(packet));
@@ -53,9 +56,7 @@ public final class RetrocraftClient implements ClientModInitializer {
                 default -> { }
             }
         });
-        ClientPlayNetworking.registerGlobalReceiver(Packets.Video.ID, (packet, context) -> {
-            if (!EMULATION.owns(packet.instance()) && context.client().currentScreen instanceof ConsoleScreen screen && screen.instance.equals(packet.instance())) screen.video(packet.frame());
-        });
+        ClientPlayNetworking.registerGlobalReceiver(Packets.Video.ID, (packet, context) -> { if (!EMULATION.owns(packet.instance())) video.accept(packet); });
         ClientPlayNetworking.registerGlobalReceiver(Packets.Audio.ID, (packet, context) -> { if (!EMULATION.owns(packet.instance())) audio.accept(context.client(), packet); });
         ClientPlayNetworking.registerGlobalReceiver(Packets.AudioStop.ID, (packet, context) -> audio.stop(packet.instance()));
         ClientPlayNetworking.registerGlobalReceiver(Packets.Catalog.ID, (packet, context) -> {
@@ -66,6 +67,8 @@ public final class RetrocraftClient implements ClientModInitializer {
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             EMULATION.tick(client);
+            for (UUID id : EMULATION.active()) { var frame = EMULATION.frame(id); if (frame != null) video.local(id, frame); }
+            video.tick();
             audio.tick();
             if (!catalogDirty || client.world == null || client.player == null) return;
             var display = new ItemGroup.DisplayContext(client.world.getEnabledFeatures(), client.player.hasPermissionLevel(2), client.world.getRegistryManager());
@@ -76,7 +79,7 @@ public final class RetrocraftClient implements ClientModInitializer {
             catalogDirty = false;
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
-            EMULATION.disconnect(); audio.close(); RomCatalog.clientEntries(List.of()); pendingCatalog.clear(); catalogDirty = true;
+            EMULATION.disconnect(); audio.close(); video.close(); RomCatalog.clientEntries(List.of()); pendingCatalog.clear(); catalogDirty = true;
             if (client.currentScreen instanceof ConsoleScreen screen) screen.serverClosed();
         });
     }

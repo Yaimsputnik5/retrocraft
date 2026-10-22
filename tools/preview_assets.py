@@ -81,11 +81,12 @@ def main():
     font='/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf'
     if not Path(font).exists():font='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
     body=ImageFont.truetype(font,16);heading=ImageFont.truetype(font,22)
-    im=Image.new('RGB',(960,1272),'#1d242a');d=ImageDraw.Draw(im)
+    im=Image.new('RGB',(960,1560),'#1d242a');d=ImageDraw.Draw(im)
     d.text((24,18),'RETROCRAFT  /  MODELOS ORIGINALES',font=heading,fill='#e4dcc8')
     groups=[('CARTUCHOS',[(x,x.upper()) for x in ['nes','snes','gb','gbc','gba','megadrive','n64','mame']],4,188),
             ('PORTÁTILES',[(x+'_handheld_on',n) for x,n in [('nes','NES Handheld'),('gb','Game Boy'),('gbc','Game Boy Color'),('gba','Game Boy Advance')]],4,212),
-            ('CONSOLAS DE MESA',[(x+'_console',n) for x,n in [('nes','NES'),('snes','SNES'),('megadrive','Mega Drive'),('genesis','Genesis'),('n64','Nintendo 64'),('mame','Arcade')]],3,242)]
+            ('CONSOLAS DE MESA',[(x+'_console',n) for x,n in [('nes','NES'),('snes','SNES'),('megadrive','Mega Drive'),('genesis','Genesis'),('n64','Nintendo 64'),('mame','Arcade')]],3,242),
+            ('TELEVISORES',[('tv_small','Portable TV'),('tv_medium','CRT Television'),('tv_large','Console Television')],3,242)]
     y=64
     for title,models,columns,rowh in groups:
         d.line((24,y,936,y),fill='#59615e');d.text((24,y+9),title,font=body,fill='#bfb79f');y+=38
@@ -93,7 +94,7 @@ def main():
         for i,(name,label) in enumerate(models):
             x=24+i%columns*cellw;cy=y+i//columns*rowh
             d.rectangle((x+4,cy+4,x+cellw-4,cy+rowh-8),fill='#293239')
-            kind='block' if '_console' in name else 'item'
+            kind='block' if '_console' in name or name.startswith('tv_') else 'item'
             img=render(f'{kind}/{name}',cellw-16,rowh-44)
             im.paste(img,(x+8,cy+8),img)
             width=d.textbbox((0,0),label,font=body)[2];d.text((x+(cellw-width)/2,cy+rowh-32),label,font=body,fill='#e1daca')

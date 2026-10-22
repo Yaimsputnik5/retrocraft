@@ -18,12 +18,19 @@ import java.util.UUID;
 public final class DockedConsoleBlockEntity extends BlockEntity implements ConsoleHost {
     private ItemStack cartridge = ItemStack.EMPTY;
     private UUID instance;
+    private BlockPos tv;
     public DockedConsoleBlockEntity(BlockPos pos, BlockState state) { super(((DockedConsoleBlock) state.getBlock()).entityType(), pos, state); }
     @Override public ConsoleDefinition definition() { return ((DockedConsoleBlock) getCachedState().getBlock()).definition(); }
     @Override public ItemStack cartridge() { return cartridge; }
     @Override public void cartridge(ItemStack stack) { cartridge = stack; changed(); }
     @Override public UUID instance() { return instance; }
     @Override public void instance(UUID id) { instance = id; changed(); }
+    public BlockPos tv() { return tv; }
+    public void tv(BlockPos pos) { tv = pos; changed(); }
+    @Override public Vec3d soundPosition() {
+        if (tv != null && world != null && world.getBlockEntity(tv) instanceof TvBlockEntity set) return Vec3d.ofCenter(tv).add(0, set.size().height / 32.0, 0);
+        return position();
+    }
     private void changed() {
         markDirty();
         if (world == null || world.isClient) return;
@@ -41,11 +48,13 @@ public final class DockedConsoleBlockEntity extends BlockEntity implements Conso
         super.writeNbt(nbt, registries);
         nbt.put("Cartridge", cartridge.encodeAllowEmpty(registries));
         if (instance != null) nbt.putUuid("InstanceID", instance);
+        if (tv != null) nbt.putLong("Tv", tv.asLong());
     }
     @Override protected void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registries) {
         super.readNbt(nbt, registries);
         cartridge = ItemStack.fromNbtOrEmpty(registries, nbt.getCompound("Cartridge"));
         instance = nbt.containsUuid("InstanceID") ? nbt.getUuid("InstanceID") : null;
+        tv = nbt.contains("Tv", net.minecraft.nbt.NbtElement.LONG_TYPE) ? BlockPos.fromLong(nbt.getLong("Tv")) : null;
     }
     public static void tick(World world, BlockPos pos, BlockState state, DockedConsoleBlockEntity console) {
         if (state.get(DockedConsoleBlock.POWERED) != (console.instance != null)) console.changed();

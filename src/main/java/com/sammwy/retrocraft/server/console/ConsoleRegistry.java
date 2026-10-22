@@ -1,7 +1,6 @@
 package com.sammwy.retrocraft.server.console;
 
-import com.sammwy.retrocraft.server.block.DockedConsoleBlock;
-import com.sammwy.retrocraft.server.block.DockedConsoleBlockEntity;
+import com.sammwy.retrocraft.server.block.*;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
 import com.sammwy.retrocraft.server.item.*;
 import net.minecraft.block.AbstractBlock;
@@ -14,6 +13,7 @@ import com.sammwy.retrocraft.roms.discovery.DiscoveryStrategy;
 public final class ConsoleRegistry {
     private static final Map<Identifier, CartridgeItem> CARTRIDGES = new LinkedHashMap<>();
     private static final Map<Identifier, ConsoleDefinition> CONSOLES = new LinkedHashMap<>();
+    private static final List<TvBlock> TELEVISIONS = new ArrayList<>();
 
     public static CartridgeItem registerCartridge(Identifier id, DiscoveryStrategy discovery) {
         Objects.requireNonNull(id); Objects.requireNonNull(discovery);
@@ -37,6 +37,16 @@ public final class ConsoleRegistry {
         CONSOLES.put(id, definition);
         return definition;
     }
+    public static void registerTelevisions() {
+        for (TvBlock.Size size : TvBlock.Size.values()) {
+            Identifier id = Identifier.of("retrocraft", size.id);
+            TvBlock block = Registry.register(Registries.BLOCK, id, new TvBlock(size, AbstractBlock.Settings.create().strength(2).nonOpaque()));
+            block.entityType(Registry.register(Registries.BLOCK_ENTITY_TYPE, id, FabricBlockEntityTypeBuilder.create(TvBlockEntity::new, block).build()));
+            Registry.register(Registries.ITEM, id, new BlockItem(block, new Item.Settings()));
+            TELEVISIONS.add(block);
+        }
+    }
+    public static List<TvBlock> televisions() { return Collections.unmodifiableList(TELEVISIONS); }
     public static Collection<CartridgeItem> cartridges() { return Collections.unmodifiableCollection(CARTRIDGES.values()); }
     public static Collection<ConsoleDefinition> consoles() { return Collections.unmodifiableCollection(CONSOLES.values()); }
     public static ConsoleDefinition get(Identifier id) { return CONSOLES.get(id); }

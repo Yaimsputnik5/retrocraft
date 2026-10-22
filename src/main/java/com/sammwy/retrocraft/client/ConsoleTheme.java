@@ -43,8 +43,6 @@ record ConsoleTheme(String id, Bezel bezel, int shell, int bezelColor, int accen
     }
 
     boolean handheld() { return bezel != Bezel.TV && bezel != Bezel.ARCADE; }
-    /** The arcade cabinet block renders the video on its own CRT, so the play screen draws no overlay. */
-    boolean inWorld() { return bezel == Bezel.ARCADE; }
 
     /** Darkened/lightened variant of an ARGB colour, used for panels derived from the shell colour. */
     static int shade(int argb, float factor) {

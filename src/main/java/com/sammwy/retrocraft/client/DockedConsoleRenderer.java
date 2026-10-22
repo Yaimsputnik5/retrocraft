@@ -57,14 +57,17 @@ public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedCo
         matrices.pop();
     }
 
-    /** Emulator frame fitted inside the glass keeping its aspect ratio, full bright, over a black letterbox. */
     private static void crt(DockedConsoleBlockEntity console, MatrixStack matrices, VertexConsumerProvider vertices) {
-        var entry = ScreenTextures.get(console.instance());
+        drawScreen(ScreenTextures.get(console.instance()), matrices, vertices, CRT_X0, CRT_X1, CRT_Y0, CRT_Y1, CRT_Z);
+    }
+
+    /** Emulator frame fitted inside a glass rectangle (model units, front = north, matrices at the block centre), full bright over a black letterbox. */
+    static void drawScreen(ScreenTextures.Entry entry, MatrixStack matrices, VertexConsumerProvider vertices, float x0, float x1, float y0, float y1, float zUnits) {
         if (entry == null) return;
-        float gw = (CRT_X1 - CRT_X0) / 16f, gh = (CRT_Y1 - CRT_Y0) / 16f;
+        float gw = (x1 - x0) / 16f, gh = (y1 - y0) / 16f;
         float fit = Math.min(gw / entry.width(), gh / entry.height());
         float w = entry.width() * fit, h = entry.height() * fit;
-        float cx = 0, cy = (CRT_Y0 + CRT_Y1) / 32f, z = CRT_Z / 16f - .5f;
+        float cx = (x0 + x1) / 32f - .5f, cy = (y0 + y1) / 32f, z = zUnits / 16f - .5f;
         var matrix = matrices.peek().getPositionMatrix();
         var black = vertices.getBuffer(RenderLayer.getEntitySolid(entry.id()));
         quad(black, matrix, cx - gw / 2, cy - gh / 2, cx + gw / 2, cy + gh / 2, z, 0, 0, 0, 0, 0);

@@ -1,8 +1,6 @@
 package com.sammwy.retrocraft.client;
 
-import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.server.net.Packets;
-import com.sammwy.retrocraft.cores.stream.FrameCodec;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -12,7 +10,6 @@ import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
-import java.io.IOException;
 import java.util.UUID;
 
 public final class ConsoleScreen extends Screen {
@@ -20,17 +17,15 @@ public final class ConsoleScreen extends Screen {
     final UUID instance;
     private final ConsoleTheme theme;
     private final Text consoleName;
-    private boolean controller, canManage, subscribed = true;
-    private final FrameCodec.Decoder decoder = new FrameCodec.Decoder();
+    private boolean controller, canManage, inWorld, subscribed = true;
     private Identifier textureId;
     private int frameWidth = 256, frameHeight = 240;
-    private long lastResync;
     private final ItemStack consoleStack;
     private boolean hudWasHidden, hudHiddenByUs;
 
     ConsoleScreen(Packets.Ui packet) {
         super(Text.literal(packet.title()));
-        instance = packet.instance(); controller = packet.controller(); canManage = packet.canManage();
+        instance = packet.instance(); controller = packet.controller(); canManage = packet.canManage(); inWorld = packet.inWorld();
         theme = ConsoleTheme.of(packet.console());
         consoleName = Text.translatable("console.retrocraft." + packet.console());
         consoleStack = new ItemStack(Registries.ITEM.get(Identifier.of("retrocraft", packet.console())));
@@ -38,7 +33,7 @@ public final class ConsoleScreen extends Screen {
 
     void update(Packets.Ui packet) {
         boolean changed = controller != packet.controller() || canManage != packet.canManage();
-        controller = packet.controller(); canManage = packet.canManage();
+        controller = packet.controller(); canManage = packet.canManage(); inWorld = packet.inWorld();
         if (changed) clearAndInit();
     }
 
@@ -53,38 +48,10 @@ public final class ConsoleScreen extends Screen {
         if (!controller) { x -= 74; addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.take_control"), b -> ClientPlayNetworking.send(Packets.Request.of(Packets.CLAIM_INPUT, instance))).dimensions(x, 4, 70, 14).build()); }
     }
 
-    void video(FrameCodec.Encoded packet) {
-        try {
-            FrameCodec.Frame frame = decoder.decode(packet);
-            if (frame == null) {
-                if (System.nanoTime() - lastResync > 1_000_000_000L) {
-                    ClientPlayNetworking.send(Packets.Request.of(Packets.RESYNC, instance));
-                    lastResync = System.nanoTime();
-                }
-                return;
-            }
-            showFrame(frame);
-        } catch (IOException | IllegalArgumentException ex) {
-            Retrocraft.LOG.warn("Invalid console frame: {}", ex.toString());
-            if (System.nanoTime() - lastResync > 1_000_000_000L) {
-                ClientPlayNetworking.send(Packets.Request.of(Packets.RESYNC, instance)); lastResync = System.nanoTime();
-            }
-        }
-    }
-
-    private void showFrame(FrameCodec.Frame frame) {
-        var entry = ScreenTextures.upload(instance, frame);
-        textureId = entry.id(); frameWidth = entry.width(); frameHeight = entry.height();
-    }
-
     @Override public void tick() {
         if (!subscribed || !ClientPlayNetworking.canSend(Packets.Request.ID)) return;
-        if (RetrocraftClient.EMULATION != null) {
-            var local = RetrocraftClient.EMULATION.frame(instance);
-            if (local != null) showFrame(local);
-        }
         int mask = controller ? InputControls.buttons(client) : 0;
-        ClientPlayNetworking.send(new Packets.Request(Packets.INPUT, instance, mask, Math.max(0, decoder.sequence())));
+        ClientPlayNetworking.send(new Packets.Request(Packets.INPUT, instance, mask, RetrocraftClient.VIDEO.sequence(instance)));
     }
 
     @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
@@ -94,7 +61,10 @@ public final class ConsoleScreen extends Screen {
     }
 
     @Override public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        if (theme.inWorld()) {
+        var entry = ScreenTextures.get(instance);
+        textureId = entry == null ? null : entry.id();
+        if (entry != null) { frameWidth = entry.width(); frameHeight = entry.height(); }
+        if (inWorld) {
             // The cabinet block shows the video; only the key legend and the miniature actions are drawn.
             context.drawItem(consoleStack, MARGIN, 3);
             context.drawTextWithShadow(textRenderer, Text.empty().append(consoleName).append(" · ").append(title), MARGIN + 20, 7, 0xffe6e9f0);
@@ -234,9 +204,7 @@ public final class ConsoleScreen extends Screen {
         if (RetrocraftClient.EMULATION != null) RetrocraftClient.EMULATION.release(instance);
         if (subscribed && ClientPlayNetworking.canSend(Packets.Request.ID)) ClientPlayNetworking.send(Packets.Request.of(Packets.CLOSE, instance));
         subscribed = false;
-        releaseTexture();
         super.removed();
     }
 
-    private void releaseTexture() { ScreenTextures.release(instance); textureId = null; }
 }

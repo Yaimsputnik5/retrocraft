@@ -14,6 +14,8 @@ public interface Libretro extends Library {
     interface AudioBatch extends Callback { SizeT invoke(Pointer data, SizeT frames); }
     interface InputPoll extends Callback { void invoke(); }
     interface InputState extends Callback { short invoke(int port, int device, int index, int id); }
+    /** retro_log_printf_t is variadic; reading only the fixed arguments is ABI-safe on every supported platform. */
+    interface Log extends Callback { void invoke(int level, String format); }
 
     @Structure.FieldOrder({"name", "version", "extensions", "needFullpath", "blockExtract"})
     class SystemInfo extends Structure {
