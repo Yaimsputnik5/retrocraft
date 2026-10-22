@@ -29,7 +29,7 @@ public final class ConsoleRegistry {
         ConsoleDefinition definition = new ConsoleDefinition(id, name, type, cartridge);
         if (type == ConsoleType.HANDHELD) Registry.register(Registries.ITEM, id, new HandheldConsoleItem(definition));
         else {
-            DockedConsoleBlock block = Registry.register(Registries.BLOCK, id, new DockedConsoleBlock(definition, AbstractBlock.Settings.create().strength(2)));
+            DockedConsoleBlock block = Registry.register(Registries.BLOCK, id, new DockedConsoleBlock(definition, AbstractBlock.Settings.create().strength(2).nonOpaque()));
             block.entityType(Registry.register(Registries.BLOCK_ENTITY_TYPE, id,
                     FabricBlockEntityTypeBuilder.create(DockedConsoleBlockEntity::new, block).build()));
             Registry.register(Registries.ITEM, id, new BlockItem(block, new Item.Settings()));

@@ -1,1 +1,3 @@
-{ "parent": "retrocraft:block/mame_console" }
+{
+  "parent": "retrocraft:block/mame_console"
+}

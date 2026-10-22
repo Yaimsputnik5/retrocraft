@@ -1,0 +1,7 @@
+{
+  "parent": "retrocraft:item/gbc_handheld",
+  "textures": {
+    "screen": "retrocraft:block/console/lcd_on",
+    "indicator": "retrocraft:block/console/power_on"
+  }
+}

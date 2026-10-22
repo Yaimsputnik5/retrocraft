@@ -13,11 +13,25 @@ import net.minecraft.util.*;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import net.minecraft.world.BlockView;
+import net.minecraft.item.ItemPlacementContext;
+import net.minecraft.state.StateManager;
+import net.minecraft.state.property.*;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.shape.VoxelShape;
 
 public final class DockedConsoleBlock extends BlockWithEntity {
+    public static final DirectionProperty FACING = Properties.HORIZONTAL_FACING;
+    public static final BooleanProperty POWERED = Properties.POWERED;
     private final ConsoleDefinition definition;
     private BlockEntityType<DockedConsoleBlockEntity> entityType;
-    public DockedConsoleBlock(ConsoleDefinition definition, Settings settings) { super(settings); this.definition = definition; }
+    public DockedConsoleBlock(ConsoleDefinition definition, Settings settings) { super(settings); this.definition = definition; setDefaultState(getStateManager().getDefaultState().with(FACING, Direction.NORTH).with(POWERED, false)); }
+    @Override protected void appendProperties(StateManager.Builder<Block, BlockState> builder) { builder.add(FACING, POWERED); }
+    @Override public BlockState getPlacementState(ItemPlacementContext context) { return getDefaultState().with(FACING, context.getHorizontalPlayerFacing().getOpposite()); }
+    @Override protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        double height = definition.id().getPath().equals("mame_console") ? 16 : definition.id().getPath().equals("nes_console") ? 6.5 : 5.8;
+        return state.get(FACING).getAxis() == Direction.Axis.X ? Block.createCuboidShape(2, 0, 1, 14, height, 15) : Block.createCuboidShape(1, 0, 2, 15, height, 14);
+    }
     public ConsoleDefinition definition() { return definition; }
     public BlockEntityType<DockedConsoleBlockEntity> entityType() { return entityType; }
     public void entityType(BlockEntityType<DockedConsoleBlockEntity> value) { if (entityType != null) throw new IllegalStateException("Already registered"); entityType = value; }

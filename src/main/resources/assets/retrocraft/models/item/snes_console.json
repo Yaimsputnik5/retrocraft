@@ -1,1 +1,3 @@
-{ "parent": "retrocraft:block/snes_console" }
+{
+  "parent": "retrocraft:block/snes_console"
+}

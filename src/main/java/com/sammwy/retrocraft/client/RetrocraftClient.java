@@ -4,6 +4,13 @@ import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.server.net.Packets;
 import com.sammwy.retrocraft.server.net.HybridPackets;
 import com.sammwy.retrocraft.roms.RomCatalog;
+import com.sammwy.retrocraft.server.console.*;
+import com.sammwy.retrocraft.server.block.DockedConsoleBlock;
+import com.sammwy.retrocraft.server.item.HandheldConsoleItem;
+import net.fabricmc.fabric.api.object.builder.v1.client.model.FabricModelPredicateProviderRegistry;
+import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.*;
@@ -21,6 +28,12 @@ public final class RetrocraftClient implements ClientModInitializer {
 
     @Override public void onInitializeClient() {
         EMULATION = new HybridClient(audio);
+        for (var console : ConsoleRegistry.consoles()) {
+            if (console.type() == ConsoleType.HANDHELD)
+                FabricModelPredicateProviderRegistry.register(Registries.ITEM.get(console.id()), Identifier.of("retrocraft", "powered"),
+                        (stack, world, entity, seed) -> HandheldConsoleItem.instance(stack) == null ? 0 : 1);
+            else BlockEntityRendererFactories.register(((DockedConsoleBlock) Registries.BLOCK.get(console.id())).entityType(), DockedConsoleRenderer::new);
+        }
         ClientPlayNetworking.registerGlobalReceiver(HybridPackets.Settings.ID, (packet, context) -> EMULATION.settings(packet));
         ClientPlayNetworking.registerGlobalReceiver(HybridPackets.Lease.ID, (packet, context) -> EMULATION.lease(packet));
         ClientPlayNetworking.registerGlobalReceiver(HybridPackets.Blob.ID, (packet, context) -> EMULATION.blob(packet));

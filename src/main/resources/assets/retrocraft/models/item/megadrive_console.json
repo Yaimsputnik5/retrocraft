@@ -1,1 +1,3 @@
-{ "parent": "retrocraft:block/megadrive_console" }
+{
+  "parent": "retrocraft:block/megadrive_console"
+}

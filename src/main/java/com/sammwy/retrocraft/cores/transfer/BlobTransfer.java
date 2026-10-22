@@ -9,14 +9,14 @@ public final class BlobTransfer {
     public static final int CHUNK = 24_000, MAX_SNAPSHOT = 64 * 1024 * 1024 + 12, MAX_ROM = 64 * 1024 * 1024;
     /** Account for the bounded tick upload/download budget, including scheduling headroom. */
     public static long timeoutSeconds(long minimum, long bytes, int chunksPerTick) {
-        if (minimum < 1 || bytes < 0 || bytes > (long) MAX_ROM + MAX_SNAPSHOT || chunksPerTick < 1) throw new IllegalArgumentException("Invalid transfer budget");
+        if (minimum < 1 || bytes < 0 || bytes > (long) MAX_ROM + MAX_SNAPSHOT + 9 || chunksPerTick < 1) throw new IllegalArgumentException("Invalid transfer budget");
         long bytesPerSecond = (long) CHUNK * chunksPerTick * 20;
         return Math.max(minimum, 10 + 2 * ((bytes + bytesPerSecond - 1) / bytesPerSecond));
     }
     public enum Kind { ROM, SNAPSHOT, FINAL_SNAPSHOT, VIDEO, AUDIO }
     public record Chunk(UUID instance, long epoch, Kind kind, long sequence, int offset, int total, String hash, byte[] bytes) {}
     public static int limit(Kind kind) {
-        return switch (kind) { case ROM -> MAX_ROM; case SNAPSHOT, FINAL_SNAPSHOT -> MAX_SNAPSHOT; case VIDEO -> 900_128; case AUDIO -> 262_152; };
+        return switch (kind) { case ROM -> MAX_ROM; case SNAPSHOT, FINAL_SNAPSHOT -> MAX_SNAPSHOT + 9; case VIDEO -> 900_128; case AUDIO -> 262_152; };
     }
     public static String hash(byte[] bytes) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
@@ -34,6 +34,7 @@ public final class BlobTransfer {
             this.instance = instance; this.epoch = epoch; this.kind = kind; this.sequence = sequence; this.bytes = bytes; hash = hash(bytes);
         }
         public boolean done() { return offset == bytes.length; }
+        public boolean belongsTo(UUID id, long lease) { return instance.equals(id) && epoch == lease; }
         public Kind kind() { return kind; }
         public Chunk next() {
             if (done()) throw new IllegalStateException("Transfer finished");

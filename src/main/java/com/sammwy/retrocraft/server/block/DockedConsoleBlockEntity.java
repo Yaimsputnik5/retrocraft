@@ -3,6 +3,8 @@ package com.sammwy.retrocraft.server.block;
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.server.console.*;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.Block;
+import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
@@ -19,9 +21,18 @@ public final class DockedConsoleBlockEntity extends BlockEntity implements Conso
     public DockedConsoleBlockEntity(BlockPos pos, BlockState state) { super(((DockedConsoleBlock) state.getBlock()).entityType(), pos, state); }
     @Override public ConsoleDefinition definition() { return ((DockedConsoleBlock) getCachedState().getBlock()).definition(); }
     @Override public ItemStack cartridge() { return cartridge; }
-    @Override public void cartridge(ItemStack stack) { cartridge = stack; markDirty(); }
+    @Override public void cartridge(ItemStack stack) { cartridge = stack; changed(); }
     @Override public UUID instance() { return instance; }
-    @Override public void instance(UUID id) { instance = id; markDirty(); }
+    @Override public void instance(UUID id) { instance = id; changed(); }
+    private void changed() {
+        markDirty();
+        if (world == null || world.isClient) return;
+        BlockState before = getCachedState(), after = before.with(DockedConsoleBlock.POWERED, instance != null);
+        if (!before.equals(after)) world.setBlockState(pos, after, Block.NOTIFY_LISTENERS);
+        else world.updateListeners(pos, before, after, Block.NOTIFY_LISTENERS);
+    }
+    @Override public BlockEntityUpdateS2CPacket toUpdatePacket() { return BlockEntityUpdateS2CPacket.create(this); }
+    @Override public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup registries) { return createNbt(registries); }
     @Override public ServerWorld world() { return (ServerWorld) world; }
     @Override public Vec3d position() { return pos.toCenterPos(); }
     @Override public boolean valid() { return !isRemoved() && world instanceof ServerWorld && world.isChunkLoaded(pos) && world.getBlockEntity(pos) == this; }
@@ -37,6 +48,7 @@ public final class DockedConsoleBlockEntity extends BlockEntity implements Conso
         instance = nbt.containsUuid("InstanceID") ? nbt.getUuid("InstanceID") : null;
     }
     public static void tick(World world, BlockPos pos, BlockState state, DockedConsoleBlockEntity console) {
+        if (state.get(DockedConsoleBlock.POWERED) != (console.instance != null)) console.changed();
         if (world.getTime() % 20 == 0 && console.instance != null && Retrocraft.instances() != null) Retrocraft.instances().discover(console);
     }
 }

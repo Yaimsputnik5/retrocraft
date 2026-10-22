@@ -1,0 +1,6 @@
+{
+  "parent": "retrocraft:block/nes_console",
+  "textures": {
+    "indicator": "retrocraft:block/console/power_on"
+  }
+}

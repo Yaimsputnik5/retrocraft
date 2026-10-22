@@ -11,7 +11,7 @@ import java.util.*;
 
 public final class HybridPackets {
     public static final int DOWNLOADING = 0, READY = 1, FAILED = 2;
-    public enum Action { OFFER, PREPARED, COMMIT, RETURN_BEGIN, RETURN_REQUEST, REVOKE, HEARTBEAT, CHECKPOINT_ACK, FAILED, REQUEST_KEYFRAME }
+    public enum Action { OFFER, ROM_READY, ROM_REQUEST, PREPARED, COMMIT, RETURN_BEGIN, RETURN_REQUEST, REVOKE, HEARTBEAT, CHECKPOINT_ACK, FAILED, REQUEST_KEYFRAME }
     public record Settings(int generation, String pool, int checkpointSeconds, int streamFps, List<CoreIdentity> cores) implements CustomPayload {
         public static final Id<Settings> ID = new Id<>(Identifier.of("retrocraft", "core_settings"));
         public static final PacketCodec<RegistryByteBuf, Settings> CODEC = new PacketCodec<>() {

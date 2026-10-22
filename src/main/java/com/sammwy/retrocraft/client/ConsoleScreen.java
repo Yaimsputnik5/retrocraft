@@ -29,24 +29,25 @@ public final class ConsoleScreen extends Screen {
     }
 
     void update(Packets.Ui packet) {
-        controller = packet.controller();
-        if (canManage != packet.canManage()) { canManage = packet.canManage(); clearAndInit(); }
+        boolean changed = controller != packet.controller() || canManage != packet.canManage();
+        controller = packet.controller(); canManage = packet.canManage();
+        if (changed) clearAndInit();
     }
 
     @Override protected void init() {
         int bottom = height - 28;
-        addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.close"), b -> close()).dimensions(width / 2 - 158, bottom, 76, 20).build());
-        ButtonWidget inventory = addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.inventory"), b -> {
-            ClientPlayNetworking.send(Packets.Request.of(Packets.OPEN_INVENTORY, instance));
-        }).dimensions(width / 2 - 78, bottom, 76, 20).build());
-        inventory.active = canManage;
-        ButtonWidget eject = addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.eject"), b -> {
-            ClientPlayNetworking.send(Packets.Request.of(Packets.EJECT, instance));
-        }).dimensions(width / 2 + 2, bottom, 76, 20).build());
-        eject.active = canManage;
-        if (canManage) addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.power_off"), b -> {
-            ClientPlayNetworking.send(Packets.Request.of(Packets.POWER_OFF, instance));
-        }).dimensions(width / 2 + 82, bottom, 76, 20).build());
+        int count = 1 + (controller ? 0 : 1) + (canManage ? 2 : 0);
+        int x = (width - (count * 78 - 2)) / 2;
+        addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.close"), b -> close()).dimensions(x, bottom, 76, 20).build());
+        x += 78;
+        if (!controller) {
+            addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.take_control"), b -> ClientPlayNetworking.send(Packets.Request.of(Packets.CLAIM_INPUT, instance))).dimensions(x, bottom, 76, 20).build());
+            x += 78;
+        }
+        if (canManage) {
+            addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.eject"), b -> ClientPlayNetworking.send(Packets.Request.of(Packets.EJECT, instance))).dimensions(x, bottom, 76, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.power_off"), b -> ClientPlayNetworking.send(Packets.Request.of(Packets.POWER_OFF, instance))).dimensions(x + 78, bottom, 76, 20).build());
+        }
     }
 
     void video(FrameCodec.Encoded packet) {

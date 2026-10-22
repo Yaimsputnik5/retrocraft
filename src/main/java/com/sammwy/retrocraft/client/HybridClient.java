@@ -60,6 +60,8 @@ public final class HybridClient {
         if (!packet.pool().equals(KnownCores.POOL) || packet.checkpointSeconds() < 1 || packet.checkpointSeconds() > 30 || packet.streamFps() < 1 || packet.streamFps() > 20) return;
         settingsGeneration = packet.generation(); checkpointSeconds = packet.checkpointSeconds(); streamFps = packet.streamFps();
         int generation = settingsGeneration; UUID token = connection;
+        Map<String, CoreManager.Prepared> previous = Map.copyOf(prepared);
+        long started = System.nanoTime();
         ClientPlayNetworking.send(new HybridPackets.Status(generation, HybridPackets.DOWNLOADING, List.of()));
         Thread.ofVirtual().name("retrocraft-client-cores").start(() -> {
             try {
@@ -69,13 +71,16 @@ public final class HybridClient {
                 Map<String, CoreManager.Prepared> ready = new HashMap<>();
                 for (CoreIdentity requested : packet.cores()) {
                     KnownCores.get(requested.id()); // no remote URL, path or arbitrary native code identifier
-                    var core = manager.prepare(requested.id());
+                    var cached = previous.get(requested.id());
+                    var core = cached != null && requested.compatible(cached.identity()) && Files.isRegularFile(cached.path())
+                            && InstanceStore.sha256(cached.path()).equals(cached.identity().sha256()) ? cached : manager.prepare(requested.id());
                     if (!requested.compatible(core.identity())) throw new IOException("Core build differs from server: " + requested.id());
                     if (ready.put(requested.id(), core) != null) throw new IOException("Duplicate core in settings");
                 }
                 callbacks.add(() -> {
                     if (!connection.equals(token) || generation != settingsGeneration) return;
                     prepared.clear(); prepared.putAll(ready); workerJar = jar;
+                    Retrocraft.LOG.info("Client cores ready in {} ms", (System.nanoTime() - started) / 1_000_000);
                     ClientPlayNetworking.send(new HybridPackets.Status(generation, HybridPackets.READY, ready.values().stream().map(CoreManager.Prepared::identity).toList()));
                 });
             } catch (Exception ex) {
@@ -93,7 +98,19 @@ public final class HybridClient {
             if (local != null) { if (local.offer.epoch() >= packet.epoch()) return; local.close(); }
             // The server grants at most one input lease per player.
             for (Local other : List.copyOf(locals.values())) if (!other.offer.instance().equals(packet.instance())) release(other.offer.instance());
-            locals.put(packet.instance(), new Local(packet));
+            Local offered = new Local(packet); locals.put(packet.instance(), offered);
+            UUID token = connection;
+            Thread.ofVirtual().name("retrocraft-rom-cache-check").start(() -> {
+                try {
+                    Path cached = RomCache.find(RetrocraftConfig.clientCache().resolve("roms"), packet.gameId(), packet.romName());
+                    callbacks.add(() -> {
+                        if (!current(offered, token) || offered.phase != Phase.RECEIVING) return;
+                        offered.rom = cached;
+                        signal(packet, cached == null ? HybridPackets.Action.ROM_REQUEST : HybridPackets.Action.ROM_READY, 0);
+                        startIfReady(offered, token);
+                    });
+                } catch (Exception ex) { callbacks.add(() -> fail(offered, token, ex)); }
+            });
             return;
         }
         if (local == null || local.offer.epoch() != packet.epoch()) return;
@@ -125,13 +142,13 @@ public final class HybridClient {
                     Path result;
                     if (chunk.kind() == BlobTransfer.Kind.ROM) result = RomCache.acceptNamed(RetrocraftConfig.clientCache().resolve("roms"), local.offer.gameId(), local.offer.romName(), bytes);
                     else {
-                        SaveStates.validate(bytes);
+                        byte[] state = SnapshotWire.unpack(bytes); SaveStates.validate(state);
                         result = RetrocraftConfig.clientCache().resolve("sessions").resolve(token.toString()).resolve(chunk.instance().toString()).resolve(Long.toString(chunk.epoch())).resolve("snapshot.bin");
-                        SaveStates.writeAtomic(result, bytes);
+                        SaveStates.writeAtomic(result, state);
                     }
                     callbacks.add(() -> {
                         if (!current(local, token)) return;
-                        if (chunk.kind() == BlobTransfer.Kind.ROM) local.rom = result; else local.snapshot = result;
+                        if (chunk.kind() == BlobTransfer.Kind.ROM) { local.rom = result; signal(local.offer, HybridPackets.Action.ROM_READY, 0); } else local.snapshot = result;
                         startIfReady(local, token);
                     });
                 } catch (Exception ex) { callbacks.add(() -> fail(local, token, ex)); }
@@ -154,10 +171,13 @@ public final class HybridClient {
             public void prepared() { callbacks.add(() -> { if (current(local, token) && local.phase == Phase.RECEIVING) { local.phase = Phase.PREPARED; signal(local.offer, HybridPackets.Action.PREPARED, 0); } }); }
             public void output(WorkerProcess.Output output, int rate) { local.output(output, rate); }
             public void checkpoint(byte[] bytes, boolean last) {
-                callbacks.add(() -> {
-                    if (!current(local, token)) return;
-                    local.states.add(new BlobTransfer.Sender(local.offer.instance(), local.offer.epoch(), last ? BlobTransfer.Kind.FINAL_SNAPSHOT : BlobTransfer.Kind.SNAPSHOT, ++local.checkpointSequence, bytes));
-                });
+                try {
+                    byte[] packed = SnapshotWire.pack(bytes);
+                    callbacks.add(() -> {
+                        if (!current(local, token)) return;
+                        local.states.add(new BlobTransfer.Sender(local.offer.instance(), local.offer.epoch(), last ? BlobTransfer.Kind.FINAL_SNAPSHOT : BlobTransfer.Kind.SNAPSHOT, ++local.checkpointSequence, packed));
+                    });
+                } catch (IOException ex) { failed(ex); }
             }
             public void failed(Throwable failure) { callbacks.add(() -> fail(local, token, failure)); }
         });
@@ -187,8 +207,7 @@ public final class HybridClient {
         long now = System.nanoTime();
         for (Local local : List.copyOf(locals.values())) {
             if (local.phase == Phase.ACTIVE || local.phase == Phase.PREPARED || local.phase == Phase.RECEIVING) {
-                boolean visible = client.currentScreen instanceof ConsoleScreen screen && screen.instance.equals(local.offer.instance())
-                        || local.offer.docked() && client.currentScreen instanceof ConsoleInventoryScreen consoleScreen && consoleScreen.getScreenHandler().controlling();
+                boolean visible = client.currentScreen instanceof ConsoleScreen screen && screen.instance.equals(local.offer.instance());
                 if (!visible) { release(local.offer.instance()); continue; }
             }
             local.input = local.phase == Phase.ACTIVE ? InputControls.buttons(client) : 0;

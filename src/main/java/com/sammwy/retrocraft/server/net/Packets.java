@@ -11,8 +11,7 @@ import net.minecraft.util.Identifier;
 import java.util.*;
 
 public final class Packets {
-    public static final UUID NONE = new UUID(0, 0);
-    public static final int CLOSE = 1, INPUT = 2, POWER_OFF = 3, RESYNC = 4, OPEN_INVENTORY = 5, CLAIM_INPUT = 6, AUDIO_ACK = 7, EJECT = 8;
+    public static final int CLOSE = 1, INPUT = 2, POWER_OFF = 3, RESYNC = 4, CLAIM_INPUT = 6, AUDIO_ACK = 7, EJECT = 8;
     public static final int PLAY = 1, STOP = 2, ROLE = 3;
 
     public record Request(int action, UUID instance, int buttons, long acknowledgedSequence) implements CustomPayload {

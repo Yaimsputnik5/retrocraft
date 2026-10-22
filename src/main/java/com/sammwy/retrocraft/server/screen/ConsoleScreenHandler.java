@@ -8,10 +8,9 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.screen.*;
 import net.minecraft.screen.slot.*;
 import net.minecraft.server.network.ServerPlayerEntity;
-import java.util.UUID;
 
 public final class ConsoleScreenHandler extends ScreenHandler {
-    public static final int POWER = 0, EJECT = 1, PLAY = 2, CONTROL = 3;
+    public static final int POWER = 0, EJECT = 1;
     private final ConsoleDefinition definition;
     private final ConsoleHost host;
     private final Inventory cartridge;
@@ -19,13 +18,12 @@ public final class ConsoleScreenHandler extends ScreenHandler {
     private final int lockedSlot;
 
     public ConsoleScreenHandler(int syncId, PlayerInventory inventory, ConsoleOpenData data) {
-        this(syncId, inventory, ConsoleRegistry.get(data.console()), null, new SimpleInventory(1), new ArrayPropertyDelegate(2), data.lockedSlot());
+        this(syncId, inventory, ConsoleRegistry.get(data.console()), null, new SimpleInventory(1), new ArrayPropertyDelegate(1), data.lockedSlot());
     }
     public ConsoleScreenHandler(int syncId, PlayerInventory inventory, ConsoleHost host, int lockedSlot) {
         this(syncId, inventory, host.definition(), host, new HostInventory(host), new PropertyDelegate() {
-            public int size() { return 2; }
-            public int get(int index) { return index == 0 ? (host.instance() == null ? 0 : 1)
-                    : (Retrocraft.instances() != null && Retrocraft.instances().isInputSource(inventory.player.getUuid(), host.instance()) ? 1 : 0); }
+            public int size() { return 1; }
+            public int get(int index) { return host.instance() == null ? 0 : 1; }
             public void set(int index, int value) { }
         }, lockedSlot);
     }
@@ -39,8 +37,8 @@ public final class ConsoleScreenHandler extends ScreenHandler {
             @Override public boolean canTakeItems(PlayerEntity player) { return !powered(); }
             @Override public int getMaxItemCount() { return 1; }
         });
-        for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) addPlayerSlot(inventory, col + row * 9 + 9, 8 + col * 18, 116 + row * 18);
-        for (int col = 0; col < 9; col++) addPlayerSlot(inventory, col, 8 + col * 18, 174);
+        for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) addPlayerSlot(inventory, col + row * 9 + 9, 8 + col * 18, 94 + row * 18);
+        for (int col = 0; col < 9; col++) addPlayerSlot(inventory, col, 8 + col * 18, 152);
     }
     private void addPlayerSlot(PlayerInventory inventory, int index, int x, int y) {
         addSlot(new Slot(inventory, index, x, y) {
@@ -51,26 +49,25 @@ public final class ConsoleScreenHandler extends ScreenHandler {
     public ConsoleDefinition definition() { return definition; }
     public ConsoleHost host() { return host; }
     public boolean powered() { return properties.get(0) != 0; }
-    public boolean controlling() { return properties.get(1) != 0; }
     @Override public boolean canUse(PlayerEntity player) { return host == null || player instanceof ServerPlayerEntity serverPlayer && host.canAccess(serverPlayer); }
 
     @Override public boolean onButtonClick(PlayerEntity user, int id) {
         if (!(user instanceof ServerPlayerEntity player) || host == null || !canUse(player) || Retrocraft.instances() == null) return false;
         var manager = Retrocraft.instances();
         switch (id) {
-            case POWER -> { if (powered()) manager.powerOff(host); else manager.powerOn(host, player); }
+            case POWER -> {
+                if (powered()) manager.powerOff(host);
+                else {
+                    manager.powerOn(host, player);
+                    if (host.instance() != null) { ConsoleMenus.open(player, host); return true; }
+                }
+            }
             case EJECT -> {
                 if (powered()) manager.powerOff(host);
                 ItemStack ejected = cartridge.removeStack(0);
                 cartridge.markDirty();
                 if (!player.getInventory().insertStack(ejected)) player.dropItem(ejected, false);
             }
-            case PLAY -> {
-                if (definition.type() != ConsoleType.HANDHELD || !powered()) return false;
-                player.closeHandledScreen();
-                manager.watchVideo(player, host);
-            }
-            case CONTROL -> { if (powered()) manager.claimInput(player, host.instance()); }
             default -> { return false; }
         }
         sendContentUpdates();
