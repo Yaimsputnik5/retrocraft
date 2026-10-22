@@ -6,6 +6,16 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 class OwnershipTest {
+    @Test void transferBudgetCanExtendPreparationButCannotReviveAnExpiredOrStaleLease() {
+        var ownership = new com.sammwy.retrocraft.cores.ownership.Ownership();
+        var player = java.util.UUID.randomUUID(); long epoch = ownership.offer(player, 0, 10);
+        assertFalse(ownership.preparationTime(java.util.UUID.randomUUID(), epoch, 5, 100));
+        assertTrue(ownership.preparationTime(player, epoch, 5, 100));
+        assertTrue(ownership.commit(player, epoch, 50, 10));
+        ownership.revoke(); epoch = ownership.offer(player, 60, 10);
+        assertFalse(ownership.preparationTime(player, epoch, 71, 100));
+        assertFalse(ownership.preparationTime(player, epoch - 1, 65, 100));
+    }
     @Test void prepareBarrierNeverGrantsBothSidesPermissionToAdvance() {
         var state = new Ownership(); UUID player = UUID.randomUUID();
         assertTrue(state.serverMayRun());

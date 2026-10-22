@@ -9,6 +9,14 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TransferTest {
+    @Test void largeRomAndSnapshotDeadlinesCoverTheActualChunkBudget() {
+        long outboundBytes = (long) BlobTransfer.MAX_ROM + BlobTransfer.MAX_SNAPSHOT;
+        long duration = BlobTransfer.timeoutSeconds(30, outboundBytes, 4);
+        assertTrue(duration > outboundBytes / (BlobTransfer.CHUNK * 4L * 20) + 10);
+        assertTrue(BlobTransfer.timeoutSeconds(11, 32 * 1024 * 1024, 2) > 60);
+        assertEquals(30, BlobTransfer.timeoutSeconds(30, 16_000, 4));
+        assertThrows(IllegalArgumentException.class, () -> BlobTransfer.timeoutSeconds(30, Long.MAX_VALUE, 4));
+    }
     @Test void snapshotsAreReleasedOnlyAfterEveryBoundedChunkAndChecksumMatch() throws Exception {
         byte[] data = new byte[200_000]; new Random(123).nextBytes(data);
         var sender = new BlobTransfer.Sender(UUID.randomUUID(), 9, BlobTransfer.Kind.SNAPSHOT, 7, data);

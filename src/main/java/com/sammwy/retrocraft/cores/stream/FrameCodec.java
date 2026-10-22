@@ -105,7 +105,7 @@ public final class FrameCodec {
     }
 
     private static void checkSize(int width, int height) {
-        if (width < 1 || height < 1 || width > MAX_WIDTH || height > MAX_HEIGHT) throw new IllegalArgumentException("Unsupported NES frame size");
+        if (width < 1 || height < 1 || width > MAX_WIDTH || height > MAX_HEIGHT) throw new IllegalArgumentException("Unsupported frame size");
     }
     private FrameCodec() {}
 }

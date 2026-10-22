@@ -28,6 +28,12 @@ class CoreManagerTest {
         var core = manager.prepare("fceumm");
         assertTrue(Files.size(core.path()) > 100_000);
         assertFalse(core.identity().version().isEmpty());
+        for (String id : KnownCores.ids()) {
+            var available = manager.prepare(id);
+            assertEquals(id, available.identity().id());
+            assertFalse(available.identity().name().isBlank());
+            System.out.println("Verified official core " + id + ": " + available.identity().name() + " " + available.identity().version());
+        }
         assertEquals(core.identity(), manager.prepare("fceumm").identity());
         Files.write(core.path(), new byte[]{1, 2, 3});
         assertThrows(java.io.IOException.class, () -> manager.prepare("fceumm"));

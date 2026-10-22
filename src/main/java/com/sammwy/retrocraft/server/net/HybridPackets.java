@@ -28,15 +28,15 @@ public final class HybridPackets {
         };
         public Id<? extends CustomPayload> getId() { return ID; }
     }
-    public record Lease(UUID instance, long epoch, Action action, String core, String gameId, String title, boolean docked, long sequence) implements CustomPayload {
+    public record Lease(UUID instance, long epoch, Action action, String core, String gameId, String title, String romName, boolean docked, long sequence) implements CustomPayload {
         public static final Id<Lease> ID = new Id<>(Identifier.of("retrocraft", "ownership"));
         public static final PacketCodec<RegistryByteBuf, Lease> CODEC = new PacketCodec<>() {
             public Lease decode(RegistryByteBuf b) {
-                return new Lease(b.readUuid(), b.readVarLong(), enumValue(Action.values(), b.readVarInt()), b.readString(64), b.readString(64), b.readString(200), b.readBoolean(), b.readVarLong());
+                return new Lease(b.readUuid(), b.readVarLong(), enumValue(Action.values(), b.readVarInt()), b.readString(64), b.readString(64), b.readString(200), b.readString(140), b.readBoolean(), b.readVarLong());
             }
-            public void encode(RegistryByteBuf b, Lease p) { b.writeUuid(p.instance); b.writeVarLong(p.epoch); b.writeVarInt(p.action.ordinal()); b.writeString(p.core, 64); b.writeString(p.gameId, 64); b.writeString(p.title, 200); b.writeBoolean(p.docked); b.writeVarLong(p.sequence); }
+            public void encode(RegistryByteBuf b, Lease p) { b.writeUuid(p.instance); b.writeVarLong(p.epoch); b.writeVarInt(p.action.ordinal()); b.writeString(p.core, 64); b.writeString(p.gameId, 64); b.writeString(p.title, 200); b.writeString(p.romName, 140); b.writeBoolean(p.docked); b.writeVarLong(p.sequence); }
         };
-        public static Lease signal(UUID id, long epoch, Action action, long sequence) { return new Lease(id, epoch, action, "", "", "", false, sequence); }
+        public static Lease signal(UUID id, long epoch, Action action, long sequence) { return new Lease(id, epoch, action, "", "", "", "", false, sequence); }
         public Id<? extends CustomPayload> getId() { return ID; }
     }
     public record Blob(BlobTransfer.Chunk chunk) implements CustomPayload {

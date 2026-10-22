@@ -6,18 +6,17 @@ import net.minecraft.item.*;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
-import java.util.Set;
+import com.sammwy.retrocraft.roms.discovery.DiscoveryStrategy;
 
 /** A registered cartridge item fixes the console family; NBT identifies only the ROM. */
 public final class CartridgeItem extends Item {
     private final Identifier id;
-    private final Set<String> extensions;
-    public CartridgeItem(Identifier id, Set<String> extensions) {
-        super(new Settings().maxCount(1)); this.id = id; this.extensions = Set.copyOf(extensions);
+    private final DiscoveryStrategy discovery;
+    public CartridgeItem(Identifier id, DiscoveryStrategy discovery) {
+        super(new Settings().maxCount(1)); this.id = id; this.discovery = discovery;
     }
     public Identifier id() { return id; }
-    public Set<String> extensions() { return extensions; }
-    public String folder() { return id.getNamespace().equals("retrocraft") ? id.getPath() : id.getNamespace() + "/" + id.getPath(); }
+    public DiscoveryStrategy discovery() { return discovery; }
     public ItemStack game(String hash, String name) {
         if (!hash.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("GameID must be SHA-256");
         ItemStack stack = new ItemStack(this);

@@ -6,7 +6,7 @@ import java.io.*;
 import java.nio.file.*;
 
 public final class RetrocraftConfig {
-    public java.util.Map<String, String> cores = new java.util.HashMap<>(java.util.Map.of("retrocraft:nes", "fceumm", "retrocraft:snes", "snes9x"));
+    public java.util.Map<String, String> cores = new java.util.HashMap<>(com.sammwy.retrocraft.cores.KnownCores.defaultMappings());
     public int checkpointIntervalSeconds = 2;
     public int transferTimeoutSeconds = 30;
     public int ownerTimeoutSeconds = 8;
@@ -16,10 +16,13 @@ public final class RetrocraftConfig {
     public int autosaveIntervalSeconds = 30;
     public int maxActiveInstances = 8;
     public int watcherTimeoutSeconds = 15;
-    public int maxRomSizeMiB = 16;
+    public int maxRomSizeMiB = 64;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     public static Path root() { return FabricLoader.getInstance().getConfigDir().resolve("retrocraft"); }
+    public static Path cacheRoot() { return FabricLoader.getInstance().getGameDir().resolve("cache/retrocraft"); }
+    public static Path clientCache() { return cacheRoot().resolve("client"); }
+    public static Path serverCache() { return cacheRoot().resolve("server"); }
     public String coreId(String cartridge) {
         String configured = cores.get(cartridge);
         // File paths from the old prototype cannot become client download instructions.
@@ -29,7 +32,7 @@ public final class RetrocraftConfig {
 
     public static RetrocraftConfig load() throws IOException {
         Files.createDirectories(root().resolve("roms"));
-        Files.createDirectories(root().resolve("cores"));
+
         Path file = root().resolve("config.json");
         RetrocraftConfig config;
         if (Files.exists(file)) {

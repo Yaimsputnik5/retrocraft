@@ -30,16 +30,16 @@ public final class RetrocraftClient implements ClientModInitializer {
             var client = context.client();
             switch (packet.mode()) {
                 case Packets.PLAY -> {
-                    if (client.currentScreen instanceof NesScreen screen && screen.instance.equals(packet.instance())) screen.update(packet);
-                    else client.setScreen(new NesScreen(packet));
+                    if (client.currentScreen instanceof ConsoleScreen screen && screen.instance.equals(packet.instance())) screen.update(packet);
+                    else client.setScreen(new ConsoleScreen(packet));
                 }
-                case Packets.ROLE -> { if (client.currentScreen instanceof NesScreen screen && screen.instance.equals(packet.instance())) screen.update(packet); }
-                case Packets.STOP -> { if (client.currentScreen instanceof NesScreen screen && screen.instance.equals(packet.instance())) screen.serverClosed(); }
+                case Packets.ROLE -> { if (client.currentScreen instanceof ConsoleScreen screen && screen.instance.equals(packet.instance())) screen.update(packet); }
+                case Packets.STOP -> { if (client.currentScreen instanceof ConsoleScreen screen && screen.instance.equals(packet.instance())) screen.serverClosed(); }
                 default -> { }
             }
         });
         ClientPlayNetworking.registerGlobalReceiver(Packets.Video.ID, (packet, context) -> {
-            if (!EMULATION.owns(packet.instance()) && context.client().currentScreen instanceof NesScreen screen && screen.instance.equals(packet.instance())) screen.video(packet.frame());
+            if (!EMULATION.owns(packet.instance()) && context.client().currentScreen instanceof ConsoleScreen screen && screen.instance.equals(packet.instance())) screen.video(packet.frame());
         });
         ClientPlayNetworking.registerGlobalReceiver(Packets.Audio.ID, (packet, context) -> { if (!EMULATION.owns(packet.instance())) audio.accept(context.client(), packet); });
         ClientPlayNetworking.registerGlobalReceiver(Packets.AudioStop.ID, (packet, context) -> audio.stop(packet.instance()));
@@ -62,7 +62,7 @@ public final class RetrocraftClient implements ClientModInitializer {
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             EMULATION.disconnect(); audio.close(); RomCatalog.clientEntries(List.of()); pendingCatalog.clear(); catalogDirty = true;
-            if (client.currentScreen instanceof NesScreen screen) screen.serverClosed();
+            if (client.currentScreen instanceof ConsoleScreen screen) screen.serverClosed();
         });
     }
 }

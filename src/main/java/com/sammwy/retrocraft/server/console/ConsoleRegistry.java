@@ -9,16 +9,16 @@ import net.minecraft.item.*;
 import net.minecraft.registry.*;
 import net.minecraft.util.Identifier;
 import java.util.*;
+import com.sammwy.retrocraft.roms.discovery.DiscoveryStrategy;
 
 public final class ConsoleRegistry {
     private static final Map<Identifier, CartridgeItem> CARTRIDGES = new LinkedHashMap<>();
     private static final Map<Identifier, ConsoleDefinition> CONSOLES = new LinkedHashMap<>();
 
-    public static CartridgeItem registerCartridge(Identifier id, Set<String> extensions) {
-        Objects.requireNonNull(id); Objects.requireNonNull(extensions);
-        if (CARTRIDGES.containsKey(id) || CONSOLES.containsKey(id) || extensions.isEmpty()
-                || extensions.stream().anyMatch(extension -> !extension.matches("[a-z0-9]+"))) throw new IllegalArgumentException("Duplicate/invalid cartridge " + id);
-        CartridgeItem item = Registry.register(Registries.ITEM, id, new CartridgeItem(id, extensions));
+    public static CartridgeItem registerCartridge(Identifier id, DiscoveryStrategy discovery) {
+        Objects.requireNonNull(id); Objects.requireNonNull(discovery);
+        if (CARTRIDGES.containsKey(id) || CONSOLES.containsKey(id)) throw new IllegalArgumentException("Duplicate/invalid cartridge " + id);
+        CartridgeItem item = Registry.register(Registries.ITEM, id, new CartridgeItem(id, discovery));
         CARTRIDGES.put(id, item);
         return item;
     }

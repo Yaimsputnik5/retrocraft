@@ -2,30 +2,31 @@ package com.sammwy.retrocraft.roms;
 
 import com.sammwy.retrocraft.server.console.ConsoleRegistry;
 import com.sammwy.retrocraft.server.item.CartridgeItem;
+import com.sammwy.retrocraft.roms.discovery.DiscoveryStrategy;
 import net.minecraft.util.Identifier;
 import java.io.IOException;
-import java.nio.file.*;
+import java.nio.file.Path;
 import java.util.*;
+import java.util.function.Consumer;
 
 public final class RomIndex {
-    public record Game(CartridgeItem cartridge, String id, String name, Path path) {
+    public record Game(CartridgeItem cartridge, String id, String name, String filename, RomSource source, Path root, Path cache, long maxBytes) {
         public RomCatalog.Entry catalogEntry() { return new RomCatalog.Entry(cartridge.id().toString(), id, name); }
+        public Path materialize() throws IOException { return source.materialize(root, cache, id, filename, maxBytes); }
     }
-    private Map<String, Game> games = Map.of();
-    public void scan(Path root, long maxBytes) throws IOException {
-        Map<String, Game> scanned = new LinkedHashMap<>();
-        for (CartridgeItem cartridge : ConsoleRegistry.cartridges()) {
-            Path directory = root.resolve(cartridge.folder());
-            Files.createDirectories(directory);
-            RomLibrary library = new RomLibrary(directory, maxBytes, cartridge.extensions());
-            for (String file : library.list()) {
-                Path path = library.resolve(file);
-                String hash = InstanceStore.sha256(path);
-                String name = file.substring(0, file.lastIndexOf('.'));
-                scanned.putIfAbsent(key(cartridge.id(), hash), new Game(cartridge, hash, name, path));
-            }
+    private final Map<String, Game> games;
+    private RomIndex(Map<String, Game> games) { this.games = Collections.unmodifiableMap(games); }
+    public static RomIndex load(Path root, Path cache, long maxBytes, boolean forceScan, Consumer<String> warning) throws IOException {
+        Map<String, DiscoveryStrategy> formats = new LinkedHashMap<>();
+        for (CartridgeItem cartridge : ConsoleRegistry.cartridges()) formats.put(cartridge.id().toString(), cartridge.discovery());
+        var repository = new RomRepository(root, cache, formats, maxBytes);
+        var found = forceScan ? repository.scan(warning) : repository.initialize(warning);
+        Map<String, Game> games = new LinkedHashMap<>();
+        for (var game : found) {
+            var cartridge = ConsoleRegistry.cartridge(Identifier.of(game.cartridge()));
+            games.putIfAbsent(key(cartridge.id(), game.id()), new Game(cartridge, game.id(), game.name(), game.filename(), game.source(), root, cache.resolve("roms"), maxBytes));
         }
-        games = Collections.unmodifiableMap(scanned);
+        return new RomIndex(games);
     }
     public Game find(CartridgeItem cartridge, String hash) { return games.get(key(cartridge.id(), hash)); }
     public Collection<Game> games() { return games.values(); }

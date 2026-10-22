@@ -63,8 +63,9 @@ public final class HybridClient {
         ClientPlayNetworking.send(new HybridPackets.Status(generation, HybridPackets.DOWNLOADING, List.of()));
         Thread.ofVirtual().name("retrocraft-client-cores").start(() -> {
             try {
-                Path jar = WorkerRuntime.extract(RetrocraftConfig.root().resolve("runtime"));
-                CoreManager manager = new CoreManager(RetrocraftConfig.root().resolve("cores/managed"), jar);
+                CacheMigration.prepare(RetrocraftConfig.root(), RetrocraftConfig.cacheRoot(), true);
+                Path jar = WorkerRuntime.extract(RetrocraftConfig.clientCache().resolve("runtime"));
+                CoreManager manager = new CoreManager(RetrocraftConfig.clientCache().resolve("cores"), jar);
                 Map<String, CoreManager.Prepared> ready = new HashMap<>();
                 for (CoreIdentity requested : packet.cores()) {
                     KnownCores.get(requested.id()); // no remote URL, path or arbitrary native code identifier
@@ -88,7 +89,7 @@ public final class HybridClient {
         Local local = locals.get(packet.instance());
         if (packet.action() == HybridPackets.Action.OFFER) {
             if (local == null && locals.size() >= 2) { signal(packet, HybridPackets.Action.FAILED, 0); return; }
-            if (!prepared.containsKey(packet.core()) || workerJar == null || !packet.gameId().matches("[0-9a-f]{64}")) { signal(packet, HybridPackets.Action.FAILED, 0); return; }
+            if (!prepared.containsKey(packet.core()) || workerJar == null || !packet.gameId().matches("[0-9a-f]{64}") || !RomCache.safeFilename(packet.romName())) { signal(packet, HybridPackets.Action.FAILED, 0); return; }
             if (local != null) { if (local.offer.epoch() >= packet.epoch()) return; local.close(); }
             // The server grants at most one input lease per player.
             for (Local other : List.copyOf(locals.values())) if (!other.offer.instance().equals(packet.instance())) release(other.offer.instance());
@@ -122,10 +123,10 @@ public final class HybridClient {
             Thread.ofVirtual().name("retrocraft-client-assets").start(() -> {
                 try {
                     Path result;
-                    if (chunk.kind() == BlobTransfer.Kind.ROM) result = RomCache.accept(RetrocraftConfig.root().resolve("roms/cache"), local.offer.gameId(), local.offer.core().equals("fceumm") ? "nes" : "sfc", bytes);
+                    if (chunk.kind() == BlobTransfer.Kind.ROM) result = RomCache.acceptNamed(RetrocraftConfig.clientCache().resolve("roms"), local.offer.gameId(), local.offer.romName(), bytes);
                     else {
                         SaveStates.validate(bytes);
-                        result = RetrocraftConfig.root().resolve("client-sessions").resolve(token.toString()).resolve(chunk.instance().toString()).resolve(Long.toString(chunk.epoch())).resolve("snapshot.bin");
+                        result = RetrocraftConfig.clientCache().resolve("sessions").resolve(token.toString()).resolve(chunk.instance().toString()).resolve(Long.toString(chunk.epoch())).resolve("snapshot.bin");
                         SaveStates.writeAtomic(result, bytes);
                     }
                     callbacks.add(() -> {
@@ -186,7 +187,7 @@ public final class HybridClient {
         long now = System.nanoTime();
         for (Local local : List.copyOf(locals.values())) {
             if (local.phase == Phase.ACTIVE || local.phase == Phase.PREPARED || local.phase == Phase.RECEIVING) {
-                boolean visible = client.currentScreen instanceof NesScreen screen && screen.instance.equals(local.offer.instance())
+                boolean visible = client.currentScreen instanceof ConsoleScreen screen && screen.instance.equals(local.offer.instance())
                         || local.offer.docked() && client.currentScreen instanceof ConsoleInventoryScreen consoleScreen && consoleScreen.getScreenHandler().controlling();
                 if (!visible) { release(local.offer.instance()); continue; }
             }

@@ -30,7 +30,8 @@ import java.util.concurrent.locks.LockSupport;
 public final class InstanceManager implements AutoCloseable {
     private final MinecraftServer server;
     private final RetrocraftConfig config;
-    private final RomIndex roms = new RomIndex();
+    private RomIndex roms;
+    private boolean scanning;
     private final InstanceStore store;
     private final Path workerJar;
     private final CoreManager cores;
@@ -39,6 +40,8 @@ public final class InstanceManager implements AutoCloseable {
     private final Set<UUID> readyClients = new HashSet<>();
     private final Map<UUID, ArrayDeque<BlobTransfer.Sender>> outbound = new HashMap<>();
     private Set<String> requiredCores = Set.of();
+    private final Set<String> preparingCores = new HashSet<>();
+    private List<RomCatalog.Entry> publishedCatalog = List.of();
     private int coreGeneration;
     private final ConcurrentLinkedQueue<Runnable> callbacks = new ConcurrentLinkedQueue<>();
     private final Map<UUID, Session> sessions = new HashMap<>();
@@ -102,6 +105,7 @@ public final class InstanceManager implements AutoCloseable {
         boolean offerSent;
         UUID failedOffload;
         long lastClientVideo, lastClientAudio, lastCheckpointAt;
+        long checkpointBytes;
         long demandEpoch = -1;
         boolean relayAudio, relayVideo;
         float ownerGain = -1;
@@ -115,14 +119,37 @@ public final class InstanceManager implements AutoCloseable {
     public InstanceManager(MinecraftServer server, RetrocraftConfig config) throws IOException {
         this.server = server; this.config = config;
         store = new InstanceStore(server.getSavePath(WorldSavePath.ROOT).resolve("retrocraft/instances"));
-        workerJar = WorkerRuntime.extract(RetrocraftConfig.root().resolve("runtime"));
-        cores = new CoreManager(RetrocraftConfig.root().resolve("cores/managed"), workerJar);
-        reloadLibrary();
+        CacheMigration.prepare(RetrocraftConfig.root(), RetrocraftConfig.cacheRoot(), false);
+        workerJar = WorkerRuntime.extract(RetrocraftConfig.serverCache().resolve("runtime"));
+        cores = new CoreManager(RetrocraftConfig.serverCache().resolve("cores"), workerJar);
+        roms = loadLibrary(false);
+        libraryUpdated();
         Retrocraft.LOG.info("Retrocraft ready: {} consoles, {} ROMs", ConsoleRegistry.consoles().size(), roms.catalog().size());
     }
 
-    public void reloadLibrary() throws IOException {
-        roms.scan(RetrocraftConfig.root().resolve("roms"), config.maxRomSizeMiB * 1024L * 1024);
+    private RomIndex loadLibrary(boolean force) throws IOException {
+        return RomIndex.load(RetrocraftConfig.root().resolve("roms"), RetrocraftConfig.serverCache(), config.maxRomSizeMiB * 1024L * 1024, force,
+                warning -> Retrocraft.LOG.warn("ROM scan: {}", warning));
+    }
+    public boolean reloadLibrary(net.minecraft.server.command.ServerCommandSource source) {
+        if (scanning || stopping) return false;
+        scanning = true;
+        source.sendFeedback(() -> Text.translatable("message.retrocraft.scan_started"), false);
+        Thread.ofVirtual().name("retrocraft-rom-scan").start(() -> {
+            try {
+                RomIndex result = loadLibrary(true);
+                callbacks.add(() -> {
+                    scanning = false; roms = result; libraryUpdated();
+                    source.sendFeedback(() -> Text.translatable("message.retrocraft.reloaded", roms.games().size()), false);
+                });
+            } catch (Exception ex) {
+                Retrocraft.LOG.error("Cannot scan ROM catalog", ex);
+                callbacks.add(() -> { scanning = false; source.sendError(Text.translatable("message.retrocraft.scan_failed")); });
+            }
+        });
+        return true;
+    }
+    private void libraryUpdated() {
         for (Session session : sessions.values()) {
             RomIndex.Game replacement = roms.find(session.game.cartridge(), session.data.gameId());
             if (replacement != null) {
@@ -130,23 +157,26 @@ public final class InstanceManager implements AutoCloseable {
                 if (session.thread == null) session.failure = null;
             }
         }
-        requiredCores = roms.games().stream().map(game -> config.coreId(game.cartridge().id().toString())).collect(java.util.stream.Collectors.toUnmodifiableSet());
-        coreGeneration++;
-        readyClients.clear();
-        for (String id : requiredCores) if (!preparedCores.containsKey(id)) {
+        Set<String> needed = roms.games().stream().map(game -> config.coreId(game.cartridge().id().toString())).collect(java.util.stream.Collectors.toUnmodifiableSet());
+        boolean coresChanged = coreGeneration == 0 || !requiredCores.equals(needed);
+        boolean catalogChanged = !publishedCatalog.equals(roms.catalog());
+        requiredCores = needed; publishedCatalog = roms.catalog();
+        if (coresChanged) { coreGeneration++; readyClients.clear(); }
+        for (String id : requiredCores) if (!preparedCores.containsKey(id) && preparingCores.add(id)) {
             Thread.ofVirtual().name("retrocraft-core-" + id).start(() -> {
                 try {
                     var prepared = cores.prepare(id);
-                    callbacks.add(() -> { preparedCores.put(id, prepared); Retrocraft.LOG.info("Core {} ready: {} {}", id, prepared.identity().name(), prepared.identity().version()); for (var player : server.getPlayerManager().getPlayerList()) sendCoreSettings(player); });
-                } catch (Exception ex) { Retrocraft.LOG.error("Cannot prepare known core {}", id, ex); }
+                    callbacks.add(() -> { preparingCores.remove(id); preparedCores.put(id, prepared); Retrocraft.LOG.info("Core {} ready: {} {}", id, prepared.identity().name(), prepared.identity().version()); if (requiredCores.contains(id)) for (var player : server.getPlayerManager().getPlayerList()) sendCoreSettings(player); });
+                } catch (Exception ex) { Retrocraft.LOG.error("Cannot prepare known core {}", id, ex); callbacks.add(() -> preparingCores.remove(id)); }
             });
         }
-        catalogGeneration++;
+        if (catalogChanged) catalogGeneration++;
         failedDiscovery.clear();
-        for (var player : server.getPlayerManager().getPlayerList()) sendCatalog(player);
+        if (catalogChanged || coresChanged) for (var player : server.getPlayerManager().getPlayerList()) sendCatalog(player, coresChanged);
     }
-    public void sendCatalog(ServerPlayerEntity player) {
-        sendCoreSettings(player);
+    public void sendCatalog(ServerPlayerEntity player) { sendCatalog(player, true); }
+    private void sendCatalog(ServerPlayerEntity player, boolean settings) {
+        if (settings) sendCoreSettings(player);
         if (!ServerPlayNetworking.canSend(player, Packets.Catalog.ID)) return;
         List<RomCatalog.Entry> catalog = roms.catalog();
         if (catalog.isEmpty()) send(player, new Packets.Catalog(catalogGeneration, true, true, List.of()));
@@ -165,7 +195,6 @@ public final class InstanceManager implements AutoCloseable {
             CoreManager.Prepared prepared = preparedCores.get(config.coreId(game.cartridge().id().toString()));
             if (prepared == null) { error(player, "core_preparing"); return; }
             Path core = prepared.path();
-            if (!game.id().equals(InstanceStore.sha256(game.path()))) { error(player, "rom_changed"); return; }
             var data = store.create(player.getUuid(), host.definition().id().toString(), game.id(), game.name(), core);
             host.instance(data.id());
             sessions.put(data.id(), new Session(data, game, host));
@@ -271,7 +300,7 @@ public final class InstanceManager implements AutoCloseable {
                 }
                 InputSource input = session.inputSource;
                 if (input != null && input.player.equals(playerId) && session.host.canAccess(player)) {
-                    input.buttons = packet.buttons() & 0x1fd;
+                    input.buttons = packet.buttons() & 0xffff;
                     input.lastSeen = now;
                 }
             }
@@ -317,7 +346,7 @@ public final class InstanceManager implements AutoCloseable {
             if (session.ownership.expired(now)) revoke(session, true);
             for (var receiver : session.incoming.values()) if (receiver.expired(now)) { revoke(session, true); break; }
             if (session.ownership.mode() == Ownership.Mode.CLIENT && now - session.lastCheckpointAt
-                    > TimeUnit.SECONDS.toNanos(Math.max(config.ownerTimeoutSeconds, config.checkpointIntervalSeconds * 3L + 5))) revoke(session, true);
+                    > TimeUnit.SECONDS.toNanos(BlobTransfer.timeoutSeconds(Math.max(config.ownerTimeoutSeconds, config.checkpointIntervalSeconds * 3L + 5), session.checkpointBytes, 2))) revoke(session, true);
             if (session.thread == null && session.observed && session.failure == null && session.ownership.serverMayRun()
                     && preparedCores.containsKey(config.coreId(session.game.cartridge().id().toString())) && activeCount() < config.maxActiveInstances) start(session);
             coordinateOwnership(session, now);
@@ -417,9 +446,10 @@ public final class InstanceManager implements AutoCloseable {
                 CoreManager.Prepared prepared = preparedCores.get(config.coreId(game.cartridge().id().toString()));
                 if (prepared == null) throw new IOException("Core not prepared");
                 Path core = prepared.path();
-                if (!session.data.gameId().equals(InstanceStore.sha256(game.path()))
+                Path rom = game.materialize();
+                if (!session.data.gameId().equals(InstanceStore.sha256(rom))
                         || !session.data.coreSha256().equals(InstanceStore.sha256(core))) throw new IOException("ROM/core changed since snapshot");
-                try (WorkerProcess process = openServerProcess(session, core, game.path(), state)) {
+                try (WorkerProcess process = openServerProcess(session, core, rom, state)) {
                     session.process = process; session.sampleRate = process.sampleRate();
                     long period = Math.round(1_000_000_000d / process.fps());
                     long next = System.nanoTime(), nextSave = next + TimeUnit.SECONDS.toNanos(config.autosaveIntervalSeconds);
@@ -531,15 +561,18 @@ public final class InstanceManager implements AutoCloseable {
         session.offerSent = true;
         Thread.ofVirtual().name("retrocraft-handoff-read").start(() -> {
             try {
-                byte[] rom = Files.readAllBytes(session.game.path()), snapshot = Files.readAllBytes(store.snapshot(session.data.id()));
+                byte[] rom = Files.readAllBytes(session.game.materialize()), snapshot = Files.readAllBytes(store.snapshot(session.data.id()));
                 SaveStates.validate(snapshot);
                 if (!BlobTransfer.hash(rom).equals(session.data.gameId())) throw new IOException("ROM changed during handoff");
                 callbacks.add(() -> {
                     if (!session.ownership.matches(playerId, epoch) || session.ownership.mode() != Ownership.Mode.PREPARING_CLIENT) return;
                     var player = server.getPlayerManager().getPlayer(playerId);
                     if (!controlsHere(session, player)) { revoke(session, false); return; }
+                    long timeout = BlobTransfer.timeoutSeconds(config.transferTimeoutSeconds, (long) rom.length + snapshot.length, 4);
+                    if (!session.ownership.preparationTime(playerId, epoch, System.nanoTime(), TimeUnit.SECONDS.toNanos(timeout))) { revoke(session, true); return; }
+                    session.checkpointBytes = snapshot.length;
                     send(player, new HybridPackets.Lease(session.data.id(), epoch, HybridPackets.Action.OFFER,
-                            config.coreId(session.game.cartridge().id().toString()), session.data.gameId(), session.game.name(), session.host.definition().type() == ConsoleType.DOCKED, 0));
+                            config.coreId(session.game.cartridge().id().toString()), session.data.gameId(), session.game.name(), session.game.filename(), session.host.definition().type() == ConsoleType.DOCKED, 0));
                     var queue = outbound.computeIfAbsent(playerId, ignored -> new ArrayDeque<>());
                     queue.add(new BlobTransfer.Sender(session.data.id(), epoch, BlobTransfer.Kind.ROM, 0, rom));
                     queue.add(new BlobTransfer.Sender(session.data.id(), epoch, BlobTransfer.Kind.SNAPSHOT, 0, snapshot));
@@ -566,7 +599,7 @@ public final class InstanceManager implements AutoCloseable {
             }
             case HEARTBEAT -> { if (controlsHere(session, player)) session.ownership.heartbeat(player.getUuid(), packet.epoch(), now, TimeUnit.SECONDS.toNanos(config.ownerTimeoutSeconds)); }
             case RETURN_BEGIN -> {
-                if (session.ownership.beginReturn(player.getUuid(), packet.epoch(), now, TimeUnit.SECONDS.toNanos(config.transferTimeoutSeconds))) releaseInput(player.getUuid());
+                if (session.ownership.beginReturn(player.getUuid(), packet.epoch(), now, returnTimeout(session))) releaseInput(player.getUuid());
             }
             case FAILED -> revoke(session, true);
             default -> { }
@@ -587,11 +620,14 @@ public final class InstanceManager implements AutoCloseable {
         session.demandEpoch = session.ownership.epoch(); session.relayAudio = audio; session.relayVideo = video; session.ownerGain = gain;
     }
 
+    private long returnTimeout(Session session) {
+        return TimeUnit.SECONDS.toNanos(BlobTransfer.timeoutSeconds(config.transferTimeoutSeconds, session.checkpointBytes, 2));
+    }
     private void returnOwnership(Session session) {
         UUID playerId = session.ownership.owner();
         if (playerId == null) return;
         if (session.ownership.mode() == Ownership.Mode.PREPARING_CLIENT) { revoke(session, false); return; }
-        if (session.ownership.beginReturn(playerId, session.ownership.epoch(), System.nanoTime(), TimeUnit.SECONDS.toNanos(config.transferTimeoutSeconds))) {
+        if (session.ownership.beginReturn(playerId, session.ownership.epoch(), System.nanoTime(), returnTimeout(session))) {
             var player = server.getPlayerManager().getPlayer(playerId);
             if (player == null) revoke(session, false);
             else send(player, HybridPackets.Lease.signal(session.data.id(), session.ownership.epoch(), HybridPackets.Action.RETURN_REQUEST, 0));
@@ -636,6 +672,7 @@ public final class InstanceManager implements AutoCloseable {
             if (receiver.reserved() == 0 && session.incoming.values().stream().mapToLong(BlobTransfer.Receiver::reserved).sum() + chunk.total() > BlobTransfer.MAX_SNAPSHOT + 2_000_000L)
                 throw new IOException("Owner upload budget exceeded");
             byte[] complete = receiver.accept(chunk, System.nanoTime());
+            if (state) session.checkpointBytes = Math.max(session.checkpointBytes, chunk.total());
             if (complete == null) return;
             if (state) checkpoint(session, player.getUuid(), chunk, complete);
             else if (chunk.kind() == BlobTransfer.Kind.VIDEO && chunk.sequence() > session.lastClientVideo) {

@@ -20,6 +20,10 @@ public final class Ownership {
         owner = player; mode = Mode.PREPARING_CLIENT; deadline = now + timeout; lastCheckpoint = 0;
         return ++epoch;
     }
+    public boolean preparationTime(UUID player, long epoch, long now, long timeout) {
+        if (mode != Mode.PREPARING_CLIENT || !matches(player, epoch) || now > deadline) return false;
+        deadline = now + timeout; return true;
+    }
     public boolean commit(UUID player, long epoch, long now, long timeout) {
         if (mode != Mode.PREPARING_CLIENT || !matches(player, epoch) || now > deadline) return false;
         mode = Mode.CLIENT; deadline = now + timeout; return true;

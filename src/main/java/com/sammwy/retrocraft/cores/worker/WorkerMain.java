@@ -26,9 +26,18 @@ public final class WorkerMain {
     private final Libretro.Audio sample = this::sample;
     private final Libretro.AudioBatch batch = this::batch;
     private final Libretro.InputPoll poll = () -> {};
-    private final Libretro.InputState buttons = (port, device, index, id) ->
-            (short) (port == 0 && (device & 255) == 1 && index == 0
-                    ? (id == 256 ? input : (id >= 0 && id < 16 ? (input >>> id) & 1 : 0)) : 0);
+    private final Libretro.InputState buttons = this::inputState;
+    private short inputState(int port, int device, int index, int id) {
+        if (port != 0) return 0;
+        if ((device & 255) == 1 && index == 0) return (short) (id == 256 ? input : id >= 0 && id < 16 ? (input >>> id) & 1 : 0);
+        // Digital keyboard directions also drive the left stick; I/J/K/L drive the right stick.
+        if ((device & 255) == 5 && id >= 0 && id < 2 && index >= 0 && index < 2) {
+            int negative = index == 0 ? (id == 0 ? 6 : 4) : (id == 0 ? 14 : 12);
+            int positive = index == 0 ? (id == 0 ? 7 : 5) : (id == 0 ? 15 : 13);
+            return (short) ((((input >>> positive) & 1) - ((input >>> negative) & 1)) * 32767);
+        }
+        return 0;
+    }
 
     private WorkerMain(String corePath, Path statePath) throws IOException {
         this.statePath = statePath;
@@ -155,7 +164,17 @@ public final class WorkerMain {
                     if (key == null) break;
                     String definition = entry.getPointer(Native.POINTER_SIZE).getString(0);
                     int separator = definition.indexOf(';');
-                    if (separator >= 0) variables.put(key.getString(0), cString(definition.substring(separator + 1).trim().split("\\|", 2)[0]));
+                    if (separator >= 0) {
+                        String name = key.getString(0), choices = definition.substring(separator + 1).trim();
+                        String selected = switch (name) {
+                            case "parallel-n64-gfxplugin" -> "angrylion";
+                            case "parallel-n64-rspplugin" -> "cxd4";
+                            case "parallel-n64-angrylion-multithread" -> "2";
+                            default -> choices.split("\\|", 2)[0];
+                        };
+                        if (!Arrays.asList(choices.split("\\|")).contains(selected)) selected = choices.split("\\|", 2)[0];
+                        variables.put(name, cString(selected));
+                    }
                 }
             }
             case 17, 49 -> data.setByte(0, (byte) 0);
@@ -171,14 +190,16 @@ public final class WorkerMain {
     private void video(Pointer pixels, int width, int height, Libretro.SizeT pitch) {
         if (!captureVideo) return;
         if (pixels == null) return; // libretro frame duplication
-        if (width < 1 || height < 1 || width > FrameCodec.MAX_WIDTH || height > FrameCodec.MAX_HEIGHT)
+        if (width < 1 || height < 1 || width > 4096 || height > 4096)
             throw new IllegalStateException("Unsupported video geometry");
         int bpp = pixelFormat == 1 ? 4 : 2;
         if (pitch.longValue() < (long) width * bpp || pitch.longValue() > 32768) throw new IllegalStateException("Invalid video pitch");
-        byte[] rgb = new byte[width * height * 3];
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                long offset = y * pitch.longValue() + (long) x * bpp;
+        double scale = Math.min(1, Math.min((double) FrameCodec.MAX_WIDTH / width, (double) FrameCodec.MAX_HEIGHT / height));
+        int outputWidth = Math.max(1, (int) Math.floor(width * scale)), outputHeight = Math.max(1, (int) Math.floor(height * scale));
+        byte[] rgb = new byte[outputWidth * outputHeight * 3];
+        for (int y = 0; y < outputHeight; y++) {
+            for (int x = 0; x < outputWidth; x++) {
+                long offset = (long) ((int) ((long) y * height / outputHeight)) * pitch.longValue() + (long) ((int) ((long) x * width / outputWidth)) * bpp;
                 int p = bpp == 4 ? pixels.getInt(offset) : Short.toUnsignedInt(pixels.getShort(offset));
                 int r, g, b;
                 if (pixelFormat == 1) { r = (p >>> 16) & 255; g = (p >>> 8) & 255; b = p & 255; }
@@ -188,11 +209,11 @@ public final class WorkerMain {
                     g = ((p >>> 5) & ((1 << greenBits) - 1)) * 255 / ((1 << greenBits) - 1);
                     b = (p & 31) * 255 / 31;
                 }
-                int target = (y * width + x) * 3;
+                int target = (y * outputWidth + x) * 3;
                 rgb[target] = (byte) r; rgb[target + 1] = (byte) g; rgb[target + 2] = (byte) b;
             }
         }
-        frame = new FrameCodec.Frame(width, height, rgb);
+        frame = new FrameCodec.Frame(outputWidth, outputHeight, rgb);
     }
 
     private void sample(short left, short right) {

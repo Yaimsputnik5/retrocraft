@@ -60,9 +60,7 @@ public final class ConsoleInventoryScreen extends HandledScreen<ConsoleScreenHan
     }
     @Override public boolean shouldPause() { return false; }
     @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
-        if (handler.controlling() && (key == org.lwjgl.glfw.GLFW.GLFW_KEY_Z || key == org.lwjgl.glfw.GLFW.GLFW_KEY_X
-                || key == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || key == org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_SHIFT
-                || key >= org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT && key <= org.lwjgl.glfw.GLFW.GLFW_KEY_UP)) return true;
+        if (handler.controlling() && InputControls.isControlKey(key)) return true;
         return super.keyPressed(key, scanCode, modifiers);
     }
 }

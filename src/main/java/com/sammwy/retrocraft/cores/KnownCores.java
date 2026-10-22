@@ -25,13 +25,26 @@ public final class KnownCores {
             };
         }
     }
-    private static final Map<String, Core> CORES = Map.of("fceumm", new Core("fceumm", "fceumm", true), "snes9x", new Core("snes9x", "snes9x", true));
+    private static final Map<String, Core> CORES = Map.of(
+            "fceumm", new Core("fceumm", "fceumm", true),
+            "snes9x", new Core("snes9x", "snes9x", true),
+            "gambatte", new Core("gambatte", "gambatte", true),
+            "mgba", new Core("mgba", "mgba", true),
+            "genesis_plus_gx", new Core("genesis_plus_gx", "genesis_plus_gx", true),
+            "parallel_n64", new Core("parallel_n64", "parallel_n64", false),
+            "mame2003_plus", new Core("mame2003_plus", "mame2003_plus", false));
+    public static Map<String, String> defaultMappings() {
+        return Map.of("retrocraft:nes", "fceumm", "retrocraft:snes", "snes9x", "retrocraft:gb", "gambatte",
+                "retrocraft:gbc", "gambatte", "retrocraft:gba", "mgba", "retrocraft:megadrive", "genesis_plus_gx",
+                "retrocraft:n64", "parallel_n64", "retrocraft:mame", "mame2003_plus");
+    }
+    public static Set<String> ids() { return CORES.keySet(); }
     public static Core get(String id) {
         Core core = CORES.get(id);
         if (core == null) throw new IllegalArgumentException("Core is not in the local trusted pool: " + id);
         return core;
     }
-    public static String defaultForCartridge(String cartridge) { return switch (cartridge) { case "retrocraft:nes" -> "fceumm"; case "retrocraft:snes" -> "snes9x"; default -> throw new IllegalArgumentException("No known core for cartridge " + cartridge); }; }
+    public static String defaultForCartridge(String cartridge) { String id = defaultMappings().get(cartridge); if (id == null) throw new IllegalArgumentException("No known core for cartridge " + cartridge); return id; }
     public static String filename(String id, Platform platform) { return get(id).upstream + "_libretro" + platform.extension(); }
     public static URI uri(String id, Platform platform) { return URI.create("https://buildbot.libretro.com/nightly/" + platform.upstreamPath() + "/latest/" + filename(id, platform) + ".zip"); }
     private KnownCores() {}

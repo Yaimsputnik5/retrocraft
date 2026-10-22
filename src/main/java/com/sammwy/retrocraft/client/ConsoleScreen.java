@@ -14,7 +14,7 @@ import org.lwjgl.glfw.GLFW;
 import java.io.IOException;
 import java.util.UUID;
 
-public final class NesScreen extends Screen {
+public final class ConsoleScreen extends Screen {
     final UUID instance;
     private boolean controller, canManage, subscribed = true;
     private final FrameCodec.Decoder decoder = new FrameCodec.Decoder();
@@ -23,7 +23,7 @@ public final class NesScreen extends Screen {
     private int frameWidth = 256, frameHeight = 240;
     private long lastResync;
 
-    NesScreen(Packets.Ui packet) {
+    ConsoleScreen(Packets.Ui packet) {
         super(Text.literal(packet.title()));
         instance = packet.instance(); controller = packet.controller(); canManage = packet.canManage();
     }
@@ -61,7 +61,7 @@ public final class NesScreen extends Screen {
             }
             showFrame(frame);
         } catch (IOException | IllegalArgumentException ex) {
-            Retrocraft.LOG.warn("Invalid NES frame: {}", ex.toString());
+            Retrocraft.LOG.warn("Invalid console frame: {}", ex.toString());
             if (System.nanoTime() - lastResync > 1_000_000_000L) {
                 ClientPlayNetworking.send(Packets.Request.of(Packets.RESYNC, instance)); lastResync = System.nanoTime();
             }
@@ -74,7 +74,7 @@ public final class NesScreen extends Screen {
                 frameWidth = frame.width(); frameHeight = frame.height();
                 texture = new NativeImageBackedTexture(new NativeImage(frameWidth, frameHeight, false));
                 texture.setFilter(false, false);
-                textureId = client.getTextureManager().registerDynamicTexture("retrocraft/nes", texture);
+                textureId = client.getTextureManager().registerDynamicTexture("retrocraft/console", texture);
             }
             NativeImage image = texture.getImage();
             byte[] rgb = frame.rgb();
