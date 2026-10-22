@@ -44,7 +44,9 @@ def render(name,w,h):
             while texture.startswith('#'):texture=m['textures'][texture[1:]]
             image=Image.open(A/'textures'/(texture.split(':',1)[1]+'.png')).convert('RGB')
             u,v,U,V=face.get('uv',[0,0,16,16]);fw,fh=image.size
-            image=image.crop((round(u/16*fw),round(v/16*fh),round(U/16*fw),round(V/16*fh)))
+            image=image.crop((round(min(u,U)/16*fw),round(min(v,V)/16*fh),round(max(u,U)/16*fw),round(max(v,V)/16*fh)))
+            if u>U:image=image.transpose(Image.FLIP_LEFT_RIGHT)
+            if v>V:image=image.transpose(Image.FLIP_TOP_BOTTOM)
             brightness=1 if not e.get('shade',True) else {'up':1,'south':.87,'east':.68}.get(side,.78)
             image=ImageEnhance.Brightness(image).enhance(brightness)
             faces.append((sum(p[2] for p in pts)/4,pts,image))
