@@ -7,6 +7,7 @@ import com.sammwy.retrocraft.roms.RomCatalog;
 import com.sammwy.retrocraft.server.console.*;
 import com.sammwy.retrocraft.server.block.DockedConsoleBlock;
 import com.sammwy.retrocraft.server.item.HandheldConsoleItem;
+import net.fabricmc.fabric.api.client.model.loading.v1.ModelLoadingPlugin;
 import net.fabricmc.fabric.api.object.builder.v1.client.model.FabricModelPredicateProviderRegistry;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 import net.minecraft.registry.Registries;
@@ -39,6 +40,7 @@ public final class RetrocraftClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(HybridPackets.Blob.ID, (packet, context) -> EMULATION.blob(packet));
         ClientPlayNetworking.registerGlobalReceiver(HybridPackets.Demand.ID, (packet, context) -> EMULATION.demand(packet));
         HandledScreens.register(Retrocraft.CONSOLE_SCREEN, ConsoleInventoryScreen::new);
+        ModelLoadingPlugin.register(plugin -> plugin.addModels(DockedConsoleRenderer.TOP_MODEL));
         ClientPlayNetworking.registerGlobalReceiver(Packets.Ui.ID, (packet, context) -> {
             var client = context.client();
             switch (packet.mode()) {

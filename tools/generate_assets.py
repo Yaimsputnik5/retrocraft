@@ -72,17 +72,17 @@ GLYPHS = {
 }
 
 class Atlas:
-    def __init__(self, name):
-        self.name = name; self.im = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0)); self.d = ImageDraw.Draw(self.im)
+    def __init__(self, name, size=SIZE):
+        self.name = name; self.size = size; self.im = Image.new('RGBA', (size, size), (0, 0, 0, 0)); self.d = ImageDraw.Draw(self.im)
         self.rows = []; self.cache = {}; self.rnd = random.Random(name)
     def alloc(self, w, h):
         best = None
         for row in self.rows:
-            if row['h'] >= h and row['x'] + w <= SIZE and (best is None or row['h'] < best['h']): best = row
+            if row['h'] >= h and row['x'] + w <= self.size and (best is None or row['h'] < best['h']): best = row
         if best is not None and best['h'] <= h * 2 + 1:
             x = best['x']; best['x'] += w; return x, best['y']
         y = sum(r['h'] for r in self.rows)
-        if y + h > SIZE: raise RuntimeError(f'atlas {self.name} overflow')
+        if y + h > self.size: raise RuntimeError(f'atlas {self.name} overflow')
         self.rows.append({'y': y, 'h': h, 'x': w}); return 0, y
     def face(self, w, h, color, painter=None, noise=3, bevel=0):
         w, h = max(1, int(round(w * PX))), max(1, int(round(h * PX)))
@@ -91,7 +91,7 @@ class Atlas:
         x, y = self.alloc(w, h)
         fill(self.d, x, y, w, h, color, self.rnd, noise, bevel)
         if painter: painter(Face(self.d, x, y, w, h, self.rnd))
-        uv = [x * 16 / SIZE, y * 16 / SIZE, (x + w) * 16 / SIZE, (y + h) * 16 / SIZE]
+        uv = [x * 16 / self.size, y * 16 / self.size, (x + w) * 16 / self.size, (y + h) * 16 / self.size]
         if key: self.cache[key] = uv
         return uv
     def save(self):
@@ -125,12 +125,32 @@ def many(*painters):
 
 # ---------------------------------------------------------------- painters
 
-def label(p, u0, v0, u1, v1, seed=1, header=True):
+def label(p, u0, v0, u1, v1, seed=1, header=True, rounded=False, dark=False):
     """Printed cartridge label: title band, pixel landscape artwork, registration stripe."""
     def paint(F):
         rnd = random.Random(seed); paper, accent, art = p['paper'], p['accent'], p['art']
         F.rect(u0, v0, u1, v1, paper, outline=tint(paper, -45))
+        if rounded:
+            shell = p.get('cart', p['body'])
+            for cu, cv in [(u0, v0), (u1 - .5, v0), (u0, v1 - .5), (u1 - .5, v1 - .5)]: F.dot(cu, cv, shell)
         w, h = u1 - u0, v1 - v0
+        if dark:
+            # Black label: artwork fills the upper two thirds, title and licence lines sit below it.
+            a0, b0, a1, b1 = u0 + .5, v0 + .5, u1 - .5, v0 + .5 + round(h * .6 * 2) / 2
+            F.rect(a0, b0, a1, b1, art); F.rect(a0, b0, a1, b0 + (b1 - b0) * .35, tint(art, -35))
+            gh = max(.5, round((b1 - b0) * .25 * 2) / 2)
+            F.rect(a0, b1 - gh, a1, b1, p['ground']); F.rect(a0, b1 - gh, a1, b1 - gh + .5, tint(p['ground'], 30))
+            F.rect(a1 - 1.5, b0 + .5, a1 - .5, b0 + 1.5, '#f6d35b')
+            hx = a0 + (a1 - a0) * .35
+            F.rect(hx, b1 - gh - 1.5, hx + 1, b1 - gh, accent); F.rect(hx, b1 - gh - 1.5, hx + 1, b1 - gh - 1, '#f0c9a0')
+            if a1 - a0 > 5:
+                bx = a0 + (a1 - a0) * .7; F.rect(bx, b1 - gh - 1, bx + 1, b1 - gh, '#5a4a3a'); F.rect(bx - .5, b1 - gh - 1.5, bx + 1.5, b1 - gh - 1, '#4a8b3a')
+            tv = b1 + .5
+            F.rect(a0 + .5, tv, a1 - 1.5, tv + .5, '#f3eee2')
+            if v1 - tv > 2.5:
+                F.rect(a0 + .5, tv + 1, a0 + (a1 - a0) * .55, tv + 1.5, '#c9c4b4')
+                F.rect(a1 - 1.5, v1 - 1.5, a1 - .5, v1 - .5, '#c9a24a'); F.rect(a0 + .5, v1 - 1, a0 + 2, v1 - .5, accent)
+            return
         hb = max(1, round(h * .22 * 2) / 2) if header else .5
         if header:
             F.rect(u0 + .5, v0 + .5, u1 - .5, v0 + hb, p['header'])
@@ -248,11 +268,11 @@ def text(word, u, v, color): return lambda F: F.text(word, u, v, color)
 # ---------------------------------------------------------------- families
 
 FAMILIES = {
-    'nes':       dict(body='#c7c5c0', dark='#4f5155', accent='#c1392b', paper='#ebe6d6', header='#1a1a1d', art='#4c8fd8', ground='#6a9e3c'),
+    'nes':       dict(body='#c7c5c0', dark='#4f5155', accent='#c1392b', paper='#141416', header='#1a1a1d', art='#4c8fd8', ground='#6a9e3c'),
     'snes':      dict(body='#b5b4bb', dark='#5b5a63', accent='#4f3f91', paper='#e6e4ea', header='#3c3650', art='#7c69c2', ground='#5f8f47'),
-    'gb':        dict(body='#c8c4b8', dark='#4d4b58', accent='#9b2d5f', paper='#dcd8c8', header='#3b3b44', art='#6b8fb0', ground='#7a7f4a'),
-    'gbc':       dict(body='#1f8d8a', cart='#2a2a30', dark='#2d2d35', accent='#4b3a7a', paper='#e4e2d8', header='#2a2a31', art='#e07a3c', ground='#56a06a'),
-    'gba':       dict(body='#584c9e', cart='#a9a9ae', dark='#1c1b23', accent='#8d85c4', paper='#e8e6ee', header='#2a2742', art='#4a8fd6', ground='#7c9e3e'),
+    'gb':        dict(body='#c8c4b8', cart='#a9a9a5', dark='#4d4b58', accent='#9b2d5f', paper='#dcd8c8', header='#3b3b44', art='#6b8fb0', ground='#7a7f4a'),
+    'gbc':       dict(body='#1f8d8a', cart='#8fb0b8', dark='#2d2d35', accent='#4b3a7a', paper='#e4e2d8', header='#2a2a31', art='#e07a3c', ground='#56a06a'),
+    'gba':       dict(body='#584c9e', cart='#7d72bd', dark='#1c1b23', accent='#8d85c4', paper='#e8e6ee', header='#2a2742', art='#4a8fd6', ground='#7c9e3e'),
     'megadrive': dict(body='#232428', dark='#15161a', accent='#4e8ad0', paper='#d9d9dc', header='#2a2c33', art='#3a6fb5', ground='#8c7a3a'),
     'genesis':   dict(body='#232428', dark='#15161a', accent='#d4a947', paper='#d9d9dc', header='#2a2c33', art='#c0583b', ground='#8c7a3a'),
     'n64':       dict(body='#44464c', dark='#2a2b30', accent='#c0392b', paper='#e6e4e0', header='#1e1f24', art='#3d9a6a', ground='#8b6b3c'),
@@ -296,6 +316,16 @@ def finish(m, family, kind):
             e['faces'] = faces
         result['parent'] = 'minecraft:block/block'
         result['display'] = {'gui': {'rotation': [25, 225, 0], 'translation': [0, 1, 0], 'scale': [.95, .95, .95]}}
+        if family == 'mame':
+            result['display'] = {
+                'gui': {'rotation': [25, 225, 0], 'translation': [0, -1.5, 0], 'scale': [.5, .5, .5]},
+                'ground': {'translation': [0, 3, 0], 'scale': [.25, .25, .25]},
+                'fixed': {'rotation': [0, 180, 0], 'translation': [0, -4, 0], 'scale': [.5, .5, .5]},
+                'thirdperson_righthand': {'rotation': [75, 45, 0], 'translation': [0, 2.5, 0], 'scale': [.2, .2, .2]},
+                'thirdperson_lefthand': {'rotation': [75, 45, 0], 'translation': [0, 2.5, 0], 'scale': [.2, .2, .2]},
+                'firstperson_righthand': {'rotation': [0, 45, 0], 'translation': [0, -2, 0], 'scale': [.25, .25, .25]},
+                'firstperson_lefthand': {'rotation': [0, 225, 0], 'translation': [0, -2, 0], 'scale': [.25, .25, .25]},
+            }
     else:
         result['gui_light'] = 'front' if kind == 'cart' else 'side'
         result['display'] = item_display(kind)
@@ -307,15 +337,18 @@ def finish(m, family, kind):
 def cartridge(family, atlas):
     p = FAMILIES[family]; m = Model(atlas); body, dark = p.get('cart', p['body']), p['dark']
     if family == 'nes':
-        # Tall grey shell, horizontal grip ridges across the top third, label on the lower two thirds.
+        # US Game Pak: vertical grip grooves on the left strip, black label on the right, arrow and three grooves below it.
+        def front(F):
+            F.rect(4, 9.6, 5.1, 10.4, tint(body, -22)); F.rect(4.3, 10.4, 4.8, 10.7, tint(body, -22))
+            grooves(3.6, 10.8, 9.6, 11.7, 3, body)(F)
+            label(p, 3.6, .4, 9.6, 8.6, 1, dark=True, rounded=True)(F)
         m.box((3, 2.5, 7.3), (13, 14.3, 8.7), body, {
-            'south': (tint(body, -18), label(p, 1, 3.6, 9, 11.3, 1)),
-            'north': (body, many(screws([(1, 1), (8.5, 1), (1, 10.5), (8.5, 10.5), (4.75, 6)]), rect(3, 0, 7, .5, tint(body, -40)))),
+            'south': (body, front),
+            'north': (body, many(screws([(1, 1), (8.5, 1), (1, 10.5), (8.5, 10.5), (4.75, 6)]), rect(2.5, 3.5, 7.5, 7, tint(body, -10), bevel=-6))),
             'down': (body, slot(1, .2, 9, 1.2))}, bevel=10)
-        for i in range(4):
-            y = 11.3 + i * .72
-            m.box((3.4, y + .1, 8.7), (12.6, y + .5, 8.9), body, bevel=0)
-        m.box((3.4, 11.3, 8.7), (12.6, 11.4, 8.9), body, bevel=0)
+        for i in range(6):
+            x = 3.35 + i * .5
+            m.box((x, 3.2, 8.7), (x + .25, 13.6, 8.85), body, bevel=0)
     elif family == 'snes':
         # Wide US shell: ridged grip corners on top, big label, exposed dark connector with gold pins.
         m.box((1, 4, 7.3), (15, 12.5, 8.7), body, {
@@ -327,23 +360,36 @@ def cartridge(family, atlas):
         m.box((4.5, 12.5, 7.6), (11.5, 12.8, 8.4), tint(body, -25), bevel=0)
         m.box((2.5, 3, 7.55), (13.5, 4, 8.45), dark, {'south': (dark, pins(.5, .4, 10.5, 1)), 'north': (dark, pins(.5, .4, 10.5, 1)), 'down': (dark, slot(.5, .15, 10.5, .75))}, bevel=0)
     elif family in ('gb', 'gbc'):
-        # Pocket shell with (DMG only) the top-left lock notch, grip ridges and a lower label.
+        # Game Pak (5.7 x 6.5 cm): grey DMG shell with the top-left lock notch, or clear Color shell showing the board.
         notch = family == 'gb'
-        m.box((4, 3, 7.3), (12, 10.5, 8.7), body, {
-            'south': (body, label(p, .7, .5, 7.3, 7, 3)),
-            'north': (body, many(screws([(3.75, 1.2)]), rect(.8, 3, 7.2, 6.5, tint(body, -12)))),
-            'down': (body, slot(.7, .2, 7.3, 1.2))}, bevel=10)
-        top = tint(body, 0)
-        m.box((5.5 if notch else 4, 10.5, 7.3), (12, 12, 8.7), top, {
-            'south': (top, many(grooves(.4, .2, 4.2, 1.3, 3, top), rect(5, .4, 6.4, 1.1, tint(top, 14)))),
-            'up': (top, grooves(.3, .3, 6.2 if notch else 7.7, 1.1, 1, top))}, bevel=8)
-        if notch: m.box((4, 10.5, 7.3), (5.5, 10.6, 8.7), tint(body, -30), bevel=0)
+        def clear(F):  # board, battery coin cell and ROM seen through translucent plastic
+            F.rect(.5, .5, 7.5, 8.5, mix(body, '#3f6b4e', .55)); F.rect(1, .8, 7, 8.2, mix(body, '#3f6b4e', .7))
+            F.rect(2, 1.1, 6, 1.6, mix(body, '#4a4a52', .7)); F.rect(5.2, 2.3, 6.8, 3.9, mix(body, '#d8dde0', .6)); F.rect(5.5, 2.6, 6.5, 3.6, mix(body, '#f0f2f4', .7))
+            F.rect(1.3, 2.4, 4.6, 4.4, mix(body, '#1d1d22', .75)); F.rect(1.3, 5.2, 6.7, 5.7, mix(body, '#c9a24a', .6))
+        top = 10.8 if notch else 12
+        def front(F):
+            if notch: label(p, .6, .9, 7.4, 7.3, 3, rounded=True)(F)
+            else:
+                clear(F); grooves(.3, .15, 7.7, 1.05, 2, body)(F); F.rect(2.6, .3, 5.4, .9, tint(body, 14))
+                label(p, .6, 2.1, 7.4, 8.5, 3, rounded=True)(F)
+        def back(F):
+            if not notch: clear(F)
+            screws([(3.75, top - 3.7)])(F); F.rect(.8, 1, 7.2, 5.5, tint(body, -12), bevel=-6)
+        m.box((4, 3, 7.3), (12, top, 8.7), body, {
+            'south': (body, front), 'north': (body, back),
+            'up': (body, rect(.3, .3, 7.7, 1.1, tint(body, -10))), 'down': (body, slot(.7, .2, 7.3, 1.2))}, bevel=10)
+        if notch:
+            m.box((5.5, 10.8, 7.3), (12, 12, 8.7), body, {'south': (body, many(grooves(.3, .15, 6.2, 1.05, 2, body), rect(2, .3, 4.6, .9, tint(body, 14)))),
+                                                        'up': (body, rect(.3, .3, 6.2, 1.1, tint(body, -10)))}, bevel=8)
     elif family == 'gba':
-        # Short wide shell with shallow top grooves and a nearly full-face label.
-        m.box((2, 5, 7.4), (14, 11.5, 8.6), body, {
-            'south': (body, many(grooves(.5, .2, 11.5, 1.1, 2, body), label(p, .6, 1.3, 11.4, 6, 4))),
-            'north': (body, many(screws([(6, 5.8)]), label(dict(p, header='#55557a'), 2, 1.2, 10, 4.6, 5, header=False))),
+        # Game Pak (5.9 x 3.5 cm): light grey, thicker grip lip along the top, rounded label filling the face.
+        m.box((2, 5, 7.4), (14, 10.8, 8.6), body, {
+            'south': (body, label(p, .5, .4, 11.5, 5.4, 4, rounded=True)),
+            'north': (body, many(screws([(6, 5.2)]), rect(1, .8, 11, 4, tint(body, -10), bevel=-6), rect(1.5, 1.2, 10.5, 1.6, tint(body, -40)), rect(1.5, 2, 7, 2.4, tint(body, -30)))),
+            'east': (body, rect(.3, 1.2, .9, 3.6, tint(body, -30))), 'west': (body, rect(.3, 1.2, .9, 3.6, tint(body, -30))),
             'down': (body, slot(.6, .2, 11.4, 1))}, bevel=10)
+        m.box((2, 10.8, 7.2), (14, 11.6, 8.8), body, {'south': (body, many(rect(.6, .2, 11.4, .6, tint(body, -14)), rect(4, .25, 8, .55, tint(body, 12)))),
+                                                     'up': (body, rect(.5, .3, 11.5, 1.3, tint(body, -10)))}, bevel=8)
     elif family in ('megadrive', 'genesis'):
         # Black shell: thick grip lip with ridges across the top, thinner body that slides into the console.
         m.box((2, 3.5, 7.35), (14, 10.5, 8.65), body, {
@@ -537,32 +583,47 @@ def console(family, atlas):
         m.box((12.5, 4.4, 5.8), (13.6, 4.8, 6.9), tint(body, 30), bevel=8)       # reset
         m.lamp((2, 4.4, 8), (2.4, 4.7, 8.4))
     else:
-        # Upright arcade cabinet: marquee, recessed CRT bezel, control panel with stick and six buttons, coin door.
-        side, panel, accent = '#2a2831', '#3b3845', p['accent']
+        # Upright arcade cabinet, two and a half blocks tall and a little wider than a block: coin door, control panel with
+        # stick and six buttons, the CRT (its glass is the live emulator frame drawn by DockedConsoleRenderer), speaker
+        # grille and marquee. Everything above y=32 is emitted as the separate block/mame_console_top model (JSON limit).
+        side, panel, accent, navy = '#2a2831', '#3b3845', p['accent'], '#1b1d3f'
         def side_art(F):
             w, h = F.units
-            F.rect(0, 0, w, h, side)
-            F.rect(.5, 1, 1.5, h - 1, '#c04f8a'); F.rect(1.5, 2, 2.5, h - 2, '#2b7fc4'); F.rect(2.5, 3, 3.5, h - 3, accent)
-        m.box((2, 0, 5), (14, 16, 14), side, {'east': (side, side_art), 'west': (side, side_art), 'north': (side, many(rect(.5, 3, 11.5, 7.5, '#0c0c10'))),
-                                               'south': (side, vents(2, 2, 10, 5, 6, '#101216', True))}, bevel=4)
-        m.box((2, 0, 3), (14, 5.5, 5), side, {'north': (side, many(rect(1, 1.2, 11, 4.3, '#34323c', bevel=-8), rect(3.5, 1.8, 4.6, 2.3, '#0c0c10'), rect(7.4, 1.8, 8.5, 2.3, '#0c0c10'),
-                                                             rect(3.4, 3, 4.7, 3.3, tint(accent, -30)), rect(7.3, 3, 8.6, 3.3, tint(accent, -30)), rect(5.5, 3.5, 6.5, 4, '#1b1b20')))}, bevel=6)
-        m.box((2, 7, 3), (14, 8.3, 7), panel, {'up': (panel, many(rect(0, 0, 12, .3, tint(panel, 30)))),
-                                               'north': (panel, many(rect(1, .4, 11, .7, '#c04f8a'), rect(1, .8, 11, 1, '#2b7fc4')))}, bevel=8)
-        m.box((4.3, 8.3, 4.5), (5.1, 9.7, 5.3), '#1b1b20', bevel=0); m.box((4.1, 9.7, 4.3), (5.3, 10.7, 5.5), '#c83a3a', bevel=12)  # joystick
+            F.rect(1, 2, 2, h - 2, '#c04f8a'); F.rect(2, 4, 3, h - 4, '#2b7fc4'); F.rect(3, 6, 4, h - 6, accent)
+            F.rect(4.5, h * .55, w - 1.5, h * .55 + .5, '#c04f8a'); F.rect(4.5, h * .55 + 1, w - 2.5, h * .55 + 1.5, '#2b7fc4')
+        def coin_door(F):
+            F.rect(2, 1.5, 16, 9.5, '#34323c', bevel=-8); F.rect(2.5, 2, 15.5, 2.5, tint(side, 20))
+            for u in (5.4, 10.4): F.rect(u, 3.5, u + 1.6, 4, '#0c0c10'); F.rect(u - .2, 5, u + 1.8, 5.4, tint(accent, -30)); F.rect(u + .3, 2.8, u + 1.3, 3.3, '#c83a3a')
+            F.rect(7, 6.5, 11, 8.5, '#1b1b20'); F.rect(7.4, 6.9, 10.6, 7.4, '#0c0c10')
+        def grille(F):
+            for r in range(3):
+                for c in range(26): F.dot(1.2 + c * .6, .5 + r * .6, '#040406')
+        m.box((-1, 0, 3), (17, 32, 16), side, {'east': (side, side_art), 'west': (side, side_art), 'north': (side, rect(1, 3, 17, 18, '#0c0c10')),
+                                                'south': (side, many(vents(3, 3, 15, 8, 7, '#101216', True), vents(3, 22, 15, 27, 7, '#101216', True), rect(7.5, 29.5, 10.5, 31.5, '#0c0c10')))}, bevel=4)
+        m.box((-1, 0, 1), (17, 11, 3), side, {'north': (side, coin_door)}, bevel=6)
+        m.box((-1, 11, -1), (17, 14, 7), panel, {'up': (panel, rect(0, 0, 18, .3, tint(panel, 30))),
+                                                 'north': (panel, many(rect(.5, .8, 17.5, 1.3, '#c04f8a'), rect(.5, 1.8, 17.5, 2.3, '#2b7fc4')))}, bevel=8)
+        m.box((2.6, 14, 2.6), (3.4, 16, 3.4), '#1b1b20', bevel=0); m.box((2.2, 16, 2.2), (3.8, 17.6, 3.8), '#c83a3a', bevel=12)  # joystick
         for i, c in enumerate(['#c83a3a', '#f0b53a', '#3a9ad0', '#3ab064', '#e6e6e6', '#c04f8a']):
-            x = 7 + (i % 3) * 1.6; z = 3.7 + (i // 3) * 1.6
-            m.box((x, 8.3, z), (x + 1.1, 8.7, z + 1.1), c, bevel=14)
-        m.box((2.5, 8.6, 4.9), (13.5, 12.9, 5), '#0c0c10', bevel=0)
-        m.box((3.5, 9.1, 4.9), (12.5, 12.5, 5.05), '#101216', {'north': '#screen'}, bevel=0)
-        m.box((2.5, 12.3, 4.7), (13.5, 12.9, 4.9), '#1a1a20', {'north': ('#1a1a20', holes(.5, .25, 20, 1, .55, '#040406'))}, bevel=0)
-        m.box((2, 12.9, 3.3), (14, 16, 5), side, {'north': (side, many(rect(.4, .3, 11.6, 2.8, '#1b1d3f', bevel=-14), rect(.4, 2.3, 11.6, 2.8, '#c04f8a'), rect(.4, .3, 11.6, .8, '#2b7fc4'),
-                                                                       text('RETRO', 1.5, .9, accent), rect(9.5, 1, 10.5, 2, '#3ab064'), rect(9.75, .75, 10.25, 1, '#3ab064'), rect(9.75, 2, 10.25, 2.3, '#3ab064'))),
-                                                  'up': (side, rect(.5, .2, 11.5, 1.5, tint(side, -20)))}, bevel=6)
-        m.lamp((5.6, 1.4, 2.95), (6, 1.8, 3.05))
-    r = finish(m, family, 'block')
-    if family == 'mame': r['textures']['screen'] = 'retrocraft:block/console/crt_off'
-    return r
+            x = 7.5 + (i % 3) * 2.4; z = 1 + (i // 3) * 2.6
+            m.box((x, 14, z), (x + 1.6, 14.6, z + 1.6), c, bevel=14)
+        m.box((-1, 14, 2.5), (17, 29, 3), '#0c0c10', {'north': ('#0c0c10', rect(1, 1, 17, 14, '#15161c', bevel=-10))}, bevel=0)
+        m.box((1.5, 16, 3), (14.5, 26, 3.2), '#101216', {'north': '#screen'}, bevel=0)
+        m.box((-.5, 26.5, 2.8), (16.5, 28.5, 3), '#1a1a20', {'north': ('#1a1a20', grille)}, bevel=0)
+        m.box((-1, 29, 1), (17, 32, 3), navy, {'north': (navy, many(rect(.4, .3, 17.6, 2.7, navy, bevel=-14), rect(.4, .3, 17.6, .8, '#2b7fc4'), rect(.4, 2.3, 17.6, 2.8, '#c04f8a'),
+                                                                  text('RETRO', 4.2, .5, accent), rect(14.2, .9, 15.4, 2.1, '#3ab064'), rect(14.5, .5, 15.1, .9, '#3ab064'), rect(14.5, 2.1, 15.1, 2.5, '#3ab064'))),
+                                               'down': (navy, rect(.5, .2, 17.5, 1.8, tint(side, -10)))}, bevel=6)
+        # Roof: overhanging cap with the accent strip, then the enclosed top of the cabinet.
+        m.box((-1.5, 32, .5), (17.5, 34.5, 16.5), tint(side, -4), {'north': (tint(side, -4), rect(.5, .5, 18.5, 2, accent))}, bevel=6)
+        m.box((-1, 34.5, 2), (17, 40, 16), side, {'east': (side, rect(1, 1, 13, 4.5, tint(side, -10), bevel=-6)), 'west': (side, rect(1, 1, 13, 4.5, tint(side, -10), bevel=-6)),
+                                                  'north': (side, many(rect(1, 1.5, 17, 2, '#c04f8a'), rect(1, 2.5, 17, 3, '#2b7fc4'))), 'up': (side, vents(4, 4, 14, 10, 5, '#101216'))}, bevel=6)
+        m.lamp((7, 2.8, .95), (7.5, 3.3, 1.05))
+    if family == 'mame':
+        top = Model(atlas); top.elements = [e for e in m.elements if e['from'][1] >= 32]; m.elements = [e for e in m.elements if e['from'][1] < 32]
+        for e in top.elements: e['from'][1] -= 32; e['to'][1] -= 32
+        r = finish(m, family, 'block'); r['textures']['screen'] = 'retrocraft:block/console/crt_off'
+        return r, finish(top, family, 'block')
+    return finish(m, family, 'block')
 
 # ---------------------------------------------------------------- shared small textures
 
@@ -600,14 +661,16 @@ def write(kind, name, data):
 def generate():
     small_textures()
     for family in FAMILIES:
-        atlas = Atlas(family)
+        atlas = Atlas(family, 256 if family == 'mame' else SIZE)
         if family != 'genesis': write('models/item', family, cartridge(family, atlas))
         if family in ('nes', 'gb', 'gbc', 'gba'):
             m = handheld(family, atlas); m['overrides'] = [{'predicate': {'retrocraft:powered': 1}, 'model': f'retrocraft:item/{family}_handheld_on'}]
             write('models/item', family + '_handheld', m)
             write('models/item', family + '_handheld_on', {'parent': f'retrocraft:item/{family}_handheld', 'textures': {'screen': 'retrocraft:block/console/lcd_on', 'indicator': 'retrocraft:block/console/power_on'}})
         if family not in ('gb', 'gbc', 'gba'):
-            name = family + '_console'; write('models/block', name, console(family, atlas))
+            name = family + '_console'; built = console(family, atlas)
+            if family == 'mame': built, top = built; write('models/block', name + '_top', top)
+            write('models/block', name, built)
             on = {'parent': f'retrocraft:block/{name}', 'textures': {'indicator': 'retrocraft:block/console/power_on'}}
             if family == 'mame': on['textures']['screen'] = 'retrocraft:block/console/crt_on'
             write('models/block', name + '_on', on)
@@ -618,7 +681,7 @@ def generate():
             write('blockstates', name, {'variants': variants})
         atlas.save()
         used = sum(r['h'] for r in atlas.rows)
-        print(f'{family}: atlas rows use {used}/{SIZE} texels')
+        print(f'{family}: atlas rows use {used}/{atlas.size} texels')
     print('Generated 8 cartridge models, 4 handhelds, 6 consoles and 15 original textures.')
 
 if __name__ == '__main__': generate()

@@ -1,6 +1,7 @@
 {
   "item.retrocraft.nes": "NES Cartridge",
-  "screen.retrocraft.controls": "Arrows: D-pad   Z: B   X: A   Enter: Start   Right Shift: Select",
+  "screen.retrocraft.status_on": "Powered on",
+  "screen.retrocraft.status_off": "Powered off",
   "screen.retrocraft.close": "Close",
   "screen.retrocraft.power_off": "Power off",
   "screen.retrocraft.connecting": "Starting / restoring console…",

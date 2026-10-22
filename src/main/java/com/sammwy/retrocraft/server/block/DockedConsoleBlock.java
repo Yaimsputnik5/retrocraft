@@ -19,6 +19,7 @@ import net.minecraft.state.StateManager;
 import net.minecraft.state.property.*;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.world.WorldView;
 
 public final class DockedConsoleBlock extends BlockWithEntity {
     public static final DirectionProperty FACING = Properties.HORIZONTAL_FACING;
@@ -29,8 +30,14 @@ public final class DockedConsoleBlock extends BlockWithEntity {
     @Override protected void appendProperties(StateManager.Builder<Block, BlockState> builder) { builder.add(FACING, POWERED); }
     @Override public BlockState getPlacementState(ItemPlacementContext context) { return getDefaultState().with(FACING, context.getHorizontalPlayerFacing().getOpposite()); }
     @Override protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        double height = definition.id().getPath().equals("mame_console") ? 16 : definition.id().getPath().equals("nes_console") ? 6.5 : 5.8;
+        String id = definition.id().getPath();
+        if (id.equals("mame_console")) return state.get(FACING).getAxis() == Direction.Axis.X ? Block.createCuboidShape(0, 0, -1, 16, 40, 17) : Block.createCuboidShape(-1, 0, 0, 17, 40, 16);
+        double height = id.equals("nes_console") ? 6.5 : 5.8;
         return state.get(FACING).getAxis() == Direction.Axis.X ? Block.createCuboidShape(2, 0, 1, 14, height, 15) : Block.createCuboidShape(1, 0, 2, 15, height, 14);
+    }
+    /** The arcade cabinet is two and a half blocks tall, so it needs free space above it. */
+    @Override protected boolean canPlaceAt(BlockState state, WorldView world, BlockPos pos) {
+        return !definition.id().getPath().equals("mame_console") || world.getBlockState(pos.up()).isReplaceable() && world.getBlockState(pos.up(2)).isReplaceable();
     }
     public ConsoleDefinition definition() { return definition; }
     public BlockEntityType<DockedConsoleBlockEntity> entityType() { return entityType; }

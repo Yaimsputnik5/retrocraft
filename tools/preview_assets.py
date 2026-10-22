@@ -24,6 +24,8 @@ def resolve(name):
 
 def render(name,w,h):
     m=resolve(name);faces=[];reverse=name.startswith('block/')
+    if name.endswith('mame_console'):  # the roof lives in a second model that the block entity renderer stacks on top
+        top=resolve(name+'_top');m={**m,'elements':m['elements']+[{**e,'from':[e['from'][0],e['from'][1]+32,e['from'][2]],'to':[e['to'][0],e['to'][1]+32,e['to'][2]]} for e in top['elements']]}
     for e in m['elements']:
         x,y,z=e['from'];X,Y,Z=e['to']
         corners={

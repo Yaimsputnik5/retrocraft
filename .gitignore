@@ -9,3 +9,5 @@ run/
 /run-*/
 
 /cache/
+__pycache__
+*.pyc
