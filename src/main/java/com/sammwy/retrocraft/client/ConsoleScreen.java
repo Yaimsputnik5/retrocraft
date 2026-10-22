@@ -9,6 +9,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
 import org.lwjgl.glfw.GLFW;
 import java.util.UUID;
 
@@ -18,6 +19,7 @@ public final class ConsoleScreen extends Screen {
     private final ConsoleTheme theme;
     private final Text consoleName;
     private boolean controller, canManage, inWorld, subscribed = true;
+    private long screen;
     private Identifier textureId;
     private int frameWidth = 256, frameHeight = 240;
     private final ItemStack consoleStack;
@@ -25,7 +27,7 @@ public final class ConsoleScreen extends Screen {
 
     ConsoleScreen(Packets.Ui packet) {
         super(Text.literal(packet.title()));
-        instance = packet.instance(); controller = packet.controller(); canManage = packet.canManage(); inWorld = packet.inWorld();
+        instance = packet.instance(); controller = packet.controller(); canManage = packet.canManage(); inWorld = packet.inWorld(); screen = packet.screen();
         theme = ConsoleTheme.of(packet.console());
         consoleName = Text.translatable("console.retrocraft." + packet.console());
         consoleStack = new ItemStack(Registries.ITEM.get(Identifier.of("retrocraft", packet.console())));
@@ -33,12 +35,13 @@ public final class ConsoleScreen extends Screen {
 
     void update(Packets.Ui packet) {
         boolean changed = controller != packet.controller() || canManage != packet.canManage();
-        controller = packet.controller(); canManage = packet.canManage(); inWorld = packet.inWorld();
+        controller = packet.controller(); canManage = packet.canManage(); inWorld = packet.inWorld(); screen = packet.screen();
         if (changed) clearAndInit();
     }
 
     @Override protected void init() {
         if (client != null && !hudHiddenByUs) { hudWasHidden = client.options.hudHidden; client.options.hudHidden = true; hudHiddenByUs = true; }
+        if (inWorld) CameraRig.focus(BlockPos.fromLong(screen));
         // Miniature actions in the top-right corner; Escape closes the screen.
         int x = width - MARGIN;
         if (canManage) {
@@ -201,6 +204,7 @@ public final class ConsoleScreen extends Screen {
 
     @Override public void removed() {
         if (hudHiddenByUs && client != null) { client.options.hudHidden = hudWasHidden; hudHiddenByUs = false; }
+        CameraRig.release();
         if (RetrocraftClient.EMULATION != null) RetrocraftClient.EMULATION.release(instance);
         if (subscribed && ClientPlayNetworking.canSend(Packets.Request.ID)) ClientPlayNetworking.send(Packets.Request.of(Packets.CLOSE, instance));
         subscribed = false;

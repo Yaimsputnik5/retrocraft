@@ -14,6 +14,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.fabric.api.client.networking.v1.*;
 import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
 import net.minecraft.client.gui.screen.ingame.HandledScreens;
@@ -67,7 +68,6 @@ public final class RetrocraftClient implements ClientModInitializer {
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             EMULATION.tick(client);
-            for (UUID id : EMULATION.active()) { var frame = EMULATION.frame(id); if (frame != null) video.local(id, frame); }
             video.tick();
             audio.tick();
             if (!catalogDirty || client.world == null || client.player == null) return;
@@ -78,6 +78,8 @@ public final class RetrocraftClient implements ClientModInitializer {
                 screen.init(client, client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight());
             catalogDirty = false;
         });
+        // Locally emulated frames are uploaded per rendered frame, not per tick, so in-world screens stay smooth.
+        WorldRenderEvents.START.register(context -> { for (UUID id : EMULATION.active()) { var frame = EMULATION.frame(id); if (frame != null) video.local(id, frame); } });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             EMULATION.disconnect(); audio.close(); video.close(); RomCatalog.clientEntries(List.of()); pendingCatalog.clear(); catalogDirty = true;
             if (client.currentScreen instanceof ConsoleScreen screen) screen.serverClosed();

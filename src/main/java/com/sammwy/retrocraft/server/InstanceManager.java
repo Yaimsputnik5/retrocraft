@@ -552,9 +552,11 @@ public final class InstanceManager implements AutoCloseable {
         for (UUID id : session.videoWatchers.keySet()) { var player = server.getPlayerManager().getPlayer(id); if (player != null) send(player, status(session, player, Packets.ROLE)); }
     }
     private Packets.Ui status(Session session, ServerPlayerEntity player, int mode) {
-        return new Packets.Ui(mode, session.data.id(), session.host.definition().id().getPath(), session.game.name(), isInputSource(player.getUuid(), session.data.id()), session.host.canAccess(player), inWorld(session));
+        long screen = 0;
+        if (session.host instanceof DockedConsoleBlockEntity console) screen = (console.tv() != null ? console.tv() : console.getPos()).asLong();
+        return new Packets.Ui(mode, session.data.id(), session.host.definition().id().getPath(), session.game.name(), isInputSource(player.getUuid(), session.data.id()), session.host.canAccess(player), inWorld(session), screen);
     }
-    private static Packets.Ui stopped(Session session) { return new Packets.Ui(Packets.STOP, session.data.id(), "", "", false, false, false); }
+    private static Packets.Ui stopped(Session session) { return new Packets.Ui(Packets.STOP, session.data.id(), "", "", false, false, false, 0); }
     private void destroyFiles(UUID id) { try { store.destroy(id); } catch (IOException ex) { Retrocraft.LOG.error("Cannot destroy console instance {}", id, ex); } }
     private static void send(ServerPlayerEntity player, net.minecraft.network.packet.CustomPayload packet) { ServerPlayNetworking.send(player, packet); }
     private static void error(ServerPlayerEntity player, String key) { player.sendMessage(Text.translatable("message.retrocraft." + key), false); }

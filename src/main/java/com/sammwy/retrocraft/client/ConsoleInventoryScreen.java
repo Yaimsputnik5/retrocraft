@@ -46,9 +46,11 @@ public final class ConsoleInventoryScreen extends HandledScreen<ConsoleScreenHan
         context.fill(x + slot.x - 5, y + slot.y - 5, x + slot.x + 21, y + slot.y + 22, 0xff0f1116);
         context.fill(x + slot.x - 4, y + slot.y - 4, x + slot.x + 20, y + slot.y + 21, ConsoleTheme.shade(shell, .5f));
         for (int i = 0; i < 6; i++) context.fill(x + slot.x - 2 + i * 4, y + slot.y + 18, x + slot.x + i * 4, y + slot.y + 20, 0xffd7b15a);
+        // Player items that cannot go into this console (other cartridges, anything else) get a red backing.
         for (var s : handler.slots) {
-            context.fill(x + s.x - 1, y + s.y - 1, x + s.x + 17, y + s.y + 17, 0xff727986);
-            context.fill(x + s.x, y + s.y, x + s.x + 16, y + s.y + 16, 0xff181c24);
+            boolean wrong = !s.getStack().isEmpty() && !s.getStack().isOf(handler.definition().cartridge());
+            context.fill(x + s.x - 1, y + s.y - 1, x + s.x + 17, y + s.y + 17, wrong ? 0xff8a3030 : 0xff727986);
+            context.fill(x + s.x, y + s.y, x + s.x + 16, y + s.y + 16, wrong ? 0xff5a1f1f : 0xff181c24);
         }
     }
     @Override protected void drawForeground(DrawContext context, int mouseX, int mouseY) {

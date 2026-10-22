@@ -26,6 +26,7 @@
   "screen.retrocraft.take_control": "Take control",
   "message.retrocraft.insert_cartridge": "Insert a compatible cartridge first.",
   "message.retrocraft.no_tv": "No free television nearby. Place a TV within 12 blocks of the console.",
+  "tooltip.retrocraft.plays_on": "Plays on: %s",
   "block.retrocraft.tv_small": "Portable TV",
   "block.retrocraft.tv_medium": "CRT Television",
   "block.retrocraft.tv_large": "Console Television",

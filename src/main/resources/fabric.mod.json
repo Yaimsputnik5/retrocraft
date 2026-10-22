@@ -11,6 +11,7 @@
     "main": ["com.sammwy.retrocraft.Retrocraft"],
     "client": ["com.sammwy.retrocraft.client.RetrocraftClient"]
   },
+  "mixins": ["retrocraft.mixins.json"],
   "depends": {
     "fabricloader": ">=0.16.14",
     "minecraft": "~1.21.1",

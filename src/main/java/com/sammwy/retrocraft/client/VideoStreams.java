@@ -9,7 +9,7 @@ import java.util.*;
 
 /** Decodes every console video stream the server sends us, whether or not a play screen is open, into {@link ScreenTextures}. */
 final class VideoStreams {
-    private static final class Stream { final FrameCodec.Decoder decoder = new FrameCodec.Decoder(); long lastSeen, lastResync, acknowledged = -1; }
+    private static final class Stream { final FrameCodec.Decoder decoder = new FrameCodec.Decoder(); long lastSeen, lastResync; FrameCodec.Frame lastLocal; }
     private final Map<UUID, Stream> streams = new HashMap<>();
 
     void accept(Packets.Video packet) {
@@ -26,7 +26,10 @@ final class VideoStreams {
 
     /** Frames rendered by this client's own hybrid worker. */
     void local(UUID instance, FrameCodec.Frame frame) {
-        streams.computeIfAbsent(instance, ignored -> new Stream()).lastSeen = System.nanoTime();
+        Stream stream = streams.computeIfAbsent(instance, ignored -> new Stream());
+        stream.lastSeen = System.nanoTime();
+        if (stream.lastLocal == frame) return;
+        stream.lastLocal = frame;
         ScreenTextures.upload(instance, frame);
     }
 

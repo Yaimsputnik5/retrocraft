@@ -5,6 +5,10 @@ import net.minecraft.component.type.NbtComponent;
 import net.minecraft.item.*;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
+import com.sammwy.retrocraft.server.console.ConsoleRegistry;
+import java.util.*;
+import net.minecraft.item.tooltip.TooltipType;
 import net.minecraft.util.Identifier;
 import com.sammwy.retrocraft.roms.discovery.DiscoveryStrategy;
 
@@ -25,6 +29,12 @@ public final class CartridgeItem extends Item {
         stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(data));
         stack.set(DataComponentTypes.CUSTOM_NAME, Text.literal(name));
         return stack;
+    }
+    /** Second tooltip line: which consoles accept this cartridge. */
+    @Override public void appendTooltip(ItemStack stack, TooltipContext context, List<Text> tooltip, TooltipType type) {
+        List<String> consoles = new ArrayList<>();
+        for (var console : ConsoleRegistry.consoles()) if (console.cartridge() == this) consoles.add(console.displayName().getString());
+        if (!consoles.isEmpty()) tooltip.add(Text.translatable("tooltip.retrocraft.plays_on", String.join(", ", consoles)).formatted(Formatting.GRAY));
     }
     public static String gameId(ItemStack stack) {
         if (!(stack.getItem() instanceof CartridgeItem)) return "";

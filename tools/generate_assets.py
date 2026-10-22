@@ -658,9 +658,9 @@ def small_textures():
 
 TVS = {
     # name: (atlas size, footprint x0,x1, height, depth z0,z1, screen x0,x1,y0,y1, screen z)
-    'tv_small':  dict(size=128, body=(1, 15, 0, 13, 3, 13), screen=(2.5, 13.5, 3, 11.25), z=2.9),
-    'tv_medium': dict(size=256, body=(-8, 24, 0, 24, 2, 14), screen=(-5, 21, 3.25, 22.75), z=1.9),
-    'tv_large':  dict(size=256, body=(-16, 32, 0, 32, 0, 16), screen=(-7, 23, 4.5, 27), z=-.1),
+    'tv_small':  dict(size=128, body=(1, 15, 0, 13, 3, 13), screen=(2.5, 13.5, 3, 11.25), z=2.8),
+    'tv_medium': dict(size=256, body=(-8, 24, 0, 24, 2, 14), screen=(-5, 21, 3.25, 22.75), z=1.8),
+    'tv_large':  dict(size=256, body=(-16, 32, 0, 32, 0, 16), screen=(-7, 23, 4.5, 27), z=-.2),
 }
 
 def television(name, atlas):
