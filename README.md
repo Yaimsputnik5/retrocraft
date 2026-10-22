@@ -1,0 +1,114 @@
+# Retrocraft
+
+Play real retro games inside Minecraft.
+
+Retrocraft adds handhelds, home consoles, arcade cabinets and CRT televisions to the game, all backed by actual [libretro](https://www.libretro.com/) emulator cores. Drop your ROMs on the server, grab a cartridge from the creative menu, plug it into a console and play — alone on a Game Boy in your pocket, or with friends gathered around a TV in your base.
+
+- Minecraft **1.21.1** · Fabric · Java 21
+- Works on dedicated servers and in singleplayer
+
+## What's in the box
+
+| System | Hardware in game | Core |
+| --- | --- | --- |
+| NES | NES Handheld, NES Console | fceumm |
+| SNES | SNES Console | snes9x |
+| Game Boy / Game Boy Color | Game Boy, Game Boy Color | gambatte |
+| Game Boy Advance | Game Boy Advance | mgba |
+| Mega Drive / Genesis | Mega Drive, Genesis | genesis_plus_gx |
+| Nintendo 64 | Nintendo 64 | parallel_n64 |
+| Arcade | Arcade Machine | mame2003_plus |
+
+Plus three televisions to hook your consoles up to: a **Portable TV** (1 block), a **CRT Television** (2×1.5) and a big **Console Television** (3×2).
+
+Every console, cartridge and TV has its own pixel-art model and texture. Placed consoles show the actual cartridge sitting in the slot, a power LED, and the handhelds change their screen depending on whether they're on or off.
+
+## Handhelds
+
+Hold a Game Boy, GBA or NES Handheld in your hand and right-click:
+
+- Powered off → opens the console inventory with a single cartridge slot.
+- Insert a cartridge, hit **Power on**, and the game HUD opens right away.
+- Close the HUD whenever you want. The game keeps running on the server and picks up exactly where you left it the next time you open it.
+- Other players nearby hear your game's audio coming from you — even with the HUD closed, even if you drop the handheld on the ground.
+
+Stash it in a chest and the game is suspended; take it back out and it resumes.
+
+## Home consoles and TVs
+
+Home consoles are blocks. Place one, place a TV within 12 blocks, insert a cartridge (right-click the console with it) and power it on. The console grabs the nearest free TV and the game shows up on its screen, with sound coming from the set.
+
+Anyone can walk up and watch. Only one player holds the controller at a time; everyone else spectates, and **Take control** hands it over when the current player lets go. The arcade machine has its own built-in CRT, so it doesn't need a TV.
+
+Break the console or eject the cartridge and the TV is free again. Unloading the chunk suspends the game; it comes back when someone's around to watch.
+
+## Controls
+
+| Minecraft key | Pad |
+| --- | --- |
+| Arrow keys | D-pad / left stick |
+| Z / X | B / A |
+| A / S | Y / X |
+| Q / W | L / R |
+| Enter | Start |
+| Right Shift | Select |
+| I / J / K / L | Right stick / C buttons |
+| Escape | Close the HUD |
+
+## How it works (short version)
+
+Emulation is **hybrid**. While you're actively playing, the core runs locally on your client for zero-latency input; when you close the HUD or walk away, the save state is handed back to the server, which keeps running the game for anyone still watching or listening. Periodic checkpoints mean a crash or disconnect loses at most a couple of seconds.
+
+Each emulator core runs in its own isolated process, so one misbehaving game can't take the others down with it.
+
+Cores are downloaded on demand from the [official libretro buildbot](https://buildbot.libretro.com/nightly/) for Linux, Windows and macOS. Only the cores your ROM library actually needs are fetched, and the hash of each core is pinned after the first download. No ROMs, BIOS files or cores ship with the mod.
+
+## Setup
+
+1. Build the jar:
+
+   ```sh
+   ./gradlew build
+   ```
+
+2. Install `build/libs/retrocraft-0.1.0.jar` together with Fabric API on the server and on every client.
+
+3. Put your ROMs in `config/retrocraft/roms/` on the server. Any folder layout works, and ZIP / GZIP / TAR / TAR.GZ archives are scanned too. Games are identified by their content hash, not their file name.
+
+4. Start the world. Cartridges for every ROM found appear in the **Retrocraft** creative tab, alongside the consoles and TVs.
+
+Added more ROMs later? Run `/retrocraft scan` (op level 2) and the catalog is rebuilt and pushed to connected players without a restart.
+
+### Arcade notes
+
+The arcade machine uses MAME 2003-Plus, so ROM sets have to match that version (0.78). Sets must be complete, self-contained ZIPs including their BIOS where needed.
+
+### Configuration
+
+`config/retrocraft/config.json` is created on first launch. The defaults are sensible; the knobs you're most likely to touch:
+
+```json
+{
+  "audioRadius": 16,
+  "streamFps": 20,
+  "maxActiveInstances": 8,
+  "maxRomSizeMiB": 64
+}
+```
+
+You can also remap which core handles each system under the `cores` key.
+
+## Development
+
+```sh
+./gradlew build
+RETROCRAFT_TEST_CORE=/path/to/fceumm_libretro.so RETROCRAFT_TEST_DOWNLOAD=true ./gradlew test
+```
+
+The native tests run a small homebrew NES ROM through a real core and are skipped unless `RETROCRAFT_TEST_CORE` is set. Textures and models are generated from `tools/generate_assets.py` (Python + Pillow); the generated PNG/JSON files are committed, so Python isn't needed to build or run the mod.
+
+Consoles and cartridges are registered through `ConsoleRegistry`, so adding a new system is a matter of registering a cartridge with a ROM discovery strategy and one or more consoles that accept it.
+
+## License
+
+MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
