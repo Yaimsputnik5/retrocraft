@@ -1,0 +1,438 @@
+package dev.sammwy.retrocraft.server;
+
+import dev.sammwy.retrocraft.Retrocraft;
+import dev.sammwy.retrocraft.config.RetrocraftConfig;
+import dev.sammwy.retrocraft.console.*;
+import dev.sammwy.retrocraft.item.*;
+import dev.sammwy.retrocraft.net.Packets;
+import dev.sammwy.retrocraft.screen.*;
+import dev.sammwy.retrocraft.stream.*;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.entity.ItemEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.WorldSavePath;
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.locks.LockSupport;
+
+/** Server-owned emulation. Video, audio and input are separate subscriptions. */
+public final class InstanceManager implements AutoCloseable {
+    private final MinecraftServer server;
+    private final RetrocraftConfig config;
+    private final RomIndex roms = new RomIndex();
+    private final InstanceStore store;
+    private final Path workerJar;
+    private final Map<UUID, Session> sessions = new HashMap<>();
+    private final Map<UUID, UUID> videoWatching = new HashMap<>(), inputSessions = new HashMap<>();
+    private final Set<UUID> failedDiscovery = new HashSet<>();
+    private int ticks, catalogGeneration;
+    private volatile boolean stopping;
+
+    private static final class VideoWatcher {
+        long lastSeen = System.nanoTime(), lastSent, lastAcknowledged, lastResync;
+        boolean needsKeyframe = true;
+    }
+    private static final class AudioWatcher {
+        float gain;
+        long lastSent, lastAcknowledged;
+        AudioWatcher(float gain) { this.gain = gain; }
+    }
+    private static final class InputSource {
+        final UUID player;
+        volatile int buttons;
+        volatile long lastSeen = System.nanoTime();
+        InputSource(UUID player) { this.player = player; }
+    }
+    private static final class Media {
+        private FrameCodec.Frame frame;
+        private ByteArrayOutputStream audio = new ByteArrayOutputStream();
+        private boolean updated;
+        synchronized void offer(WorkerProcess.Output output, int rate) {
+            frame = output.frame(); updated = true;
+            int limit = Math.min(WorkerProtocol.MAX_AUDIO, rate); // at most 250ms stereo PCM
+            if (audio.size() + output.audio().length > limit) audio.reset();
+            if (output.audio().length <= limit) audio.writeBytes(output.audio());
+        }
+        synchronized WorkerProcess.Output drain() {
+            if (!updated) return null;
+            var result = new WorkerProcess.Output(frame, audio.toByteArray());
+            frame = null; audio.reset(); updated = false;
+            return result;
+        }
+        synchronized void clear() { frame = null; audio = new ByteArrayOutputStream(); updated = false; }
+    }
+    private static final class Session {
+        final InstanceStore.Metadata data;
+        volatile RomIndex.Game game;
+        ConsoleHost host;
+        final Map<UUID, VideoWatcher> videoWatchers = new HashMap<>();
+        final Map<UUID, AudioWatcher> audioWatchers = new HashMap<>();
+        final Media media = new Media();
+        final FrameCodec.Encoder encoder = new FrameCodec.Encoder();
+        volatile InputSource inputSource;
+        volatile boolean wantsVideo, wantsAudio, observed, finished, destroy;
+        volatile WorkerProcess process;
+        volatile Throwable failure;
+        volatile int sampleRate;
+        Thread thread;
+        boolean forceKeyframe = true;
+        long nextStream, nextKeyframe;
+        long audioSequence;
+        Session(InstanceStore.Metadata data, RomIndex.Game game, ConsoleHost host) { this.data = data; this.game = game; this.host = host; }
+    }
+
+    public InstanceManager(MinecraftServer server, RetrocraftConfig config) throws IOException {
+        this.server = server; this.config = config;
+        store = new InstanceStore(server.getSavePath(WorldSavePath.ROOT).resolve("retrocraft/instances"));
+        Path runtime = RetrocraftConfig.root().resolve("runtime");
+        Files.createDirectories(runtime);
+        workerJar = runtime.resolve("retrocraft-worker.jar");
+        Path temporary = Files.createTempFile(runtime, "worker-", ".jar");
+        try (InputStream resource = InstanceManager.class.getResourceAsStream("/retrocraft/retrocraft-worker.jar")) {
+            if (resource == null) throw new IOException("Bundled worker missing");
+            Files.copy(resource, temporary, StandardCopyOption.REPLACE_EXISTING);
+        }
+        Files.move(temporary, workerJar, StandardCopyOption.REPLACE_EXISTING);
+        reloadLibrary();
+        Retrocraft.LOG.info("Retrocraft ready: {} consoles, {} ROMs", ConsoleRegistry.consoles().size(), roms.catalog().size());
+    }
+
+    public void reloadLibrary() throws IOException {
+        roms.scan(RetrocraftConfig.root().resolve("roms"), config.maxRomSizeMiB * 1024L * 1024);
+        for (Session session : sessions.values()) {
+            RomIndex.Game replacement = roms.find(session.game.cartridge(), session.data.gameId());
+            if (replacement != null) {
+                session.game = replacement;
+                if (session.thread == null) session.failure = null;
+            }
+        }
+        catalogGeneration++;
+        failedDiscovery.clear();
+        for (var player : server.getPlayerManager().getPlayerList()) sendCatalog(player);
+    }
+    public void sendCatalog(ServerPlayerEntity player) {
+        if (!ServerPlayNetworking.canSend(player, Packets.Catalog.ID)) return;
+        List<RomCatalog.Entry> catalog = roms.catalog();
+        if (catalog.isEmpty()) send(player, new Packets.Catalog(catalogGeneration, true, true, List.of()));
+        for (int i = 0; i < catalog.size(); i += 128)
+            send(player, new Packets.Catalog(catalogGeneration, i == 0, i + 128 >= catalog.size(), catalog.subList(i, Math.min(i + 128, catalog.size()))));
+    }
+
+    public void powerOn(ConsoleHost host, ServerPlayerEntity player) {
+        if (stopping || !host.canAccess(player) || host.instance() != null) return;
+        if (activeCount() >= config.maxActiveInstances) { error(player, "limit"); return; }
+        ItemStack cartridge = host.cartridge();
+        if (!cartridge.isOf(host.definition().cartridge())) { error(player, "insert_cartridge"); return; }
+        RomIndex.Game game = roms.find(host.definition().cartridge(), CartridgeItem.gameId(cartridge));
+        if (game == null) { error(player, "invalid_rom"); return; }
+        try {
+            Path core = config.corePath(game.cartridge().id());
+            if (!Files.isRegularFile(core)) { error(player, "core_missing"); return; }
+            if (!game.id().equals(InstanceStore.sha256(game.path()))) { error(player, "rom_changed"); return; }
+            var data = store.create(player.getUuid(), host.definition().id().toString(), game.id(), game.name(), core);
+            host.instance(data.id());
+            sessions.put(data.id(), new Session(data, game, host));
+        } catch (IOException | IllegalArgumentException ex) { Retrocraft.LOG.error("Cannot power on console", ex); error(player, "storage_failed"); }
+    }
+
+    /** Restore a powered item/block after joining, chunk load, inventory transfer or server restart. */
+    public void discover(ConsoleHost host) {
+        UUID id = host.instance();
+        if (stopping || id == null || !host.valid() || failedDiscovery.contains(id)) return;
+        Session existing = sessions.get(id);
+        if (existing != null) { if (!existing.host.valid()) existing.host = host; return; }
+        try {
+            var data = store.load(id);
+            RomIndex.Game game = roms.find(host.definition().cartridge(), CartridgeItem.gameId(host.cartridge()));
+            if (game == null || !host.cartridge().isOf(host.definition().cartridge()) || !data.gameId().equals(game.id())
+                    || !data.console().equals(host.definition().id().toString())) throw new IOException("Console/cartridge identity mismatch");
+            sessions.put(id, new Session(data, game, host));
+        } catch (IOException ex) { failedDiscovery.add(id); Retrocraft.LOG.error("Cannot discover powered console {}", id, ex); }
+    }
+
+    public void powerOff(ConsoleHost host) {
+        UUID id = host.instance();
+        if (id == null) return;
+        host.instance(null);
+        failedDiscovery.remove(id);
+        Session session = sessions.get(id);
+        if (session != null) {
+            session.destroy = true;
+            session.observed = false;
+            stopSubscribers(session);
+            if (session.thread != null) return;
+            sessions.remove(id);
+        }
+        destroyFiles(id);
+    }
+
+    public void watchVideo(ServerPlayerEntity player, ConsoleHost host) {
+        if (!host.canAccess(player) || host.instance() == null) return;
+        discover(host);
+        Session session = sessions.get(host.instance());
+        if (session == null || session.destroy || session.failure != null) { error(player, "invalid_instance"); return; }
+        detachVideo(player.getUuid());
+        session.videoWatchers.put(player.getUuid(), new VideoWatcher());
+        videoWatching.put(player.getUuid(), session.data.id());
+        session.forceKeyframe = true;
+        claimInput(player, session.data.id());
+        send(player, status(session, player, Packets.PLAY));
+    }
+
+    public boolean claimInput(ServerPlayerEntity player, UUID id) {
+        Session session = sessions.get(id);
+        if (session == null || session.destroy || !session.host.canAccess(player)) return false;
+        if (session.inputSource != null && !session.inputSource.player.equals(player.getUuid())) { error(player, "input_busy"); return false; }
+        releaseInput(player.getUuid());
+        session.inputSource = new InputSource(player.getUuid());
+        inputSessions.put(player.getUuid(), id);
+        notifyRoles(session);
+        return true;
+    }
+    public boolean isInputSource(UUID player, UUID instance) { return instance != null && instance.equals(inputSessions.get(player)); }
+    public void releaseInput(UUID player) {
+        Session session = sessions.get(inputSessions.remove(player));
+        if (session != null && session.inputSource != null && session.inputSource.player.equals(player)) { session.inputSource = null; notifyRoles(session); }
+    }
+    private void detachVideo(UUID player) {
+        Session session = sessions.get(videoWatching.remove(player));
+        if (session != null) {
+            session.videoWatchers.remove(player);
+            if (session.videoWatchers.isEmpty()) { session.encoder.clear(); session.forceKeyframe = true; }
+        }
+        releaseInput(player);
+    }
+    public void disconnect(UUID player) {
+        detachVideo(player);
+        for (Session session : sessions.values()) session.audioWatchers.remove(player);
+    }
+
+    public void request(ServerPlayerEntity player, Packets.Request packet) {
+        if (stopping) return;
+        UUID id = packet.instance();
+        // Inventory screens use the server's current handler, never a client-supplied host.
+        if (id.equals(Packets.NONE) && player.currentScreenHandler instanceof ConsoleScreenHandler handler && handler.canUse(player))
+            id = handler.host().instance();
+        Session session = sessions.get(id);
+        if (session == null || session.destroy) return;
+        UUID playerId = player.getUuid();
+        VideoWatcher video = session.videoWatchers.get(playerId);
+        long now = System.nanoTime();
+        switch (packet.action()) {
+            case Packets.AUDIO_ACK -> {
+                AudioWatcher watcher = session.audioWatchers.get(playerId);
+                if (watcher != null) watcher.lastAcknowledged = Math.max(watcher.lastAcknowledged, Math.min(watcher.lastSent, packet.acknowledgedSequence()));
+            }
+            case Packets.INPUT -> {
+                if (video != null) {
+                    video.lastSeen = now;
+                    video.lastAcknowledged = Math.max(video.lastAcknowledged, Math.min(video.lastSent, packet.acknowledgedSequence()));
+                }
+                InputSource input = session.inputSource;
+                if (input != null && input.player.equals(playerId) && session.host.canAccess(player)) {
+                    input.buttons = packet.buttons() & 0x1fd;
+                    input.lastSeen = now;
+                }
+            }
+            case Packets.CLOSE -> { if (video != null) detachVideo(playerId); }
+            case Packets.RESYNC -> {
+                if (video == null || now - video.lastResync < TimeUnit.SECONDS.toNanos(1)) return;
+                video.lastResync = now; video.lastAcknowledged = video.lastSent; video.needsKeyframe = true; session.forceKeyframe = true;
+            }
+            case Packets.OPEN_INVENTORY -> {
+                if (!session.host.canAccess(player)) return;
+                detachVideo(playerId);
+                ConsoleMenus.open(player, session.host);
+            }
+            case Packets.POWER_OFF -> { if (session.host.canAccess(player)) powerOff(session.host); }
+            case Packets.EJECT -> {
+                if (!session.host.canAccess(player)) return;
+                ConsoleHost host = session.host;
+                powerOff(host);
+                ItemStack cartridge = host.cartridge();
+                host.cartridge(ItemStack.EMPTY);
+                if (!player.getInventory().insertStack(cartridge)) player.dropItem(cartridge, false);
+            }
+            case Packets.CLAIM_INPUT -> claimInput(player, id);
+            default -> { }
+        }
+    }
+
+    public void tick() {
+        ticks++;
+        if (ticks % 20 == 1) discoverItems();
+        long now = System.nanoTime();
+        for (Session session : List.copyOf(sessions.values())) {
+            finish(session);
+            if (session.destroy) { if (session.thread == null) { destroyFiles(session.data.id()); sessions.remove(session.data.id()); } continue; }
+            updateSubscriptions(session, now);
+            session.wantsVideo = !session.videoWatchers.isEmpty();
+            session.wantsAudio = !session.audioWatchers.isEmpty();
+            session.observed = session.wantsVideo || session.wantsAudio;
+            if (session.thread == null && session.observed && session.failure == null && activeCount() < config.maxActiveInstances) start(session);
+            if (session.thread == null && !session.host.valid() && !session.observed) { sessions.remove(session.data.id()); continue; }
+            stream(session, now);
+        }
+    }
+
+    private void discoverItems() {
+        for (var player : server.getPlayerManager().getPlayerList()) {
+            for (int i = 0; i < player.getInventory().size(); i++) {
+                ItemStack stack = player.getInventory().getStack(i);
+                if (stack.getItem() instanceof HandheldConsoleItem && HandheldConsoleItem.instance(stack) != null) discover(new HandheldHost(player, stack));
+            }
+        }
+        for (var world : server.getWorlds()) for (var entity : world.iterateEntities()) {
+            if (entity instanceof ItemEntity item && item.getStack().getItem() instanceof HandheldConsoleItem && HandheldConsoleItem.instance(item.getStack()) != null)
+                discover(new HandheldHost(item));
+        }
+    }
+
+    private void updateSubscriptions(Session session, long now) {
+        boolean valid = session.host.valid() && session.data.id().equals(session.host.instance());
+        for (UUID id : List.copyOf(session.videoWatchers.keySet())) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(id);
+            VideoWatcher watcher = session.videoWatchers.get(id);
+            if (!valid || player == null || !session.host.canAccess(player)
+                    || now - watcher.lastSeen > TimeUnit.SECONDS.toNanos(config.watcherTimeoutSeconds)) {
+                if (player != null) send(player, stopped(session));
+                detachVideo(id);
+            }
+        }
+        Set<UUID> listeners = new HashSet<>();
+        if (valid && session.failure == null) for (var player : server.getPlayerManager().getPlayerList()) {
+            if (player.getWorld() != session.host.world() || !ServerPlayNetworking.canSend(player, Packets.Audio.ID)) continue;
+            double distance = player.getPos().distanceTo(session.host.position());
+            if (distance >= config.audioRadius) continue;
+            listeners.add(player.getUuid());
+            session.audioWatchers.computeIfAbsent(player.getUuid(), ignored -> new AudioWatcher(1)).gain = (float) (1 - distance / config.audioRadius);
+        }
+        for (UUID id : List.copyOf(session.audioWatchers.keySet())) if (!listeners.contains(id)) {
+            session.audioWatchers.remove(id);
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(id);
+            if (player != null) send(player, new Packets.AudioStop(session.data.id()));
+        }
+        InputSource input = session.inputSource;
+        if (input != null) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(input.player);
+            if (!valid || player == null || !session.host.canAccess(player)
+                    || now - input.lastSeen > TimeUnit.SECONDS.toNanos(config.watcherTimeoutSeconds)) releaseInput(input.player);
+        }
+    }
+
+    private void stream(Session session, long now) {
+        if (now + 1_000_000L < session.nextStream) return;
+        long period = 1_000_000_000L / config.streamFps;
+        session.nextStream = Math.max(session.nextStream, now - period) + period;
+        WorkerProcess.Output output = session.media.drain();
+        if (output == null) return;
+        // Audio fan-out never depends on video acknowledgements or on an open HUD.
+        if (output.audio().length > 0) session.audioSequence++;
+        if (output.audio().length > 0) for (var listener : session.audioWatchers.entrySet()) {
+            AudioWatcher watcher = listener.getValue();
+            if (watcher.lastSent - watcher.lastAcknowledged >= 6) continue;
+            var player = server.getPlayerManager().getPlayer(listener.getKey());
+            if (player != null) { send(player, new Packets.Audio(session.data.id(), session.audioSequence, session.sampleRate, watcher.gain, output.audio())); watcher.lastSent = session.audioSequence; }
+        }
+        if (output.frame() == null || session.videoWatchers.isEmpty()) return;
+        try {
+            List<ServerPlayerEntity> targets = new ArrayList<>();
+            for (var entry : session.videoWatchers.entrySet()) {
+                VideoWatcher watcher = entry.getValue();
+                if (watcher.lastSent - watcher.lastAcknowledged >= 4) { watcher.needsKeyframe = true; continue; }
+                ServerPlayerEntity player = server.getPlayerManager().getPlayer(entry.getKey());
+                if (player != null) targets.add(player);
+                if (watcher.needsKeyframe) session.forceKeyframe = true;
+            }
+            if (targets.isEmpty()) return;
+            boolean key = session.forceKeyframe || now >= session.nextKeyframe;
+            var frame = session.encoder.encode(output.frame(), key);
+            if (key) { session.forceKeyframe = false; session.nextKeyframe = now + TimeUnit.SECONDS.toNanos(config.keyframeIntervalSeconds); }
+            for (var player : targets) {
+                send(player, new Packets.Video(session.data.id(), frame));
+                VideoWatcher watcher = session.videoWatchers.get(player.getUuid());
+                watcher.lastSent = frame.sequence(); watcher.needsKeyframe = false;
+            }
+        } catch (IOException ex) { Retrocraft.LOG.error("Cannot encode console video", ex); session.forceKeyframe = true; }
+    }
+
+    private long activeCount() { return sessions.values().stream().filter(s -> s.thread != null && !s.finished).count(); }
+    private void start(Session session) {
+        RomIndex.Game game = session.game;
+        session.thread = Thread.ofVirtual().name("retrocraft-" + session.data.id()).unstarted(() -> {
+            Path state = store.snapshot(session.data.id());
+            try {
+                Path core = config.corePath(game.cartridge().id());
+                if (!session.data.gameId().equals(InstanceStore.sha256(game.path()))
+                        || !session.data.coreSha256().equals(InstanceStore.sha256(core))) throw new IOException("ROM/core changed since snapshot");
+                try (WorkerProcess process = new WorkerProcess(workerJar, core, game.path(), state, store.directory(session.data.id()).resolve("worker.log"))) {
+                    session.process = process; session.sampleRate = process.sampleRate();
+                    long period = Math.round(1_000_000_000d / process.fps());
+                    long next = System.nanoTime(), nextSave = next + TimeUnit.SECONDS.toNanos(config.autosaveIntervalSeconds);
+                    while (!stopping && !session.destroy && session.observed) {
+                        InputSource input = session.inputSource;
+                        int buttons = input != null && System.nanoTime() - input.lastSeen < TimeUnit.SECONDS.toNanos(2) ? input.buttons : 0;
+                        session.media.offer(process.advance(buttons, session.wantsVideo, session.wantsAudio), process.sampleRate());
+                        long now = System.nanoTime();
+                        if (now >= nextSave) { process.save(); nextSave = now + TimeUnit.SECONDS.toNanos(config.autosaveIntervalSeconds); }
+                        next += period;
+                        if (next < now - period * 4) next = now;
+                        if (next > now) LockSupport.parkNanos(next - now);
+                    }
+                    if (!session.destroy) process.save();
+                }
+            } catch (Throwable ex) { session.failure = ex; Retrocraft.LOG.error("Console instance {} failed", session.data.id(), ex); }
+            finally {
+                if (session.destroy) destroyFiles(session.data.id());
+                session.process = null; session.media.clear(); session.finished = true;
+            }
+        });
+        session.thread.start();
+    }
+
+    private void finish(Session session) {
+        if (!session.finished) return;
+        session.thread = null; session.finished = false; session.encoder.clear(); session.forceKeyframe = true;
+        if (session.failure != null) {
+            for (UUID id : session.videoWatchers.keySet()) { var player = server.getPlayerManager().getPlayer(id); if (player != null) error(player, "failed"); }
+            stopSubscribers(session);
+        }
+    }
+    private void stopSubscribers(Session session) {
+        for (UUID id : List.copyOf(session.videoWatchers.keySet())) {
+            var player = server.getPlayerManager().getPlayer(id);
+            if (player != null) send(player, stopped(session));
+            detachVideo(id);
+        }
+        if (session.inputSource != null) releaseInput(session.inputSource.player);
+        for (UUID id : session.audioWatchers.keySet()) { var player = server.getPlayerManager().getPlayer(id); if (player != null) send(player, new Packets.AudioStop(session.data.id())); }
+        session.audioWatchers.clear();
+    }
+    private void notifyRoles(Session session) {
+        for (UUID id : session.videoWatchers.keySet()) { var player = server.getPlayerManager().getPlayer(id); if (player != null) send(player, status(session, player, Packets.ROLE)); }
+    }
+    private Packets.Ui status(Session session, ServerPlayerEntity player, int mode) {
+        return new Packets.Ui(mode, session.data.id(), session.game.name(), isInputSource(player.getUuid(), session.data.id()), session.host.canAccess(player));
+    }
+    private static Packets.Ui stopped(Session session) { return new Packets.Ui(Packets.STOP, session.data.id(), "", false, false); }
+    private void destroyFiles(UUID id) { try { store.destroy(id); } catch (IOException ex) { Retrocraft.LOG.error("Cannot destroy console instance {}", id, ex); } }
+    private static void send(ServerPlayerEntity player, net.minecraft.network.packet.CustomPayload packet) { ServerPlayNetworking.send(player, packet); }
+    private static void error(ServerPlayerEntity player, String key) { player.sendMessage(Text.translatable("message.retrocraft." + key), false); }
+
+    @Override public void close() {
+        stopping = true;
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        for (Session session : sessions.values()) {
+            if (session.thread == null) continue;
+            try { session.thread.join(Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()))); }
+            catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
+            if (session.thread.isAlive()) { Retrocraft.LOG.error("Console {} exceeded shutdown deadline", session.data.id()); if (session.process != null) session.process.abort(); session.thread.interrupt(); }
+        }
+        sessions.clear(); videoWatching.clear(); inputSessions.clear(); failedDiscovery.clear();
+    }
+}
