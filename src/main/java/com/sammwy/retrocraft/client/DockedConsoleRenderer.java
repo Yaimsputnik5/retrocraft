@@ -15,7 +15,7 @@ import net.minecraft.util.math.RotationAxis;
 
 /** The casing is a baked vanilla model; this draws the inserted cartridge and, on the arcade cabinet, the live CRT picture. */
 public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedConsoleBlockEntity> {
-    // Cabinet CRT glass in model units (front = north, symmetric in x): x 1.5..14.5, y 16..26, z 3.
+    // Cabinet CRT glass in model units (front = north, symmetric in x): x 1.5..14.5, y 16..26, marquee face at z 2.5.
     private static final float CRT_X0 = 1.5f, CRT_X1 = 14.5f, CRT_Y0 = 16, CRT_Y1 = 26, CRT_Z = 2.5f;
     /** Roof of the cabinet (model units above 32 cannot live in the block's own JSON model). */
     public static final Identifier TOP_MODEL = Identifier.of("retrocraft", "block/mame_console_top");
@@ -70,9 +70,9 @@ public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedCo
         float cx = (x0 + x1) / 32f - .5f, cy = (y0 + y1) / 32f, z = zUnits / 16f - .5f;
         var matrix = matrices.peek().getPositionMatrix();
         var black = vertices.getBuffer(RenderLayer.getEntitySolid(entry.id()));
-        quad(black, matrix, cx - gw / 2, cy - gh / 2, cx + gw / 2, cy + gh / 2, z, 0, 0, 0, 0, 0);
+        quad(black, matrix, cx - gw / 2, cy - gh / 2, cx + gw / 2, cy + gh / 2, z - .002f, 0, 0, 0, 0, 0);
         var glass = vertices.getBuffer(RenderLayer.getEntityCutoutNoCull(entry.id()));
-        quad(glass, matrix, cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, z - .006f, 0, 0, 1, 1, 255);
+        quad(glass, matrix, cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, z - .0045f, 0, 0, 1, 1, 255);
     }
 
     /** Quad facing -z (the cabinet front). Seen from the front, +x is the viewer's left, so u=0 maps to x1. */

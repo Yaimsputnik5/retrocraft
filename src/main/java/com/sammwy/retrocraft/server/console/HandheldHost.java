@@ -14,15 +14,16 @@ public final class HandheldHost implements ConsoleHost {
     private final ServerPlayerEntity holder;
     private final ItemEntity dropped;
     private final ItemStack stack;
-    public HandheldHost(ServerPlayerEntity holder, ItemStack stack) { this.holder = holder; this.stack = stack; dropped = null; }
-    public HandheldHost(ItemEntity dropped) { this.dropped = dropped; stack = dropped.getStack(); holder = null; }
+    private final HandheldConsoleItem console;
+    public HandheldHost(ServerPlayerEntity holder, ItemStack stack) { this.holder = holder; this.stack = stack; dropped = null; console = (HandheldConsoleItem) stack.getItem(); }
+    public HandheldHost(ItemEntity dropped) { this.dropped = dropped; stack = dropped.getStack(); holder = null; console = (HandheldConsoleItem) stack.getItem(); }
     public ItemStack stack() { return stack; }
     public int inventorySlot() {
         if (holder == null) return -1;
         for (int i = 0; i < holder.getInventory().size(); i++) if (holder.getInventory().getStack(i) == stack) return i;
         return -1;
     }
-    @Override public ConsoleDefinition definition() { return ((HandheldConsoleItem) stack.getItem()).definition(); }
+    @Override public ConsoleDefinition definition() { return console.definition(); }
     @Override public ItemStack cartridge() { return stack.getOrDefault(DataComponentTypes.CONTAINER, ContainerComponent.DEFAULT).stream().findFirst().orElse(ItemStack.EMPTY); }
     @Override public void cartridge(ItemStack cartridge) {
         stack.set(DataComponentTypes.CONTAINER, ContainerComponent.fromStacks(List.of(cartridge)));

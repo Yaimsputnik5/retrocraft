@@ -21,9 +21,9 @@ public final class TvBlock extends BlockWithEntity {
 
     /** Cabinet footprint (extra blocks sideways and upwards) and screen glass rectangle in model units, front = north. */
     public enum Size {
-        SMALL("tv_small", 0, 0, 1, 15, 13, 3, 13, 2.5f, 13.5f, 3, 11.25f, 2.3f),
-        MEDIUM("tv_medium", 1, 1, -8, 24, 24, 2, 14, -5, 21, 3.25f, 22.75f, 1.3f),
-        LARGE("tv_large", 1, 1, -16, 32, 32, 0, 16, -7, 23, 4.5f, 27, -.7f);
+        SMALL("tv_small", 0, 0, 1, 15, 13, 3, 13, 2.5f, 13.5f, 3, 11.25f, 2.7f),
+        MEDIUM("tv_medium", 1, 1, -8, 24, 24, 2, 14, -5, 21, 3.25f, 22.75f, 1.8f),
+        LARGE("tv_large", 1, 1, -16, 32, 32, 0, 16, -7, 23, 4.5f, 27, -.2f);
         public final String id; public final int sideways, upwards;
         public final float x0, x1, height, z0, z1, screenX0, screenX1, screenY0, screenY1, screenZ;
         Size(String id, int sideways, int upwards, float x0, float x1, float height, float z0, float z1, float sx0, float sx1, float sy0, float sy1, float sz) {
