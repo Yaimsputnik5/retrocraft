@@ -10,13 +10,6 @@ base { archivesName = 'retrocraft' }
 repositories { mavenCentral() }
 
 loom {
-    splitEnvironmentSourceSets()
-    mods {
-        retrocraft {
-            sourceSet sourceSets.main
-            sourceSet sourceSets.client
-        }
-    }
     runs {
         client {
             if (project.hasProperty('retrocraftRunDir')) runDir project.property('retrocraftRunDir')
@@ -24,33 +17,15 @@ loom {
     }
 }
 
-sourceSets {
-    shared
-    worker
-    main {
-        compileClasspath += shared.output
-        runtimeClasspath += shared.output
-    }
-    client {
-        compileClasspath += shared.output
-        runtimeClasspath += shared.output
-    }
-    worker {
-        compileClasspath += shared.output
-        runtimeClasspath += shared.output
-    }
-    test {
-        compileClasspath += shared.output + worker.output
-        runtimeClasspath += shared.output + worker.output
-    }
-}
+configurations { workerLibraries }
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-    workerImplementation 'net.java.dev.jna:jna:5.15.0'
+    compileOnly 'net.java.dev.jna:jna:5.15.0'
+    workerLibraries 'net.java.dev.jna:jna:5.15.0'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
@@ -59,10 +34,13 @@ tasks.register('workerJar', Jar) {
     archiveFileName = 'retrocraft-worker.jar'
     destinationDirectory = layout.buildDirectory.dir('worker')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    manifest { attributes 'Main-Class': 'dev.sammwy.retrocraft.worker.WorkerMain' }
-    from sourceSets.worker.output
-    from sourceSets.shared.output
-    from { configurations.workerRuntimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+    manifest { attributes 'Main-Class': 'com.sammwy.retrocraft.cores.worker.WorkerMain' }
+    dependsOn compileJava
+    from(layout.buildDirectory.dir('classes/java/main')) {
+        include 'com/sammwy/retrocraft/cores/worker/**'
+        include 'com/sammwy/retrocraft/cores/stream/**'
+    }
+    from { configurations.workerLibraries.collect { it.isDirectory() ? it : zipTree(it) } }
     exclude 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA'
 }
 
@@ -73,7 +51,6 @@ processResources {
 }
 
 jar {
-    from sourceSets.shared.output
     from('LICENSE') { rename { 'LICENSE_retrocraft' } }
     from('THIRD_PARTY_NOTICES.md')
     from('licenses') { into 'licenses' }
@@ -83,10 +60,10 @@ java {
     withSourcesJar()
 }
 tasks.withType(JavaCompile).configureEach { options.release = 21 }
-tasks.named('sourcesJar') { from sourceSets.shared.allSource; from sourceSets.worker.allSource }
 test {
     useJUnitPlatform()
     dependsOn tasks.named('workerJar')
     systemProperty 'retrocraft.workerJar', tasks.named('workerJar').get().archiveFile.get().asFile.absolutePath
+    systemProperty 'retrocraft.testDownload', System.getenv('RETROCRAFT_TEST_DOWNLOAD') ?: 'false'
     if (System.getenv('RETROCRAFT_TEST_CORE')) systemProperty 'retrocraft.testCore', System.getenv('RETROCRAFT_TEST_CORE')
 }

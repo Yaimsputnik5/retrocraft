@@ -28,5 +28,9 @@
   "message.retrocraft.input_busy": "This console already has an input source.",
   "message.retrocraft.reloaded": "Retrocraft ROM catalog reloaded and synchronized.",
   "console.retrocraft.nes_handheld": "NES Handheld",
-  "console.retrocraft.nes_console": "NES Console"
+  "console.retrocraft.nes_console": "NES Console",
+  "item.retrocraft.snes": "SNES Cartridge",
+  "block.retrocraft.snes_console": "SNES Console",
+  "console.retrocraft.snes_console": "SNES Console",
+  "message.retrocraft.core_preparing": "The server is preparing the required core. Try again shortly."
 }

@@ -3,13 +3,13 @@
   "id": "retrocraft",
   "version": "${version}",
   "name": "Retrocraft",
-  "description": "Server-side libretro NES instances with streamed video and audio.",
+  "description": "Hybrid libretro emulation with checkpointed client/server ownership.",
   "authors": ["Sammwy"],
   "license": "MIT",
   "environment": "*",
   "entrypoints": {
-    "main": ["dev.sammwy.retrocraft.Retrocraft"],
-    "client": ["dev.sammwy.retrocraft.client.RetrocraftClient"]
+    "main": ["com.sammwy.retrocraft.Retrocraft"],
+    "client": ["com.sammwy.retrocraft.client.RetrocraftClient"]
   },
   "depends": {
     "fabricloader": ">=0.16.14",

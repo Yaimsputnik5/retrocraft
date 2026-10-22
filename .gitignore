@@ -4,3 +4,6 @@ run/
 *.log
 .idea/
 *.iml
+
+/tmp/
+/run-*/
