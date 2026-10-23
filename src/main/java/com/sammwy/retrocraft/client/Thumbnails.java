@@ -1,6 +1,7 @@
 package com.sammwy.retrocraft.client;
 
 import com.sammwy.retrocraft.server.item.HandheldConsoleItem;
+import com.sammwy.retrocraft.cores.stream.ThumbnailCodec;
 import com.sammwy.retrocraft.server.net.Packets;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.*;
@@ -21,13 +22,19 @@ public final class Thumbnails {
             "gbc_handheld", new float[]{5.9f, 10.9f, 9.6f, 13.9f, 9.3f},
             "gba_handheld", new float[]{5.1f, 10.9f, 6.6f, 10.6f, 9.2f},
             "nes_handheld", new float[]{5.2f, 10.8f, 6, 10.6f, 9.3f});
-    private record Entry(Identifier id, int width, int height, long at) {}
+    private record Entry(Identifier id, int width, int height, long at, byte[] png) {}
     private static final Map<UUID, Entry> entries = new HashMap<>();
     private static final Map<UUID, NativeImageBackedTexture> textures = new HashMap<>();
 
     static void accept(Packets.Thumbnail packet) {
         if (!ClientPreferences.get().renderHandheldScreens) return;
         if (packet.png().length == 0) { release(packet.instance()); return; }
+        if (!ThumbnailCodec.valid(packet.png())) return;
+        Entry cached = entries.get(packet.instance());
+        if (cached != null && Arrays.equals(cached.png, packet.png())) {
+            entries.put(packet.instance(), new Entry(cached.id, cached.width, cached.height, System.nanoTime(), cached.png));
+            return;
+        }
         try {
             NativeImage image = NativeImage.read(new ByteArrayInputStream(packet.png()));
             Entry entry = entries.get(packet.instance());
@@ -38,10 +45,10 @@ public final class Thumbnails {
                 texture.setFilter(false, false);
                 Identifier id = MinecraftClient.getInstance().getTextureManager().registerDynamicTexture("retrocraft/thumb", texture);
                 textures.put(packet.instance(), texture);
-                entry = new Entry(id, image.getWidth(), image.getHeight(), 0);
+                entry = new Entry(id, image.getWidth(), image.getHeight(), 0, packet.png());
             } else texture.setImage(image);
             texture.upload();
-            entries.put(packet.instance(), new Entry(entry.id, entry.width, entry.height, System.nanoTime()));
+            entries.put(packet.instance(), new Entry(entry.id, entry.width, entry.height, System.nanoTime(), packet.png()));
         } catch (IOException ignored) { }
     }
 

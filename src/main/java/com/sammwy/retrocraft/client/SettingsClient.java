@@ -65,17 +65,20 @@ public final class SettingsClient {
     /** Stale action responses are reported as a timeout so the UI never hangs on a spinner. */
     public static void tick() {
         long now = System.nanoTime();
-        for (var it = pending.entrySet().iterator(); it.hasNext();) {
-            var entry = it.next();
-            if (now < entry.getValue().deadline) continue;
-            it.remove();
-            entry.getValue().response.event(SettingsPackets.RomEvent.fail(entry.getKey(), "Timed out"));
+        var expired = new ArrayList<Integer>();
+        for (var entry : pending.entrySet()) if (now >= entry.getValue().deadline) expired.add(entry.getKey());
+        for (int id : expired) {
+            var request = pending.remove(id);
+            if (request != null) request.response.event(SettingsPackets.RomEvent.fail(id, "Timed out"));
+        }
+        if (upload != null && now - upload.lastActivity > 60_000_000_000L) {
+            var timedOut = upload; abortUpload(); timedOut.callback.done(false, "Upload timed out");
         }
         if (upload != null && upload.accepted) {
             for (int i = 0; i < 8 && upload.offset < upload.bytes.length; i++) {
                 int end = Math.min(upload.bytes.length, upload.offset + BlobTransfer.CHUNK);
                 ClientPlayNetworking.send(new SettingsPackets.RomUpload(upload.id, SettingsPackets.CHUNK, upload.area, "", "", 0, upload.offset, "", Arrays.copyOfRange(upload.bytes, upload.offset, end)));
-                upload.offset = end;
+                upload.offset = end; upload.lastActivity = now;
                 upload.callback.progress((float) upload.offset / upload.bytes.length);
             }
         }
@@ -83,7 +86,7 @@ public final class SettingsClient {
 
     private static final class Upload {
         final int id; final int area; final byte[] bytes; final Callback callback;
-        int offset; boolean accepted;
+        int offset; boolean accepted; long lastActivity = System.nanoTime();
         Upload(int id, int area, byte[] bytes, Callback callback) { this.id = id; this.area = area; this.bytes = bytes; this.callback = callback; }
     }
     public interface Callback {
@@ -99,11 +102,12 @@ public final class SettingsClient {
     }
     public static void abortUpload() {
         if (upload == null) return;
-        ClientPlayNetworking.send(new SettingsPackets.RomUpload(upload.id, SettingsPackets.ABORT, upload.area, "", "", 0, 0, "", new byte[0]));
+        if (ClientPlayNetworking.canSend(SettingsPackets.RomUpload.ID)) ClientPlayNetworking.send(new SettingsPackets.RomUpload(upload.id, SettingsPackets.ABORT, upload.area, "", "", 0, 0, "", new byte[0]));
         upload = null;
     }
     private static void uploadEvent(SettingsPackets.RomEvent packet) {
         if (upload == null || packet.request() != upload.id) return;
+        upload.lastActivity = System.nanoTime();
         switch (packet.action()) {
             case SettingsPackets.UPLOAD_ACCEPT -> upload.accepted = true;
             case SettingsPackets.UPLOAD_DONE -> { var finished = upload; upload = null; finished.callback.done(true, packet.message()); }
@@ -197,7 +201,7 @@ public final class SettingsClient {
             if (!RomLibrary.safeName(packet.name())
                     || packet.total() < 1 || packet.total() > 8L * 1024 * 1024 || packet.offset() < 0) return;
             BiosFile file = biosIncoming.computeIfAbsent(key, k -> new BiosFile(packet.total(), packet.sha256()));
-            if (file.total != packet.total() || packet.offset() != file.data.size()
+            if (file.total != packet.total() || !file.sha256.equals(packet.sha256()) || packet.offset() != file.data.size()
                     || file.data.size() + packet.data().length > file.total) { biosIncoming.remove(key); return; }
             file.data.writeBytes(packet.data());
             if (file.data.size() < file.total) return;
@@ -215,7 +219,10 @@ public final class SettingsClient {
                             .resolve(packet.coreId().equals("pcsx2") ? "bios" : "").resolve(packet.name());
                     SaveStates.writeAtomic(target, bytes);
                     Retrocraft.LOG.info("Received BIOS {} for core {} from server", packet.name(), packet.coreId());
-                } catch (java.io.IOException ex) { Retrocraft.LOG.warn("Cannot cache BIOS {} for {}", packet.name(), packet.coreId(), ex); }
+                } catch (java.io.IOException ex) {
+                    Retrocraft.LOG.warn("Cannot cache BIOS {} for {}", packet.name(), packet.coreId(), ex);
+                    MinecraftClient.getInstance().execute(() -> { if (epoch == biosEpoch) biosManifestFailed = true; });
+                }
                 finally { MinecraftClient.getInstance().execute(() -> {
                     if (epoch != biosEpoch) return;
                     biosRequested.remove(packet.coreId() + "/" + packet.name() + "/" + packet.sha256());

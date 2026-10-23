@@ -82,7 +82,7 @@
   "settings.retrocraft.denied.not_installed": "This server does not run Retrocraft, or refused the request.",
   "settings.retrocraft.denied.timeout": "The server did not answer the settings request.",
   "settings.retrocraft.denied.local_error": "Could not load the local Retrocraft configuration.",
-  "settings.retrocraft.denied_hint": "Ask an operator for /op, or open to LAN with cheats enabled.",
+  "settings.retrocraft.denied_hint": "Client preferences are available to everyone.",
   "settings.retrocraft.category.emulation": "Emulation",
   "settings.retrocraft.category.streaming": "Streaming",
   "settings.retrocraft.category.sessions": "Sessions",

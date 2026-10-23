@@ -28,7 +28,7 @@ public final class RomLibrary {
         if (!Files.isDirectory(dir)) throw new IOException("Not a folder");
         var entries = new ArrayList<Entry>();
         try (var files = Files.list(dir)) {
-            List<Path> found = files.sorted(Comparator.comparing(p -> p.getFileName().toString().toLowerCase(Locale.ROOT))).limit(MAX_ENTRIES + 1L).toList();
+            List<Path> found = files.filter(path -> !Files.isSymbolicLink(path)).sorted(Comparator.comparing(p -> p.getFileName().toString().toLowerCase(Locale.ROOT))).limit(MAX_ENTRIES + 1L).toList();
             for (Path path : found) {
                 boolean directory = Files.isDirectory(path);
                 long size = directory ? 0 : size(path);
@@ -79,13 +79,18 @@ public final class RomLibrary {
         Path target = destination(dir, name);
         SaveStates.writeAtomic(target, bytes);
         if (!unpack || !RomArchives.supported(name) || ArcadeSets.contains(name)) return 1;
-        int[] count = {0};
+        int[] count = {0}, visited = {0};
+        long[] expanded = {0};
         try {
             RomArchives.visit(target, (member, in) -> {
+                if (++visited[0] > MAX_ENTRIES) throw new IOException("Too many files in BIOS archive");
                 String base = member.name().replace('\\', '/');
                 base = base.substring(base.lastIndexOf('/') + 1);
-                if (!safeName(base) || member.size() > 16L * 1024 * 1024 || member.size() < 1) return;
-                try { SaveStates.writeAtomic(resolve(dir + "/" + base), RomArchives.bounded(in, 16L * 1024 * 1024)); count[0]++; }
+                if (!safeName(base) || member.size() > 16L * 1024 * 1024 || member.size() == 0) return;
+                byte[] content = RomArchives.bounded(in, 16L * 1024 * 1024);
+                expanded[0] += content.length;
+                if (expanded[0] > 64L * 1024 * 1024) throw new IOException("BIOS archive expands beyond limit");
+                try { SaveStates.writeAtomic(destination(dir, base), content); count[0]++; }
                 catch (IOException ignored) { }
             });
         } catch (IOException | RuntimeException ex) { return 1; } // not a real archive — keep the file
@@ -135,12 +140,15 @@ public final class RomLibrary {
         Path path = rel == null || rel.isEmpty() ? base : base.resolve(rel).normalize();
         if (!path.startsWith(base)) throw new IOException("Path escaped library");
         // Existing paths must not escape through a symlinked parent either.
-        if (Files.exists(path) && !path.toRealPath().startsWith(base)) throw new IOException("Path escaped library");
+        Path existing = path;
+        while (existing != null && !Files.exists(existing, LinkOption.NOFOLLOW_LINKS)) existing = existing.getParent();
+        if (existing == null || !existing.toRealPath().startsWith(base)) throw new IOException("Path escaped library");
         return path;
     }
     private Path resolveExisting(String rel) throws IOException {
         if (rel == null || rel.isEmpty() || !RomArchives.safeMember(rel)) throw new IOException("Unsafe path");
         Path path = resolve(rel);
+        if (path.equals(realRoot())) throw new IOException("Cannot modify the library root");
         if (!Files.exists(path)) throw new IOException("No such file");
         return path;
     }

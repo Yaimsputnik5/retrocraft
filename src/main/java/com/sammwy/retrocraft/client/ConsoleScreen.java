@@ -17,7 +17,7 @@ public final class ConsoleScreen extends Screen {
     private static final int HEADER = 18, HUD = 52, MARGIN = 8;
     final UUID instance;
     private final ConsoleTheme theme;
-    private final Text consoleName;
+    private final Text consoleName, displayTitle;
     private boolean controller, canManage, inWorld, subscribed = true;
     private long screen;
     private Identifier textureId;
@@ -30,6 +30,7 @@ public final class ConsoleScreen extends Screen {
         instance = packet.instance(); controller = packet.controller(); canManage = packet.canManage(); inWorld = packet.inWorld(); screen = packet.screen();
         theme = ConsoleTheme.of(packet.console());
         consoleName = Text.translatable("console.retrocraft." + packet.console());
+        displayTitle = Text.empty().append(consoleName).append(" · ").append(title);
         consoleStack = new ItemStack(Registries.ITEM.get(Identifier.of("retrocraft", packet.console())));
     }
 
@@ -59,6 +60,7 @@ public final class ConsoleScreen extends Screen {
 
     @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
         if (key == GLFW.GLFW_KEY_ESCAPE) { close(); return true; }
+        if (key == GLFW.GLFW_KEY_F8) { client.setScreen(SettingsScreen.modMenu(null)); return true; }
         // Game input must not activate focused GUI buttons (Enter/Space).
         return true;
     }
@@ -70,7 +72,7 @@ public final class ConsoleScreen extends Screen {
         if (inWorld && ClientPreferences.get().renderWorldScreens) {
             // The cabinet block shows the video; only the key legend and the miniature actions are drawn.
             context.drawItem(consoleStack, MARGIN, 3);
-            context.drawTextWithShadow(textRenderer, Text.empty().append(consoleName).append(" · ").append(title), MARGIN + 20, 7, 0xffe6e9f0);
+            context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(displayTitle.getString(), Math.max(0, width - 2 * MARGIN - 20 - (canManage ? 32 : 0) - (controller ? 0 : 74))), MARGIN + 20, 7, 0xffe6e9f0);
             if (!controller) context.drawTextWithShadow(textRenderer, Text.translatable("screen.retrocraft.spectator"), MARGIN + 20, 17, 0xffa8b0c0);
             if (textureId == null) context.drawCenteredTextWithShadow(textRenderer, Text.translatable("screen.retrocraft.connecting"), width / 2, height - HUD - 10, 0xffd8dde6);
             PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
@@ -79,7 +81,7 @@ public final class ConsoleScreen extends Screen {
         }
         context.fill(0, 0, width, height, 0x70000000);
         context.drawItem(consoleStack, MARGIN, 3);
-        context.drawTextWithShadow(textRenderer, Text.empty().append(consoleName).append(" · ").append(title), MARGIN + 20, 7, 0xffe6e9f0);
+        context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(displayTitle.getString(), Math.max(0, width - 2 * MARGIN - 20 - (canManage ? 32 : 0) - (controller ? 0 : 74))), MARGIN + 20, 7, 0xffe6e9f0);
         if (!controller) context.drawTextWithShadow(textRenderer, Text.translatable("screen.retrocraft.spectator"), MARGIN + 20, 17, 0xffa8b0c0);
 
         // The video takes all the room between the top strip and the key legend, keeping its aspect ratio, inside a slim console bezel.

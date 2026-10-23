@@ -66,6 +66,10 @@ public final class InstanceManager implements AutoCloseable {
     private List<RomCatalog.Entry> publishedCatalog = List.of();
     private final RomLibrary romLibrary, biosLibrary;
     private final Map<UUID, Upload> romUploads = new HashMap<>();
+    private final ThreadPoolExecutor libraryIo = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(32), task -> {
+                Thread thread = new Thread(task, "retrocraft-library-io"); thread.setDaemon(true); return thread;
+            });
     private boolean pendingScan, pendingOnlyNew;
     private int coreGeneration;
     private final ConcurrentLinkedQueue<Runnable> callbacks = new ConcurrentLinkedQueue<>();
@@ -314,7 +318,7 @@ public final class InstanceManager implements AutoCloseable {
 
     /** Applies a batch of key/value edits. Validated on a probe copy first so a bad value cannot half-apply. */
     public void applySettings(ServerPlayerEntity player, SettingsPackets.ConfigApply packet) {
-        if (!operator(player)) return;
+        if (!operator(player)) { send(player, new SettingsPackets.ConfigSaved(false, "Operator permission required", List.of())); return; }
         String error = null;
         var gson = new Gson();
         RetrocraftConfig probe = gson.fromJson(gson.toJson(config), RetrocraftConfig.class);
@@ -323,8 +327,7 @@ public final class InstanceManager implements AutoCloseable {
             catch (IllegalArgumentException ex) { error = change.key() + ": " + ex.getMessage(); break; }
         }
         if (error == null) {
-            for (var change : packet.changes()) ConfigKey.set(config, change.key(), change.value());
-            try { config.save(); applyConfig(); }
+            try { probe.save(); config = probe; applyConfig(); }
             catch (IOException ex) { error = "Could not save the config file"; Retrocraft.LOG.error("Cannot save Retrocraft config", ex); }
         }
         send(player, new SettingsPackets.ConfigSaved(error == null, error == null ? "" : error, SettingsPackets.GuiOpen.schema(config)));
@@ -333,22 +336,46 @@ public final class InstanceManager implements AutoCloseable {
 
     /** RomManagementPacket: directory listings and library mutations, one request id per response. */
     public void romAction(ServerPlayerEntity player, SettingsPackets.RomAction packet) {
-        if (!operator(player)) return;
+        if (!operator(player)) { send(player, SettingsPackets.RomEvent.fail(packet.request(), "Operator permission required")); return; }
+        if (packet.area() != SettingsPackets.AREA_ROMS && packet.area() != SettingsPackets.AREA_BIOS) {
+            send(player, SettingsPackets.RomEvent.fail(packet.request(), "Unknown library area")); return;
+        }
+        if (packet.action() == SettingsPackets.RESCAN || packet.action() == SettingsPackets.RESCAN_NEW) {
+            rescan(player.getGameProfile().getName(), packet.action() == SettingsPackets.RESCAN_NEW);
+            send(player, new SettingsPackets.RomEvent(packet.request(), SettingsPackets.ACTION, true, ""));
+            return;
+        }
         boolean bios = packet.area() == SettingsPackets.AREA_BIOS;
         try {
-            switch (packet.action()) {
-                case SettingsPackets.LIST -> sendRomList(player, packet.request(), packet.path(), bios);
-                case SettingsPackets.DELETE -> { library(bios).delete(packet.path()); romChanged(player, packet.request(), !bios); }
-                case SettingsPackets.RENAME -> { library(bios).rename(packet.path(), packet.target()); romChanged(player, packet.request(), !bios); }
-                case SettingsPackets.MOVE -> { library(bios).move(packet.path(), packet.target()); romChanged(player, packet.request(), !bios); }
-                case SettingsPackets.MKDIR -> { library(bios).mkdir(packet.path()); romChanged(player, packet.request(), !bios); }
-                case SettingsPackets.RESCAN -> { rescan(player.getGameProfile().getName()); send(player, new SettingsPackets.RomEvent(packet.request(), SettingsPackets.ACTION, true, "")); }
-                case SettingsPackets.RESCAN_NEW -> { rescan(player.getGameProfile().getName(), true); send(player, new SettingsPackets.RomEvent(packet.request(), SettingsPackets.ACTION, true, "")); }
-                default -> send(player, SettingsPackets.RomEvent.fail(packet.request(), "Unknown action"));
-            }
-        } catch (IOException | RuntimeException ex) {
-            send(player, SettingsPackets.RomEvent.fail(packet.request(), ex.getMessage() == null ? "Operation failed" : ex.getMessage()));
-        }
+            libraryIo.execute(() -> {
+                try {
+                    RomLibrary target = library(bios);
+                    SettingsPackets.RomList listing = null;
+                    switch (packet.action()) {
+                        case SettingsPackets.LIST -> {
+                            var result = target.list(packet.path());
+                            listing = new SettingsPackets.RomList(packet.request(), packet.path(), result.truncated(),
+                                    result.entries().stream().map(e -> new SettingsPackets.RomList.Entry(e.name(), e.directory(), e.size())).toList());
+                        }
+                        case SettingsPackets.DELETE -> target.delete(packet.path());
+                        case SettingsPackets.RENAME -> target.rename(packet.path(), packet.target());
+                        case SettingsPackets.MOVE -> target.move(packet.path(), packet.target());
+                        case SettingsPackets.MKDIR -> target.mkdir(packet.path());
+                        default -> throw new IOException("Unknown action");
+                    }
+                    SettingsPackets.RomList response = listing;
+                    callbacks.add(() -> {
+                        if (server.getPlayerManager().getPlayer(player.getUuid()) != player) return;
+                        if (response != null) send(player, response); else romChanged(player, packet.request(), !bios);
+                    });
+                } catch (IOException | RuntimeException ex) {
+                    callbacks.add(() -> {
+                        if (server.getPlayerManager().getPlayer(player.getUuid()) == player)
+                            send(player, SettingsPackets.RomEvent.fail(packet.request(), ex.getMessage() == null ? "Operation failed" : ex.getMessage()));
+                    });
+                }
+            });
+        } catch (RejectedExecutionException ex) { send(player, SettingsPackets.RomEvent.fail(packet.request(), "Library busy; try again")); }
     }
     private RomLibrary library(boolean bios) { return bios ? biosLibrary : romLibrary; }
     private void romChanged(ServerPlayerEntity player, int request, boolean rescan) {
@@ -360,15 +387,6 @@ public final class InstanceManager implements AutoCloseable {
         biosManifestSent.clear(); biosReadyClients.clear(); readyClients.clear();
         for (var player : server.getPlayerManager().getPlayerList()) sendCoreSettings(player);
     }
-    private void sendRomList(ServerPlayerEntity player, int request, String path, boolean bios) throws IOException {
-        var listing = library(bios).list(path);
-        send(player, new SettingsPackets.RomList(request, path, listing.truncated(),
-                listing.entries().stream().map(e -> new SettingsPackets.RomList.Entry(e.name(), e.directory(), e.size())).toList()));
-    }
-
-    /** All known cores preload in the background; nothing here is user-configurable anymore. */
-
-
     private static final class Upload {
         final int id; final int area; final String dir, name, sha256; final long total;
         final ByteArrayOutputStream data; long lastActivity;
@@ -412,14 +430,14 @@ public final class InstanceManager implements AutoCloseable {
             romUploads.remove(player.getUuid());
             UUID playerId = player.getUuid();
             String actor = player.getGameProfile().getName();
-            Thread.ofVirtual().name("retrocraft-library-install").start(() -> {
+            libraryIo.execute(() -> {
                 try {
                     byte[] bytes = upload.data.toByteArray();
                     if (!BlobTransfer.hash(bytes).equals(upload.sha256)) throw new IOException("Upload checksum mismatch");
                     boolean bios = upload.area == SettingsPackets.AREA_BIOS;
                     RomLibrary target = library(bios);
                     int landed;
-                    synchronized (target) { landed = target.install(upload.dir, upload.name, bytes, bios); }
+                    landed = target.install(upload.dir, upload.name, bytes, bios);
                     Retrocraft.LOG.info("{} uploaded {} {}", actor, bios ? "BIOS" : "ROM", upload.name);
                     callbacks.add(() -> {
                         var current = server.getPlayerManager().getPlayer(playerId);
@@ -951,8 +969,6 @@ public final class InstanceManager implements AutoCloseable {
         });
     }
 
-    private static final byte[] PNG_SIGNATURE = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
-
     /** Hybrid owners push their own in-hand preview; the server adopts it as the session thumbnail and fans it out. */
     public void thumbnailUpload(ServerPlayerEntity player, Packets.ThumbnailUpload packet) {
         if (!config.thumbnailUpload || stopping) return;
@@ -960,7 +976,7 @@ public final class InstanceManager implements AutoCloseable {
         if (session == null || session.destroy || !(session.host instanceof HandheldHost host)
                 || !session.ownership.clientMayRun(player.getUuid(), session.ownership.epoch())) return;
         byte[] png = packet.png();
-        if (png.length < PNG_SIGNATURE.length || !Arrays.equals(Arrays.copyOf(png, PNG_SIGNATURE.length), PNG_SIGNATURE)) return;
+        if (!ThumbnailCodec.valid(png)) return;
         long now = System.nanoTime();
         if (now - session.lastUploadAt < 1_000_000_000L) return;
         session.lastUploadAt = now;
@@ -1519,6 +1535,7 @@ public final class InstanceManager implements AutoCloseable {
 
     @Override public void close() {
         stopping = true;
+        libraryIo.getQueue().clear(); libraryIo.shutdown();
         for (PendingStart pending : pendingStarts.values()) if (pending.created != null) {
             UUID id = pending.created;
             Thread.ofVirtual().name("retrocraft-cancel-power-on").start(() -> destroyFiles(id));

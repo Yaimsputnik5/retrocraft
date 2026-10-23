@@ -45,14 +45,23 @@ interface SettingsBackend {
     final class Remote implements SettingsBackend {
         private List<SettingsPackets.GuiOpen.Entry> schema;
         private ApplyCallback pendingApply;
+        private long applyDeadline;
         Remote(SettingsPackets.GuiOpen grant) { schema = grant.entries(); }
 
         @Override public Text scope() { return Text.translatable("settings.retrocraft.scope.server"); }
         @Override public List<SettingsPackets.GuiOpen.Entry> schema() { return schema; }
 
         @Override public void apply(List<SettingsPackets.ConfigApply.Change> changes, ApplyCallback callback) {
-            pendingApply = callback;
+            if (pendingApply != null) { callback.result(false, "A settings update is already pending", schema); return; }
+            pendingApply = callback; applyDeadline = System.nanoTime() + 20_000_000_000L;
             ClientPlayNetworking.send(new SettingsPackets.ConfigApply(changes));
+        }
+        boolean applying() { return pendingApply != null; }
+        void tick() {
+            if (pendingApply != null && System.nanoTime() > applyDeadline) {
+                var callback = pendingApply; pendingApply = null;
+                callback.result(false, "Settings update timed out", schema);
+            }
         }
         /** Routed from the packet receiver through the screen. */
         void saved(SettingsPackets.ConfigSaved packet) {
@@ -112,6 +121,8 @@ interface SettingsBackend {
         @Override public void coreUpload(Path file, String coreId, UploadCallback callback) {
             Thread.ofVirtual().name("retrocraft-bios-read").start(() -> {
                 try {
+                    long size = Files.size(file);
+                    if (size < 1 || size > BlobTransfer.MAX_ROM) throw new IOException("File outside the BIOS upload size limit");
                     byte[] bytes = Files.readAllBytes(file);
                     String name = file.getFileName().toString();
                     MinecraftClient.getInstance().execute(() -> SettingsClient.upload(SettingsPackets.AREA_BIOS, coreId, name, bytes, new SettingsClient.Callback() {
@@ -131,7 +142,7 @@ interface SettingsBackend {
     /** Single-player / title-screen backend: edits config/retrocraft on this machine, live-applied when hosting. */
     final class Local implements SettingsBackend {
         private final RomLibrary library, biosLibrary;
-        private final RetrocraftConfig config;
+        private RetrocraftConfig config;
         private List<SettingsPackets.GuiOpen.Entry> schema;
 
         Local() throws IOException {
@@ -154,8 +165,7 @@ interface SettingsBackend {
             }
             if (error == null) {
                 try {
-                    for (var change : changes) ConfigKey.set(config, change.key(), change.value());
-                    config.save();
+                    probe.save(); config = probe;
                     applyLive(changes);
                 } catch (IOException | RuntimeException ex) { error = ex.getMessage() == null ? "Could not save the config file" : ex.getMessage(); }
             }

@@ -17,6 +17,10 @@ final class CameraRig {
 
     static void focus(BlockPos pos) { screen = pos; active = true; MinecraftClient.getInstance().gameRenderer.setRenderHand(false); }
     static void release() { active = false; }
+    static void reset() {
+        active = false; blend = 0; last = 0; screen = null;
+        MinecraftClient.getInstance().gameRenderer.setRenderHand(true);
+    }
 
     /** Camera pose for this frame, or null when the rig is idle. Returns {x, y, z, yaw, pitch, blend}. */
     static double[] pose(Vec3d from, float yaw, float pitch) {

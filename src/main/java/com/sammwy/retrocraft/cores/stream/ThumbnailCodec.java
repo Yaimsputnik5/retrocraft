@@ -22,5 +22,15 @@ public final class ThumbnailCodec {
         ImageIO.write(image, "png", out);
         return out.toByteArray();
     }
+    /** Reject oversized image geometry before a native PNG decoder allocates its output buffer. */
+    public static boolean valid(byte[] png) {
+        if (png.length < 33 || png.length > 65_536) return false;
+        byte[] signature = {(byte) 0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10};
+        for (int i = 0; i < signature.length; i++) if (png[i] != signature[i]) return false;
+        var header = java.nio.ByteBuffer.wrap(png);
+        if (header.getInt(8) != 13 || header.getInt(12) != 0x49484452) return false;
+        int width = header.getInt(16), height = header.getInt(20);
+        return width > 0 && height > 0 && width <= MAX_EDGE && height <= MAX_EDGE;
+    }
     private ThumbnailCodec() {}
 }

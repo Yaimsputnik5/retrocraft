@@ -200,6 +200,7 @@ public final class SettingsScreen extends Screen {
             else status(Text.literal(message == null ? "?" : message), BAD);
             syncRows(); refreshFooter();
         });
+        refreshFooter();
     }
     private void resetDraft() {
         if (activeDraft().isEmpty()) return;
@@ -220,7 +221,7 @@ public final class SettingsScreen extends Screen {
     }
 
     private void refreshFooter() {
-        apply.active = ready() && !activeDraft().isEmpty();
+        apply.active = ready() && !activeDraft().isEmpty() && (category == CLIENT || !(backend instanceof SettingsBackend.Remote remote) || !remote.applying());
     }
 
     void status(Text text, int color) {
@@ -247,6 +248,7 @@ public final class SettingsScreen extends Screen {
     }
 
     @Override public void tick() {
+        if (backend instanceof SettingsBackend.Remote remote) remote.tick();
         if (state == State.CONNECTING && System.nanoTime() - requestedAt > 5_000_000_000L) {
             state = State.DENIED; denyReason = SettingsClient.supported() ? "timeout" : "not_installed";
             clearAndInit();
@@ -347,8 +349,14 @@ public final class SettingsScreen extends Screen {
             case DENIED -> {
                 int cx = px + SIDEBAR + (pw - SIDEBAR) / 2;
                 draw(context, GLYPH_CLOCK, cx - 4, py + ph / 2 - 22, BAD);
-                context.drawCenteredTextWithShadow(tr, Text.translatable("settings.retrocraft.denied." + denyReason), cx, py + ph / 2 - 6, TEXT);
-                if ("operator".equals(denyReason)) context.drawCenteredTextWithShadow(tr, Text.translatable("settings.retrocraft.denied_hint"), cx, py + ph / 2 + 6, MUTED);
+                var message = Text.translatable("settings.retrocraft.denied." + denyReason);
+                if ("operator".equals(denyReason)) message.append("\n\n").append(Text.translatable("settings.retrocraft.denied_hint"));
+                var lines = tr.wrapLines(message, Math.max(1, contentW - 24));
+                int lineY = py + ph / 2 - 6;
+                for (var line : lines) {
+                    context.drawTextWithShadow(tr, line, contentX + (contentW - tr.getWidth(line)) / 2, lineY, TEXT);
+                    lineY += tr.fontHeight + 2;
+                }
             }
             case READY -> {
                 if (category == ConfigKey.Category.LIBRARY.ordinal()) renderLibrary(context, tr, mx, my, delta);

@@ -109,7 +109,7 @@ public final class RetrocraftClient implements ClientModInitializer {
         // Locally emulated frames are uploaded per rendered frame, not per tick, so in-world screens stay smooth.
         WorldRenderEvents.START.register(context -> { for (UUID id : EMULATION.active()) { var frame = EMULATION.frame(id); if (frame != null) video.local(id, frame); } video.render(); });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
-            EMULATION.disconnect(); audio.close(); video.close(); Thumbnails.close(); PlayerHud.clear(); SettingsClient.disconnect(); RomCatalog.clientEntries(List.of()); pendingCatalog.clear(); catalogDirty = true;
+            CameraRig.reset(); EMULATION.disconnect(); audio.close(); video.close(); Thumbnails.close(); PlayerHud.clear(); SettingsClient.disconnect(); RomCatalog.clientEntries(List.of()); pendingCatalog.clear(); catalogDirty = true;
             if (client.currentScreen instanceof ConsoleScreen screen) screen.serverClosed();
         });
     }

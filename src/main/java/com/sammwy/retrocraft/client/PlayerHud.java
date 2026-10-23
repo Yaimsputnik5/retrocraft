@@ -180,16 +180,17 @@ public final class PlayerHud {
         if (leftW < 0) leftW = 0;
         if (rightW < 0) rightW = 0;
         int span = leftW + rightW + (leftW > 0 && rightW > 0 ? MIDDLE_GAP : 0);
-        int x = 4, rx = width - 4 - rightW;
+        int layoutWidth = Math.max(width, span + 8);
+        int x = 4, rx = layoutWidth - 4 - rightW;
         long now = System.nanoTime();
 
         var matrices = context.getMatrices();
         matrices.push();
-        float hudScale = Math.min(1f, (width - 8f) / Math.max(1, span));
+        float hudScale = Math.min(1f, width / (float) layoutWidth);
         if (hudScale < 1f) {
             matrices.translate(width / 2f, height, 0);
             matrices.scale(hudScale, hudScale, 1);
-            matrices.translate(-width / 2f, -height, 0);
+            matrices.translate(-layoutWidth / 2f, -height, 0);
         }
         for (int i : order) {
             Slot slot = state.slots[i];

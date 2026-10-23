@@ -19,7 +19,7 @@ public final class GameSaves {
     public byte[] restore(UUID owner, boolean global, String gameId) {
         Path file = state(owner, global, gameId);
         try {
-            if (!Files.isRegularFile(file)) return null;
+            if (!Files.isRegularFile(file) || Files.size(file) > com.sammwy.retrocraft.cores.transfer.BlobTransfer.MAX_SNAPSHOT) return null;
             byte[] bytes = Files.readAllBytes(file);
             SaveStates.validate(bytes);
             Files.setLastModifiedTime(file, FileTime.fromMillis(System.currentTimeMillis()));
@@ -42,6 +42,7 @@ public final class GameSaves {
     public void persist(UUID owner, boolean global, String gameId, Path snapshot, boolean powered) throws IOException {
         if (!powered) Files.deleteIfExists(state(owner, global, gameId));
         if (!Files.isRegularFile(snapshot)) return;
+        if (Files.size(snapshot) > com.sammwy.retrocraft.cores.transfer.BlobTransfer.MAX_SNAPSHOT) throw new IOException("Snapshot too large");
         byte[] bytes = Files.readAllBytes(snapshot);
         SaveStates.validate(bytes);
         if (powered) SaveStates.writeAtomic(state(owner, global, gameId), bytes);

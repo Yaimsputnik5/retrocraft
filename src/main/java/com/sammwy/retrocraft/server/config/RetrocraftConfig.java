@@ -70,31 +70,34 @@ public final class RetrocraftConfig {
         return KnownCores.get(configured).id();
     }
 
-    public void save() throws IOException {
-        Files.createDirectories(root());
-        Path temporary = file().resolveSibling(file().getFileName() + ".tmp");
-        try (Writer writer = Files.newBufferedWriter(temporary)) { GSON.toJson(this, writer); }
-        Files.move(temporary, file(), StandardCopyOption.REPLACE_EXISTING);
+    public void save() throws IOException { save(file()); }
+    public void save(Path target) throws IOException {
+        com.sammwy.retrocraft.roms.SaveStates.writeAtomic(target, GSON.toJson(this).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
-    public static RetrocraftConfig load() throws IOException {
-        Files.createDirectories(root().resolve("roms"));
+    public static RetrocraftConfig load() throws IOException { return load(root()); }
 
-        Path file = root().resolve("server.json"), legacy = root().resolve("config.json");
+    public static RetrocraftConfig load(Path directory) throws IOException {
+        Files.createDirectories(directory.resolve("roms"));
+
+        Path file = directory.resolve("server.json"), legacy = directory.resolve("config.json");
         boolean migrated = !Files.exists(file) && Files.exists(legacy);
         RetrocraftConfig config;
         if (Files.exists(file) || migrated) {
+            if (Files.size(migrated ? legacy : file) > 65_536) throw new IOException("Server config exceeds limit");
             try (Reader reader = Files.newBufferedReader(migrated ? legacy : file)) {
                 JsonElement json = JsonParser.parseReader(reader);
                 config = GSON.fromJson(json, RetrocraftConfig.class);
                 // Honor the initial prototype's setting when upgrading an existing configuration.
-                if (config != null && json.isJsonObject() && !json.getAsJsonObject().has("cores") && json.getAsJsonObject().has("nesCore"))
+                if (config != null && config.cores != null && json.isJsonObject() && !json.getAsJsonObject().has("cores") && json.getAsJsonObject().has("nesCore"))
                     config.cores.put("retrocraft:nes", json.getAsJsonObject().get("nesCore").getAsString());
             }
-            catch (JsonParseException ex) { throw new IOException("Invalid " + (migrated ? legacy : file), ex); }
+            catch (JsonParseException | IllegalStateException ex) { throw new IOException("Invalid " + (migrated ? legacy : file), ex); }
         } else config = new RetrocraftConfig();
-        if (config != null) config.cores.values().removeIf(v -> { try { KnownCores.get(v); return false; } catch (IllegalArgumentException ex) { return true; } });
-        if (config == null || config.cores == null || config.cores.values().stream().anyMatch(v -> v == null || v.isBlank()) || config.audioRadius < 1 || config.audioRadius > 256
+        if (config == null || config.cores == null || config.cores.values().stream().anyMatch(v -> v == null || v.isBlank()))
+            throw new IOException("Invalid core mappings");
+        config.cores.entrySet().removeIf(entry -> !KnownCores.compatible(entry.getKey()).contains(entry.getValue()));
+        if (config.audioRadius < 1 || config.audioRadius > 256
                 || config.checkpointIntervalSeconds < 1 || config.checkpointIntervalSeconds > 30
                 || config.transferTimeoutSeconds < 10 || config.transferTimeoutSeconds > 120
                 || config.ownerTimeoutSeconds < 3 || config.ownerTimeoutSeconds > 60
@@ -107,7 +110,7 @@ public final class RetrocraftConfig {
                 || config.thumbnailIntervalSeconds < 1 || config.thumbnailIntervalSeconds > 600
                 || config.emulationMode == null || config.saveMode == null)
             throw new IOException("Retrocraft config values out of range");
-        if (migrated || !Files.exists(file)) config.save();
+        if (migrated || !Files.exists(file)) config.save(file);
         return config;
     }
 }

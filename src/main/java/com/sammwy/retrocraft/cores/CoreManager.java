@@ -8,6 +8,7 @@ import java.nio.file.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.*;
 
 /** Shared by client, dedicated server and integrated server. No Minecraft or rendering dependency. */
@@ -16,7 +17,7 @@ public final class CoreManager {
     private static final java.util.concurrent.ScheduledExecutorService TIMEOUTS = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "retrocraft-core-download-timeout"); thread.setDaemon(true); return thread;
     });
-    private static final Map<Path, Object> LOCKS = new ConcurrentHashMap<>();
+    private static final Map<Path, ReentrantLock> LOCKS = new ConcurrentHashMap<>();
     private final Path root, workerJar;
     private final KnownCores.Platform platform;
     public CoreManager(Path root, Path workerJar) { this(root, workerJar, KnownCores.Platform.current()); }
@@ -25,7 +26,9 @@ public final class CoreManager {
     public Prepared prepare(String id) throws IOException {
         String filename = KnownCores.filename(id, platform);
         Path directory = root.resolve(KnownCores.POOL).resolve(platform.key()).resolve(id).toAbsolutePath().normalize();
-        synchronized (LOCKS.computeIfAbsent(directory, ignored -> new Object())) {
+        ReentrantLock lock = LOCKS.computeIfAbsent(directory, ignored -> new ReentrantLock());
+        lock.lock();
+        try {
             Files.createDirectories(directory);
             Path core = directory.resolve(filename), receipt = directory.resolve("receipt.properties");
             if (Files.exists(core) && Files.exists(receipt)) {
@@ -42,14 +45,13 @@ public final class CoreManager {
             }
             WorkerProcess.Probe probe = WorkerProcess.probe(workerJar, core);
             return new Prepared(core, new CoreIdentity(id, probe.name(), probe.version(), platform.key(), InstanceStore.sha256(core)));
-        }
+        } finally { lock.unlock(); }
     }
 
     private void download(String id, Path target) throws IOException {
-        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).followRedirects(HttpClient.Redirect.NEVER).build();
         HttpRequest request = HttpRequest.newBuilder(KnownCores.uri(id, platform)).timeout(Duration.ofMinutes(2)).GET().build();
         Path temporary = Files.createTempFile(target.getParent(), "download-", ".tmp");
-        try {
+        try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).followRedirects(HttpClient.Redirect.NEVER).build()) {
             HttpResponse<InputStream> response;
             try { response = client.send(request, HttpResponse.BodyHandlers.ofInputStream()); }
             catch (InterruptedException ex) { Thread.currentThread().interrupt(); throw new IOException(ex); }
