@@ -1,12 +1,37 @@
 package com.sammwy.retrocraft.server.config;
 
 import com.google.gson.*;
+import com.google.gson.annotations.SerializedName;
 import net.fabricmc.loader.api.FabricLoader;
 import java.io.*;
 import java.nio.file.*;
+import java.util.*;
 
 public final class RetrocraftConfig {
-    public java.util.Map<String, String> cores = new java.util.HashMap<>(com.sammwy.retrocraft.cores.KnownCores.defaultMappings());
+    public enum EmulationMode {
+        @SerializedName("server") SERVER("server"),
+        @SerializedName("client") CLIENT("client"),
+        @SerializedName("hybrid") HYBRID("hybrid");
+        public final String id;
+        EmulationMode(String id) { this.id = id; }
+        public static EmulationMode parse(String raw) {
+            for (var mode : values()) if (mode.id.equalsIgnoreCase(raw)) return mode;
+            throw new IllegalArgumentException("Expected server, client or hybrid");
+        }
+    }
+    public enum SaveMode {
+        @SerializedName("player") PLAYER("player"),
+        @SerializedName("global") GLOBAL("global"),
+        @SerializedName("none") NONE("none");
+        public final String id;
+        SaveMode(String id) { this.id = id; }
+        public static SaveMode parse(String raw) {
+            for (var mode : values()) if (mode.id.equalsIgnoreCase(raw)) return mode;
+            throw new IllegalArgumentException("Expected player, global or none");
+        }
+    }
+
+    public Map<String, String> cores = new HashMap<>(com.sammwy.retrocraft.cores.KnownCores.defaultMappings());
     public int checkpointIntervalSeconds = 2;
     public int transferTimeoutSeconds = 30;
     public int ownerTimeoutSeconds = 8;
@@ -17,12 +42,19 @@ public final class RetrocraftConfig {
     public int maxActiveInstances = 8;
     public int watcherTimeoutSeconds = 15;
     public int maxRomSizeMiB = 64;
+    public int thumbnailIntervalSeconds = 5;
+    public boolean thumbnailUpload = true;
+    public EmulationMode emulationMode = EmulationMode.HYBRID;
+    public SaveMode saveMode = SaveMode.PLAYER;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     public static Path root() { return FabricLoader.getInstance().getConfigDir().resolve("retrocraft"); }
     public static Path cacheRoot() { return FabricLoader.getInstance().getGameDir().resolve("cache/retrocraft"); }
     public static Path clientCache() { return cacheRoot().resolve("client"); }
     public static Path serverCache() { return cacheRoot().resolve("server"); }
+    public static Path savesRoot() { return root().resolve("saves"); }
+    public Path file() { return root().resolve("server.json"); }
+
     public String coreId(String cartridge) {
         String configured = cores.get(cartridge);
         // File paths from the old prototype cannot become client download instructions.
@@ -30,24 +62,29 @@ public final class RetrocraftConfig {
         return com.sammwy.retrocraft.cores.KnownCores.get(configured).id();
     }
 
+    public void save() throws IOException {
+        Files.createDirectories(root());
+        Path temporary = file().resolveSibling(file().getFileName() + ".tmp");
+        try (Writer writer = Files.newBufferedWriter(temporary)) { GSON.toJson(this, writer); }
+        Files.move(temporary, file(), StandardCopyOption.REPLACE_EXISTING);
+    }
+
     public static RetrocraftConfig load() throws IOException {
         Files.createDirectories(root().resolve("roms"));
 
-        Path file = root().resolve("config.json");
+        Path file = root().resolve("server.json"), legacy = root().resolve("config.json");
+        boolean migrated = !Files.exists(file) && Files.exists(legacy);
         RetrocraftConfig config;
-        if (Files.exists(file)) {
-            try (Reader reader = Files.newBufferedReader(file)) {
+        if (Files.exists(file) || migrated) {
+            try (Reader reader = Files.newBufferedReader(migrated ? legacy : file)) {
                 JsonElement json = JsonParser.parseReader(reader);
                 config = GSON.fromJson(json, RetrocraftConfig.class);
                 // Honor the initial prototype's setting when upgrading an existing configuration.
                 if (config != null && json.isJsonObject() && !json.getAsJsonObject().has("cores") && json.getAsJsonObject().has("nesCore"))
                     config.cores.put("retrocraft:nes", json.getAsJsonObject().get("nesCore").getAsString());
             }
-            catch (JsonParseException ex) { throw new IOException("Invalid config/retrocraft/config.json", ex); }
-        } else {
-            config = new RetrocraftConfig();
-            try (Writer writer = Files.newBufferedWriter(file)) { GSON.toJson(config, writer); }
-        }
+            catch (JsonParseException ex) { throw new IOException("Invalid " + (migrated ? legacy : file), ex); }
+        } else config = new RetrocraftConfig();
         if (config == null || config.cores == null || config.cores.values().stream().anyMatch(v -> v == null || v.isBlank()) || config.audioRadius < 1 || config.audioRadius > 128
                 || config.checkpointIntervalSeconds < 1 || config.checkpointIntervalSeconds > 30
                 || config.transferTimeoutSeconds < 10 || config.transferTimeoutSeconds > 120
@@ -57,8 +94,11 @@ public final class RetrocraftConfig {
                 || config.autosaveIntervalSeconds < 5 || config.autosaveIntervalSeconds > 3600
                 || config.maxActiveInstances < 1 || config.maxActiveInstances > 64
                 || config.watcherTimeoutSeconds < 5 || config.watcherTimeoutSeconds > 120
-                || config.maxRomSizeMiB < 1 || config.maxRomSizeMiB > 64)
-            throw new IOException("Retrocraft config values out of range; see README.md");
+                || config.maxRomSizeMiB < 1 || config.maxRomSizeMiB > 64
+                || config.thumbnailIntervalSeconds < 1 || config.thumbnailIntervalSeconds > 60
+                || config.emulationMode == null || config.saveMode == null)
+            throw new IOException("Retrocraft config values out of range");
+        if (migrated || !Files.exists(file)) config.save();
         return config;
     }
 }

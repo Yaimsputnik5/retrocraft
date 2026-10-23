@@ -49,6 +49,6 @@ final class VideoStreams {
         }
     }
 
-    void stop(UUID id) { if (streams.remove(id) != null) ScreenTextures.release(id); }
-    void close() { for (UUID id : List.copyOf(streams.keySet())) stop(id); }
+    void stop(UUID id) { if (streams.remove(id) != null) ScreenTextures.freeze(id); }
+    void close() { for (UUID id : List.copyOf(streams.keySet())) { streams.remove(id); ScreenTextures.release(id); } }
 }

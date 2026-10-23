@@ -12,11 +12,11 @@ import java.util.*;
 public final class HybridPackets {
     public static final int DOWNLOADING = 0, READY = 1, FAILED = 2;
     public enum Action { OFFER, ROM_READY, ROM_REQUEST, PREPARED, COMMIT, RETURN_BEGIN, RETURN_REQUEST, REVOKE, HEARTBEAT, CHECKPOINT_ACK, FAILED, REQUEST_KEYFRAME }
-    public record Settings(int generation, String pool, int checkpointSeconds, int streamFps, List<CoreIdentity> cores) implements CustomPayload {
+    public record Settings(int generation, String pool, int checkpointSeconds, int streamFps, int thumbnailSeconds, boolean thumbnailUpload, int emulationMode, List<CoreIdentity> cores) implements CustomPayload {
         public static final Id<Settings> ID = new Id<>(Identifier.of("retrocraft", "core_settings"));
         public static final PacketCodec<RegistryByteBuf, Settings> CODEC = new PacketCodec<>() {
-            public Settings decode(RegistryByteBuf b) { return new Settings(b.readVarInt(), b.readString(64), b.readVarInt(), b.readVarInt(), identities(b)); }
-            public void encode(RegistryByteBuf b, Settings p) { b.writeVarInt(p.generation); b.writeString(p.pool, 64); b.writeVarInt(p.checkpointSeconds); b.writeVarInt(p.streamFps); identities(b, p.cores); }
+            public Settings decode(RegistryByteBuf b) { return new Settings(b.readVarInt(), b.readString(64), b.readVarInt(), b.readVarInt(), b.readVarInt(), b.readBoolean(), b.readVarInt(), identities(b)); }
+            public void encode(RegistryByteBuf b, Settings p) { b.writeVarInt(p.generation); b.writeString(p.pool, 64); b.writeVarInt(p.checkpointSeconds); b.writeVarInt(p.streamFps); b.writeVarInt(p.thumbnailSeconds); b.writeBoolean(p.thumbnailUpload); b.writeVarInt(p.emulationMode); identities(b, p.cores); }
         };
         public Id<? extends CustomPayload> getId() { return ID; }
     }

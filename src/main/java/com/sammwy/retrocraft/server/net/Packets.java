@@ -71,6 +71,27 @@ public final class Packets {
         @Override public Id<? extends CustomPayload> getId() { return ID; }
     }
 
+    /** A tiny PNG of the latest frame on a handheld, fanned out to whoever can see the item. */
+    public record Thumbnail(UUID instance, byte[] png) implements CustomPayload {
+        public static final Id<Thumbnail> ID = new Id<>(Identifier.of("retrocraft", "thumbnail"));
+        public static final PacketCodec<RegistryByteBuf, Thumbnail> CODEC = new PacketCodec<>() {
+            public Thumbnail decode(RegistryByteBuf b) { return new Thumbnail(b.readUuid(), b.readByteArray(1 << 20)); }
+            public void encode(RegistryByteBuf b, Thumbnail p) { b.writeUuid(p.instance); b.writeByteArray(p.png); }
+        };
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
+    /** Hybrid owners push their own handheld preview so the server can fan it out to nearby watchers. */
+    public record ThumbnailUpload(UUID instance, byte[] png) implements CustomPayload {
+        public static final int MAX_BYTES = 256 * 1024;
+        public static final Id<ThumbnailUpload> ID = new Id<>(Identifier.of("retrocraft", "thumbnail_upload"));
+        public static final PacketCodec<RegistryByteBuf, ThumbnailUpload> CODEC = new PacketCodec<>() {
+            public ThumbnailUpload decode(RegistryByteBuf b) { return new ThumbnailUpload(b.readUuid(), b.readByteArray(MAX_BYTES)); }
+            public void encode(RegistryByteBuf b, ThumbnailUpload p) { b.writeUuid(p.instance); b.writeByteArray(p.png); }
+        };
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
     public record AudioStop(UUID instance) implements CustomPayload {
         public static final Id<AudioStop> ID = new Id<>(Identifier.of("retrocraft", "audio_stop"));
         public static final PacketCodec<RegistryByteBuf, AudioStop> CODEC = new PacketCodec<>() {
@@ -82,10 +103,12 @@ public final class Packets {
 
     public static void register() {
         PayloadTypeRegistry.playC2S().register(Request.ID, Request.CODEC);
+        PayloadTypeRegistry.playC2S().register(ThumbnailUpload.ID, ThumbnailUpload.CODEC);
         PayloadTypeRegistry.playS2C().register(Ui.ID, Ui.CODEC);
         PayloadTypeRegistry.playS2C().register(Video.ID, Video.CODEC);
         PayloadTypeRegistry.playS2C().register(Audio.ID, Audio.CODEC);
         PayloadTypeRegistry.playS2C().register(AudioStop.ID, AudioStop.CODEC);
+        PayloadTypeRegistry.playS2C().register(Thumbnail.ID, Thumbnail.CODEC);
         PayloadTypeRegistry.playS2C().register(Catalog.ID, Catalog.CODEC);
     }
     private Packets() {}

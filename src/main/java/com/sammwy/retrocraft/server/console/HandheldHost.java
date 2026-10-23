@@ -3,6 +3,7 @@ package com.sammwy.retrocraft.server.console;
 import com.sammwy.retrocraft.server.item.HandheldConsoleItem;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.ContainerComponent;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -18,6 +19,8 @@ public final class HandheldHost implements ConsoleHost {
     public HandheldHost(ServerPlayerEntity holder, ItemStack stack) { this.holder = holder; this.stack = stack; dropped = null; console = (HandheldConsoleItem) stack.getItem(); }
     public HandheldHost(ItemEntity dropped) { this.dropped = dropped; stack = dropped.getStack(); holder = null; console = (HandheldConsoleItem) stack.getItem(); }
     public ItemStack stack() { return stack; }
+    /** The entity carrying the stack: its holder, or the dropped item entity on the ground. */
+    public Entity carrier() { return holder != null ? holder : dropped; }
     public int inventorySlot() {
         if (holder == null) return -1;
         for (int i = 0; i < holder.getInventory().size(); i++) if (holder.getInventory().getStack(i) == stack) return i;

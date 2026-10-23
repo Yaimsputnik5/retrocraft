@@ -1,6 +1,7 @@
 package com.sammwy.retrocraft;
 
 import com.sammwy.retrocraft.server.block.*;
+import com.sammwy.retrocraft.server.config.ConfigKey;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
 import com.sammwy.retrocraft.server.console.*;
 import com.sammwy.retrocraft.server.item.CartridgeItem;
@@ -73,17 +74,59 @@ public final class Retrocraft implements ModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> { if (instances != null) instances.sendCatalog(handler.player); });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> { if (instances != null) instances.disconnect(handler.player.getUuid()); });
         ServerPlayNetworking.registerGlobalReceiver(Packets.Request.ID, (packet, context) -> { if (instances != null) instances.request(context.player(), packet); });
+        ServerPlayNetworking.registerGlobalReceiver(Packets.ThumbnailUpload.ID, (packet, context) -> { if (instances != null) instances.thumbnailUpload(context.player(), packet); });
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> { if (instances != null) { instances.close(); instances = null; } });
         CommandRegistrationCallback.EVENT.register((dispatcher, access, environment) -> {
-            var root = CommandManager.literal("retrocraft");
-            for (String command : java.util.List.of("scan", "reload")) root.then(CommandManager.literal(command)
-                    .requires(source -> source.hasPermissionLevel(2)).executes(context -> {
-                        if (instances == null) return 0;
-                        if (instances.reloadLibrary(context.getSource())) return 1;
-                        context.getSource().sendError(Text.translatable("message.retrocraft.scan_busy")); return 0;
-                    }));
-            dispatcher.register(root);
+            for (String name : java.util.List.of("retrocraft", "rc")) dispatcher.register(commandTree(name));
         });
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<net.minecraft.server.command.ServerCommandSource> commandTree(String name) {
+        var root = CommandManager.literal(name).requires(source -> source.hasPermissionLevel(2));
+        root.then(CommandManager.literal("scan").executes(context -> {
+            if (instances == null) return 0;
+            if (instances.reloadLibrary(context.getSource())) return 1;
+            context.getSource().sendError(Text.translatable("message.retrocraft.scan_busy")); return 0;
+        }));
+        root.then(CommandManager.literal("reload").executes(context -> {
+            if (instances == null) return 0;
+            if (instances.reloadConfig(context.getSource())) { context.getSource().sendFeedback(() -> Text.literal("Retrocraft config reloaded"), true); return 1; }
+            context.getSource().sendError(Text.literal("Retrocraft config reload failed; see log")); return 0;
+        }));
+        var config = CommandManager.literal("config").executes(context -> {
+            if (instances == null) return 0;
+            var source = context.getSource();
+            ConfigKey.keys().sorted().forEach(key -> source.sendFeedback(() -> Text.literal(key + " = " + ConfigKey.get(instances.config(), key)), false));
+            return 1;
+        });
+        var key = CommandManager.argument("key", com.mojang.brigadier.arguments.StringArgumentType.word())
+                .suggests((context, builder) -> { ConfigKey.keys().sorted().filter(k -> k.toLowerCase().startsWith(builder.getRemainingLowerCase())).forEach(builder::suggest); return builder.buildFuture(); })
+                .executes(context -> {
+                    if (instances == null) return 0;
+                    String k = com.mojang.brigadier.arguments.StringArgumentType.getString(context, "key");
+                    String value = ConfigKey.get(instances.config(), k);
+                    if (value == null) { context.getSource().sendError(Text.literal("Unknown config key " + k)); return 0; }
+                    context.getSource().sendFeedback(() -> Text.literal(k + " = " + value), false); return 1;
+                });
+        var value = CommandManager.argument("value", com.mojang.brigadier.arguments.StringArgumentType.string())
+                .suggests((context, builder) -> {
+                    String k = com.mojang.brigadier.arguments.StringArgumentType.getString(context, "key");
+                    ConfigKey.valueSuggestions(instances == null ? new RetrocraftConfig() : instances.config(), k)
+                            .filter(v -> v.toLowerCase().startsWith(builder.getRemainingLowerCase())).forEach(builder::suggest);
+                    return builder.buildFuture();
+                })
+                .executes(context -> {
+                    if (instances == null) return 0;
+                    String k = com.mojang.brigadier.arguments.StringArgumentType.getString(context, "key");
+                    String v = com.mojang.brigadier.arguments.StringArgumentType.getString(context, "value");
+                    try {
+                        ConfigKey.set(instances.config(), k, v);
+                        instances.config().save(); instances.applyConfig();
+                        context.getSource().sendFeedback(() -> Text.literal(k + " = " + ConfigKey.get(instances.config(), k)), true); return 1;
+                    } catch (IllegalArgumentException | java.io.IOException ex) { context.getSource().sendError(Text.literal(ex.getMessage())); return 0; }
+                });
+        key.then(value); config.then(key); root.then(config);
+        return root;
     }
     private static CartridgeItem registerSystem(String id, String name, ConsoleType type) {
         var cartridge = ConsoleRegistry.registerCartridge(Identifier.of("retrocraft", id), RomFormats.ALL.get(id));

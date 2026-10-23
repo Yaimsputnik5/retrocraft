@@ -14,7 +14,9 @@ import com.sammwy.retrocraft.cores.ownership.Ownership;
 import com.sammwy.retrocraft.cores.transfer.*;
 import com.sammwy.retrocraft.server.net.HybridPackets;
 import com.sammwy.retrocraft.roms.*;
+import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
@@ -30,10 +32,11 @@ import java.util.concurrent.locks.LockSupport;
 /** Server-owned emulation. Video, audio and input are separate subscriptions. */
 public final class InstanceManager implements AutoCloseable {
     private final MinecraftServer server;
-    private final RetrocraftConfig config;
+    private volatile RetrocraftConfig config;
     private RomIndex roms;
     private boolean scanning;
     private final InstanceStore store;
+    private final GameSaves saves;
     private final Path workerJar;
     private final CoreManager cores;
     private final Map<String, CoreManager.Prepared> preparedCores = new ConcurrentHashMap<>();
@@ -97,6 +100,13 @@ public final class InstanceManager implements AutoCloseable {
         final FrameCodec.Encoder encoder = new FrameCodec.Encoder();
         volatile InputSource inputSource;
         volatile boolean wantsVideo, wantsAudio, observed, finished, destroy;
+        long invalidSince;
+        boolean poweredOff;
+        volatile FrameCodec.Frame lastFrame;
+        volatile boolean thumbDue;
+        volatile FrameCodec.Frame lastThumbSource;
+        volatile byte[] lastThumb;
+        volatile long lastUploadAt;
         volatile WorkerProcess process;
         volatile Throwable failure;
         volatile int sampleRate;
@@ -123,11 +133,13 @@ public final class InstanceManager implements AutoCloseable {
     public InstanceManager(MinecraftServer server, RetrocraftConfig config) throws IOException {
         this.server = server; this.config = config;
         store = new InstanceStore(server.getSavePath(WorldSavePath.ROOT).resolve("retrocraft/instances"));
+        saves = new GameSaves(RetrocraftConfig.savesRoot());
         CacheMigration.prepare(RetrocraftConfig.root(), RetrocraftConfig.cacheRoot(), false);
         workerJar = WorkerRuntime.extract(RetrocraftConfig.serverCache().resolve("runtime"));
         cores = new CoreManager(RetrocraftConfig.serverCache().resolve("cores"), workerJar);
         roms = loadLibrary(false);
         libraryUpdated();
+        cleanOrphanSaves();
         Retrocraft.LOG.info("Retrocraft ready: {} consoles, {} ROMs", ConsoleRegistry.consoles().size(), roms.catalog().size());
     }
 
@@ -135,6 +147,23 @@ public final class InstanceManager implements AutoCloseable {
         return RomIndex.load(RetrocraftConfig.root().resolve("roms"), RetrocraftConfig.serverCache(), config.maxRomSizeMiB * 1024L * 1024, force,
                 warning -> Retrocraft.LOG.warn("ROM scan: {}", warning));
     }
+    public RetrocraftConfig config() { return config; }
+
+    /** Applies a config object as-is (used by /retrocraft config set after a successful save). */
+    public void applyConfig() {
+        libraryUpdated(); // core mappings may have changed
+        for (var player : server.getPlayerManager().getPlayerList()) sendCoreSettings(player);
+    }
+
+    /** /retrocraft reload: re-reads server.json from disk and applies it. */
+    public boolean reloadConfig(net.minecraft.server.command.ServerCommandSource source) {
+        try {
+            config = RetrocraftConfig.load();
+            applyConfig();
+            return true;
+        } catch (IOException ex) { Retrocraft.LOG.error("Cannot reload Retrocraft config", ex); return false; }
+    }
+
     public boolean reloadLibrary(net.minecraft.server.command.ServerCommandSource source) {
         if (scanning || stopping) return false;
         scanning = true;
@@ -204,6 +233,7 @@ public final class InstanceManager implements AutoCloseable {
             if (prepared == null) { error(player, "core_preparing"); return; }
             Path core = prepared.path();
             var data = store.create(player.getUuid(), host.definition().id().toString(), game.id(), game.name(), core);
+            restoreSave(data);
             host.instance(data.id());
             if (tv != null) Televisions.bind((DockedConsoleBlockEntity) host, tv, data.id());
             sessions.put(data.id(), new Session(data, game, host));
@@ -240,10 +270,12 @@ public final class InstanceManager implements AutoCloseable {
         Session session = sessions.get(id);
         if (session != null) {
             if (session.ownership.owner() != null) revoke(session, false);
+            session.poweredOff = true;
             session.destroy = true;
             session.observed = false;
             stopSubscribers(session);
             if (session.thread != null) return;
+            persistSave(session);
             sessions.remove(id);
         }
         destroyFiles(id);
@@ -358,10 +390,12 @@ public final class InstanceManager implements AutoCloseable {
         flushTransfers();
         ticks++;
         if (ticks % 20 == 1) discoverItems();
+        if (ticks % (20 * config.thumbnailIntervalSeconds) == 1) markThumbnails();
+        if (ticks % (20 * 3600) == 2) cleanOrphanSaves();
         long now = System.nanoTime();
         for (Session session : List.copyOf(sessions.values())) {
             finish(session);
-            if (session.destroy) { if (session.thread == null) { destroyFiles(session.data.id()); sessions.remove(session.data.id()); } continue; }
+            if (session.destroy) { if (session.thread == null) { persistSave(session); destroyFiles(session.data.id()); sessions.remove(session.data.id()); } continue; }
             updateSubscriptions(session, now);
             sendDemand(session);
             session.wantsVideo = !session.videoWatchers.isEmpty();
@@ -371,7 +405,7 @@ public final class InstanceManager implements AutoCloseable {
             for (var receiver : session.incoming.values()) if (receiver.expired(now)) { revoke(session, true); break; }
             if (session.ownership.mode() == Ownership.Mode.CLIENT && now - session.lastCheckpointAt
                     > TimeUnit.SECONDS.toNanos(BlobTransfer.timeoutSeconds(Math.max(config.ownerTimeoutSeconds, config.checkpointIntervalSeconds * 3L + 5), session.checkpointBytes, 2))) revoke(session, true);
-            if (session.thread == null && session.observed && session.failure == null && session.ownership.serverMayRun()
+            if (session.thread == null && session.observed && session.failure == null && session.ownership.serverMayRun() && serverMayEmulate()
                     && preparedCores.containsKey(config.coreId(session.game.cartridge().id().toString())) && activeCount() < config.maxActiveInstances) start(session);
             coordinateOwnership(session, now);
             if (session.thread == null && !session.host.valid() && !session.observed && session.ownership.serverMayRun()) { sessions.remove(session.data.id()); continue; }
@@ -394,6 +428,9 @@ public final class InstanceManager implements AutoCloseable {
 
     private void updateSubscriptions(Session session, long now) {
         boolean valid = session.host.valid() && session.data.id().equals(session.host.instance());
+        if (valid) session.invalidSince = 0; else if (session.invalidSince == 0) session.invalidSince = now;
+        // A handheld being dropped or picked up keeps playing while discovery swaps the host.
+        boolean grace = valid || now - session.invalidSince < TimeUnit.SECONDS.toNanos(3);
         for (UUID id : List.copyOf(session.videoWatchers.keySet())) {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(id);
             VideoWatcher watcher = session.videoWatchers.get(id);
@@ -406,7 +443,7 @@ public final class InstanceManager implements AutoCloseable {
         }
         Set<UUID> listeners = new HashSet<>();
         boolean inWorld = inWorld(session);
-        if (valid && session.failure == null) for (var player : server.getPlayerManager().getPlayerList()) {
+        if (grace && session.failure == null) for (var player : server.getPlayerManager().getPlayerList()) {
             if (player.getWorld() != session.host.world() || !ServerPlayNetworking.canSend(player, Packets.Audio.ID)) continue;
             double distance = player.getPos().distanceTo(session.host.soundPosition());
             if (distance >= config.audioRadius) continue;
@@ -441,6 +478,10 @@ public final class InstanceManager implements AutoCloseable {
         session.nextStream = Math.max(session.nextStream, now - period) + period;
         WorkerProcess.Output output = session.media.drain();
         if (output == null) return;
+        if (output.frame() != null) {
+            session.lastFrame = output.frame();
+            if (session.thumbDue) { session.thumbDue = false; broadcastThumbnail(session); }
+        }
         // Audio fan-out never depends on video acknowledgements or on an open HUD.
         if (output.audio().length > 0) session.audioSequence++;
         if (output.audio().length > 0) for (var listener : session.audioWatchers.entrySet()) {
@@ -471,6 +512,68 @@ public final class InstanceManager implements AutoCloseable {
         } catch (IOException ex) { Retrocraft.LOG.error("Cannot encode console video", ex); session.forceKeyframe = true; }
     }
 
+    private boolean serverMayEmulate() { return config.emulationMode != RetrocraftConfig.EmulationMode.CLIENT; }
+    private boolean clientMayEmulate() { return config.emulationMode != RetrocraftConfig.EmulationMode.SERVER; }
+
+    /** Everyone who could glance at the console: trackers of its carrier plus the holder itself. */
+    private Set<ServerPlayerEntity> audience(HandheldHost host) {
+        Entity carrier = host.carrier();
+        if (carrier == null) return null;
+        Set<ServerPlayerEntity> audience = new HashSet<>(PlayerLookup.tracking(carrier));
+        if (carrier instanceof ServerPlayerEntity player) audience.add(player);
+        audience.removeIf(player -> !ServerPlayNetworking.canSend(player, Packets.Thumbnail.ID));
+        return audience.isEmpty() ? null : audience;
+    }
+
+    /** Every cycle: running handhelds capture a fresh frame on their next advance; paused ones resend the cached preview. */
+    private void markThumbnails() {
+        for (Session session : sessions.values()) {
+            if (session.destroy || !(session.host instanceof HandheldHost host) || audience(host) == null) continue;
+            if (session.lastThumb != null) resendThumbnail(session, host); // cached preview always refreshes the watchers' TTL
+            if (session.thread != null) session.thumbDue = true;
+            else if (session.lastThumb == null && session.lastFrame != null) broadcastThumbnail(session);
+        }
+    }
+
+    private void resendThumbnail(Session session, HandheldHost host) {
+        Set<ServerPlayerEntity> audience = audience(host);
+        if (audience != null) for (var player : audience) send(player, new Packets.Thumbnail(session.data.id(), session.lastThumb));
+    }
+
+    private void broadcastThumbnail(Session session) {
+        if (session.destroy || !(session.host instanceof HandheldHost host) || session.lastFrame == null) return;
+        if (audience(host) == null) return;
+        FrameCodec.Frame frame = session.lastFrame;
+        if (session.lastThumbSource == frame && session.lastThumb != null) { resendThumbnail(session, host); return; }
+        Thread.ofVirtual().name("retrocraft-thumbnail").start(() -> {
+            try {
+                byte[] png = ThumbnailCodec.encode(frame);
+                callbacks.add(() -> {
+                    session.lastThumbSource = frame; session.lastThumb = png;
+                    if (!session.destroy && session.host instanceof HandheldHost current) resendThumbnail(session, current);
+                });
+            } catch (IOException ignored) { }
+        });
+    }
+
+    private static final byte[] PNG_SIGNATURE = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+
+    /** Hybrid owners push their own in-hand preview; the server adopts it as the session thumbnail and fans it out. */
+    public void thumbnailUpload(ServerPlayerEntity player, Packets.ThumbnailUpload packet) {
+        if (!config.thumbnailUpload || stopping) return;
+        Session session = sessions.get(packet.instance());
+        if (session == null || session.destroy || !(session.host instanceof HandheldHost host)
+                || !session.ownership.clientMayRun(player.getUuid(), session.ownership.epoch())) return;
+        byte[] png = packet.png();
+        if (png.length < PNG_SIGNATURE.length || !Arrays.equals(Arrays.copyOf(png, PNG_SIGNATURE.length), PNG_SIGNATURE)) return;
+        long now = System.nanoTime();
+        if (now - session.lastUploadAt < 1_000_000_000L) return;
+        session.lastUploadAt = now;
+        session.lastThumb = png; session.lastThumbSource = null;
+        Set<ServerPlayerEntity> audience = audience(host);
+        if (audience != null) for (var watcher : audience) if (!watcher.getUuid().equals(player.getUuid())) send(watcher, new Packets.Thumbnail(session.data.id(), png));
+    }
+
     private long activeCount() { return sessions.values().stream().filter(s -> s.thread != null && !s.finished).count(); }
     private void start(Session session) {
         session.handoffStop = false;
@@ -488,10 +591,10 @@ public final class InstanceManager implements AutoCloseable {
                     session.process = process; session.sampleRate = process.sampleRate();
                     long period = Math.round(1_000_000_000d / process.fps());
                     long next = System.nanoTime(), nextSave = next + TimeUnit.SECONDS.toNanos(config.autosaveIntervalSeconds);
-                    while (!stopping && !session.destroy && session.observed && !session.handoffStop && session.ownership.serverMayRun()) {
+                    while (!stopping && !session.destroy && session.observed && !session.handoffStop && session.ownership.serverMayRun() && serverMayEmulate()) {
                         InputSource input = session.inputSource;
                         int buttons = input != null && System.nanoTime() - input.lastSeen < TimeUnit.SECONDS.toNanos(2) ? input.buttons : 0;
-                        session.media.offer(process.advance(buttons, session.wantsVideo, session.wantsAudio), process.sampleRate());
+                        session.media.offer(process.advance(buttons, session.wantsVideo || session.thumbDue, session.wantsAudio), process.sampleRate());
                         long now = System.nanoTime();
                         if (now >= nextSave) { process.save(); nextSave = now + TimeUnit.SECONDS.toNanos(config.autosaveIntervalSeconds); }
                         next += period;
@@ -502,7 +605,7 @@ public final class InstanceManager implements AutoCloseable {
                 }
             } catch (Throwable ex) { session.failure = ex; Retrocraft.LOG.error("Console instance {} failed", session.data.id(), ex); }
             finally {
-                if (session.destroy) destroyFiles(session.data.id());
+                if (session.destroy) { persistSave(session); destroyFiles(session.data.id()); }
                 session.process = null; session.media.clear(); session.finished = true;
             }
         });
@@ -558,6 +661,31 @@ public final class InstanceManager implements AutoCloseable {
     }
     private static Packets.Ui stopped(Session session) { return new Packets.Ui(Packets.STOP, session.data.id(), "", "", false, false, false, 0); }
     private void destroyFiles(UUID id) { try { store.destroy(id); } catch (IOException ex) { Retrocraft.LOG.error("Cannot destroy console instance {}", id, ex); } }
+    /** Copies the durable per-game save into a freshly created instance so powered consoles resume where they left off. */
+    private void restoreSave(InstanceStore.Metadata data) {
+        if (config.saveMode == RetrocraftConfig.SaveMode.NONE) return;
+        try {
+            byte[] state = saves.restore(data.owner(), config.saveMode == RetrocraftConfig.SaveMode.GLOBAL, data.gameId());
+            if (state != null) SaveStates.writeAtomic(store.snapshot(data.id()), state);
+        } catch (IOException ex) { Retrocraft.LOG.warn("Cannot restore save for {}", data.gameId()); }
+    }
+
+    /** Savestates older than a week without being loaded are orphaned; battery saves are never touched. */
+    private void cleanOrphanSaves() {
+        int removed = saves.cleanOrphans(java.time.Duration.ofDays(7));
+        if (removed > 0) Retrocraft.LOG.info("Removed {} orphaned savestate(s)", removed);
+    }
+
+    /**
+     * The session is going away: publish its latest snapshot to the durable save directory.
+     * A clean shutdown deletes the savestate (it is the powered console's RAM only); the battery save stays.
+     */
+    private void persistSave(Session session) {
+        if (config.saveMode == RetrocraftConfig.SaveMode.NONE) return;
+        try { saves.persist(session.data.owner(), config.saveMode == RetrocraftConfig.SaveMode.GLOBAL, session.data.gameId(), store.snapshot(session.data.id()), !session.poweredOff); }
+        catch (IOException ex) { Retrocraft.LOG.warn("Cannot persist save for {}", session.data.id()); }
+    }
+
     private static void send(ServerPlayerEntity player, net.minecraft.network.packet.CustomPayload packet) { ServerPlayNetworking.send(player, packet); }
     private static void error(ServerPlayerEntity player, String key) { player.sendMessage(Text.translatable("message.retrocraft." + key), false); }
 
@@ -566,6 +694,7 @@ public final class InstanceManager implements AutoCloseable {
         clientGenerations.put(player.getUuid(), coreGeneration);
         readyClients.remove(player.getUuid());
         send(player, new HybridPackets.Settings(coreGeneration, KnownCores.POOL, config.checkpointIntervalSeconds, config.streamFps,
+                config.thumbnailIntervalSeconds, config.thumbnailUpload, config.emulationMode.ordinal(),
                 requiredCores.stream().sorted().map(id -> preparedCores.get(id).identity()).toList()));
     }
 
@@ -588,7 +717,7 @@ public final class InstanceManager implements AutoCloseable {
 
     private void coordinateOwnership(Session session, long now) {
         if (session.destroy || session.failure != null) return;
-        if (session.ownership.serverMayRun() && session.inputSource != null) {
+        if (session.ownership.serverMayRun() && session.inputSource != null && clientMayEmulate()) {
             var player = server.getPlayerManager().getPlayer(session.inputSource.player);
             if (controlsHere(session, player) && readyClients.contains(player.getUuid()) && !player.getUuid().equals(session.failedOffload)) {
                 if (session.thread == null && !Files.exists(store.snapshot(session.data.id()))) {
@@ -765,7 +894,7 @@ public final class InstanceManager implements AutoCloseable {
             try {
                 byte[] state = SnapshotWire.unpack(bytes); SaveStates.validate(state);
                 SaveStates.writeAtomic(staged, state);
-                if (stopping || session.destroy) { Files.deleteIfExists(staged); if (session.destroy) destroyFiles(session.data.id()); return; }
+                if (stopping || session.destroy) { Files.deleteIfExists(staged); if (session.destroy) { persistSave(session); destroyFiles(session.data.id()); } return; }
                 callbacks.add(() -> {
                     session.pendingCheckpointWrites.remove(writeId);
                     try {

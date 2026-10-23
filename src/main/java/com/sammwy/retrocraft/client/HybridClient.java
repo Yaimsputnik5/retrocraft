@@ -3,10 +3,12 @@ package com.sammwy.retrocraft.client;
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.cores.*;
 import com.sammwy.retrocraft.cores.stream.FrameCodec;
+import com.sammwy.retrocraft.cores.stream.ThumbnailCodec;
 import com.sammwy.retrocraft.cores.transfer.*;
 import com.sammwy.retrocraft.roms.*;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
 import com.sammwy.retrocraft.server.net.HybridPackets;
+import com.sammwy.retrocraft.server.net.Packets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.sound.SoundCategory;
@@ -14,6 +16,7 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 
 /** Client networking/UI coordinator; native execution, core cache and save formats are shared. */
 public final class HybridClient {
@@ -49,16 +52,22 @@ public final class HybridClient {
     private final Map<UUID, Local> locals = new HashMap<>();
     private final ConcurrentLinkedQueue<Runnable> callbacks = new ConcurrentLinkedQueue<>();
     private UUID connection = UUID.randomUUID();
-    private int settingsGeneration, checkpointSeconds = 2, streamFps = 20;
+    private int settingsGeneration, checkpointSeconds = 2, streamFps = 20, thumbnailSeconds = 5, emulationMode;
+    private boolean uploadThumbnails = true;
+    private long nextThumbAt;
     private Path workerJar;
 
     HybridClient(AudioStreams remoteAudio) { this.remoteAudio = remoteAudio; }
     boolean owns(UUID id) { Local local = locals.get(id); return local != null && local.phase == Phase.ACTIVE; }
     List<UUID> active() { List<UUID> ids = new ArrayList<>(); for (var e : locals.entrySet()) if (e.getValue().phase == Phase.ACTIVE) ids.add(e.getKey()); return ids; }
     FrameCodec.Frame frame(UUID id) { Local local = locals.get(id); return local != null && local.phase == Phase.ACTIVE ? local.frame : null; }
+    int thumbnailSeconds() { return thumbnailSeconds; }
 
     void settings(HybridPackets.Settings packet) {
-        if (!packet.pool().equals(KnownCores.POOL) || packet.checkpointSeconds() < 1 || packet.checkpointSeconds() > 30 || packet.streamFps() < 1 || packet.streamFps() > 20) return;
+        if (!packet.pool().equals(KnownCores.POOL) || packet.checkpointSeconds() < 1 || packet.checkpointSeconds() > 30 || packet.streamFps() < 1 || packet.streamFps() > 20
+                || packet.thumbnailSeconds() < 1 || packet.thumbnailSeconds() > 60) return;
+        thumbnailSeconds = packet.thumbnailSeconds(); uploadThumbnails = packet.thumbnailUpload(); emulationMode = packet.emulationMode();
+        if (packet.generation() == settingsGeneration) return; // soft config resend; cores already match
         settingsGeneration = packet.generation(); checkpointSeconds = packet.checkpointSeconds(); streamFps = packet.streamFps();
         int generation = settingsGeneration; UUID token = connection;
         Map<String, CoreManager.Prepared> previous = Map.copyOf(prepared);
@@ -206,6 +215,11 @@ public final class HybridClient {
         Runnable callback;
         for (int i = 0; i < 256 && (callback = callbacks.poll()) != null; i++) callback.run();
         long now = System.nanoTime();
+        if (uploadThumbnails && now >= nextThumbAt) {
+            nextThumbAt = now + TimeUnit.SECONDS.toNanos(thumbnailSeconds);
+            for (Local local : locals.values())
+                if (local.phase == Phase.ACTIVE && !local.offer.docked() && local.frame != null) uploadThumbnail(local);
+        }
         for (Local local : List.copyOf(locals.values())) {
             if (local.phase == Phase.ACTIVE || local.phase == Phase.PREPARED || local.phase == Phase.RECEIVING) {
                 boolean visible = client.currentScreen instanceof ConsoleScreen screen && screen.instance.equals(local.offer.instance());
@@ -243,6 +257,19 @@ public final class HybridClient {
                 if (sender.done()) queue.removeFirst();
             }
         }
+    }
+
+    /** Pushes the client's own handheld preview so nearby players see it too. */
+    private void uploadThumbnail(Local local) {
+        if (!ClientPlayNetworking.canSend(Packets.ThumbnailUpload.ID)) return;
+        FrameCodec.Frame frame = local.frame; UUID instance = local.offer.instance();
+        Thread.ofVirtual().name("retrocraft-thumb-upload").start(() -> {
+            try {
+                byte[] png = ThumbnailCodec.encode(frame);
+                if (local.phase == Phase.ACTIVE && ClientPlayNetworking.canSend(Packets.ThumbnailUpload.ID))
+                    ClientPlayNetworking.send(new Packets.ThumbnailUpload(instance, png));
+            } catch (IOException ignored) { }
+        });
     }
 
     void disconnect() {
