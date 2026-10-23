@@ -3,6 +3,7 @@ package com.sammwy.retrocraft.server.net;
 import java.util.*;
 
 import com.sammwy.retrocraft.cores.stream.FrameCodec;
+import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 import com.sammwy.retrocraft.roms.RomCatalog;
 
@@ -13,6 +14,19 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public final class Packets {
+    private static PadInput readPad(RegistryByteBuf b) {
+        return new PadInput(
+                b.readUnsignedShort(), b.readShort(), b.readShort(), b.readShort(), b.readShort());
+    }
+
+    private static void writePad(RegistryByteBuf b, PadInput input) {
+        b.writeShort(input.buttons());
+        b.writeShort(input.leftX());
+        b.writeShort(input.leftY());
+        b.writeShort(input.rightX());
+        b.writeShort(input.rightY());
+    }
+
     public static final int CLOSE = 1,
             INPUT = 2,
             POWER_OFF = 3,
@@ -48,23 +62,20 @@ public final class Packets {
         }
     }
 
-    public record Request(int action, UUID instance, int buttons, long acknowledgedSequence)
+    public record Request(int action, UUID instance, PadInput input, long acknowledgedSequence)
             implements CustomPayload {
         public static final Id<Request> ID = new Id<>(Identifier.of("retrocraft", "request"));
         public static final PacketCodec<RegistryByteBuf, Request> CODEC =
                 new PacketCodec<>() {
                     public Request decode(RegistryByteBuf b) {
                         return new Request(
-                                b.readVarInt(),
-                                b.readUuid(),
-                                b.readUnsignedShort(),
-                                b.readVarLong());
+                                b.readVarInt(), b.readUuid(), readPad(b), b.readVarLong());
                     }
 
                     public void encode(RegistryByteBuf b, Request p) {
                         b.writeVarInt(p.action);
                         b.writeUuid(p.instance);
-                        b.writeShort(p.buttons);
+                        writePad(b, p.input);
                         b.writeVarLong(p.acknowledgedSequence);
                     }
                 };
@@ -72,6 +83,10 @@ public final class Packets {
         @Override
         public Id<? extends CustomPayload> getId() {
             return ID;
+        }
+
+        public Request(int action, UUID instance, int buttons, long sequence) {
+            this(action, instance, PadInput.digital(buttons), sequence);
         }
 
         public static Request of(int action, UUID id) {
@@ -329,22 +344,23 @@ public final class Packets {
         }
     }
 
-    /**
-     * Live 16-bit RetroPad mask of one roster slot, broadcast on change so every HUD animates
-     * presses.
-     */
-    public record Pad(UUID instance, int slot, int buttons) implements CustomPayload {
+    /** Virtual buttons and both sticks of one roster slot, broadcast on change. */
+    public record Pad(UUID instance, int slot, PadInput input) implements CustomPayload {
+        public Pad(UUID instance, int slot, int buttons) {
+            this(instance, slot, PadInput.digital(buttons));
+        }
+
         public static final Id<Pad> ID = new Id<>(Identifier.of("retrocraft", "pad"));
         public static final PacketCodec<RegistryByteBuf, Pad> CODEC =
                 new PacketCodec<>() {
                     public Pad decode(RegistryByteBuf b) {
-                        return new Pad(b.readUuid(), b.readVarInt(), b.readUnsignedShort());
+                        return new Pad(b.readUuid(), b.readVarInt(), readPad(b));
                     }
 
                     public void encode(RegistryByteBuf b, Pad p) {
                         b.writeUuid(p.instance);
                         b.writeVarInt(p.slot);
-                        b.writeShort(p.buttons);
+                        writePad(b, p.input);
                     }
                 };
 

@@ -44,16 +44,24 @@ Break the console or eject the cartridge and the TV is free again. Unloading the
 
 ## Controls
 
-| Minecraft key | Pad |
-| --- | --- |
-| Arrow keys | D-pad / left stick |
-| Z / X | B / A |
-| A / S | Y / X |
-| Q / W | L / R |
-| Enter | Start |
-| Right Shift | Select |
-| I / J / K / L | Right stick / C buttons |
-| Escape | Close the HUD |
+Press **F8 → Client → Controls**, choose a console, then click a control and press its new key or mouse button. **Escape** cancels recording, **Delete/Backspace** clears a binding, and **Defaults** restores that console's defaults. **Apply** saves changes locally in `config/retrocraft/client.json`. Each console has its own bindings. Shared keys are marked in red. F8 and Escape remain reserved for the menus.
+
+| Default keys | Classic pads | Pads with analog sticks |
+| --- | --- | --- |
+| Arrow keys | D-pad | D-pad |
+| Z / X | B / A | Bottom / right face button (Cross / Circle on PlayStation) |
+| A / S | Y / X | — |
+| C / V | — | Left / top face button (Square / Triangle on PlayStation) |
+| Q / W | L / R | — |
+| Q / E | — | L1 / R1 |
+| 1 / 3 | — | L2 / R2, where present |
+| WASD | — | Left stick |
+| IJKL | — | Right stick, C stick or N64 C buttons |
+| Left Shift / Right Ctrl | — | L3 / R3 on PlayStation |
+| Enter / Right Shift | Start / Select | Start / Select, where present |
+| Escape | Close the HUD | Close the HUD |
+
+The in-game controller cards show console buttons and live stick positions. PlayStation symbols and stacked shoulder buttons match the pad layout. Key hints reflect your personal bindings and appear only on your own card. The server receives virtual controller buttons and axes; keyboard/mouse codes and binding profiles stay on your client.
 
 ## How it works (short version)
 

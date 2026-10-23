@@ -17,6 +17,7 @@ import com.sammwy.retrocraft.cores.*;
 import com.sammwy.retrocraft.cores.ownership.Ownership;
 import com.sammwy.retrocraft.cores.stream.*;
 import com.sammwy.retrocraft.cores.transfer.*;
+import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 import com.sammwy.retrocraft.roms.*;
 import com.sammwy.retrocraft.server.block.*;
@@ -133,7 +134,7 @@ public final class InstanceManager implements AutoCloseable {
 
     private static final class InputSource {
         final UUID player;
-        volatile int buttons;
+        volatile PadInput state = PadInput.IDLE;
         volatile long lastSeen = System.nanoTime();
 
         InputSource(UUID player) {
@@ -187,7 +188,7 @@ public final class InstanceManager implements AutoCloseable {
          * Controller slots; only the first one is usable on handhelds. Slot 0 also holds the
          * emulation lease.
          */
-        volatile int[] inputMasks = new int[WorkerProtocol.PORTS];
+        volatile PadInput[] inputMasks = new PadInput[WorkerProtocol.PORTS];
 
         final InputSource[] pads = new InputSource[WorkerProtocol.PORTS];
         volatile boolean wantsVideo, wantsAudio, observed, finished, destroy;
@@ -1118,7 +1119,7 @@ public final class InstanceManager implements AutoCloseable {
         session.pads[slot] = null;
         publishInputs(session, System.nanoTime());
         if (slot == 0) returnOwnership(session);
-        broadcastPad(session, slot, 0);
+        broadcastPad(session, slot, PadInput.IDLE);
         notifyRoles(session);
         notifyPlayers(session);
     }
@@ -1212,10 +1213,10 @@ public final class InstanceManager implements AutoCloseable {
                 int slot = slotOf(session, playerId);
                 InputSource input = slot >= 0 ? session.pads[slot] : null;
                 if (input != null && session.host.canAccess(player)) {
-                    int mask = packet.buttons() & 0xffff;
-                    if (input.buttons != mask) {
-                        input.buttons = mask;
-                        broadcastPad(session, slot, mask);
+                    PadInput state = packet.input();
+                    if (!input.state.equals(state)) {
+                        input.state = state;
+                        broadcastPad(session, slot, state);
                     }
                     input.lastSeen = now;
                     publishInputs(session, now);
@@ -1415,11 +1416,11 @@ public final class InstanceManager implements AutoCloseable {
     }
 
     private static void publishInputs(Session session, long now) {
-        int[] masks = new int[WorkerProtocol.PORTS];
+        PadInput[] masks = new PadInput[WorkerProtocol.PORTS];
         for (int port = 0; port < masks.length; port++) {
             InputSource source = session.pads[port];
             if (source != null && now - source.lastSeen < TimeUnit.SECONDS.toNanos(2))
-                masks[port] = source.buttons;
+                masks[port] = source.state;
         }
         if (!Arrays.equals(masks, session.inputMasks)) session.inputMasks = masks;
     }
@@ -1428,10 +1429,10 @@ public final class InstanceManager implements AutoCloseable {
         for (int port = 0; port < session.pads.length; port++) {
             InputSource input = session.pads[port];
             if (input != null
-                    && input.buttons != 0
+                    && !input.state.equals(PadInput.IDLE)
                     && now - input.lastSeen >= TimeUnit.SECONDS.toNanos(2)) {
-                input.buttons = 0;
-                broadcastPad(session, port, 0);
+                input.state = PadInput.IDLE;
+                broadcastPad(session, port, PadInput.IDLE);
             }
         }
         publishInputs(session, now);
@@ -2034,13 +2035,13 @@ public final class InstanceManager implements AutoCloseable {
                             send(
                                     player,
                                     new Packets.Pad(
-                                            session.data.id(), port, session.pads[port].buttons));
+                                            session.data.id(), port, session.pads[port].state));
                 });
     }
 
-    private void broadcastPad(Session session, int slot, int mask) {
+    private void broadcastPad(Session session, int slot, PadInput state) {
         forHudWatchers(
-                session, player -> send(player, new Packets.Pad(session.data.id(), slot, mask)));
+                session, player -> send(player, new Packets.Pad(session.data.id(), slot, state)));
     }
 
     private Packets.Ui status(Session session, ServerPlayerEntity player, int mode) {

@@ -57,4 +57,35 @@ class ClientConfigTest {
         Files.writeString(file, "{\"volume\":-1}");
         assertThrows(IOException.class, () -> ClientConfig.load(file));
     }
+
+    @Test
+    void controllerBindingsAreLocalPersistentAndIndependentPerConsole() throws Exception {
+        Path file = root.resolve("client.json"), server = root.resolve("server.json");
+        Files.writeString(server, "server settings");
+        var config =
+                new ClientConfig()
+                        .withControls(
+                                Map.of(
+                                        "ps2_console", Map.of("b", 70, "left_up", 84, "r2", -3),
+                                        "nes_console", Map.of("a", -1)));
+        config.changed(Map.of("volume", "40")).save(file);
+        var restored = ClientConfig.load(file);
+        assertEquals(Map.of("b", 70, "left_up", 84, "r2", -3), restored.controls("ps2_console"));
+        assertEquals(Map.of("a", -1), restored.controls("nes_console"));
+        assertTrue(restored.controls("ps1_console").isEmpty());
+        assertEquals("server settings", Files.readString(server));
+        assertTrue(restored.withControls(Map.of()).controls.isEmpty());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> config.withControls(Map.of("nes_console", Map.of("left_up", 87))));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> config.withControls(Map.of("ps2_console", Map.of("b", 99999))));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> config.withControls(Map.of("ps2_console", Map.of("b", 297))));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> config.withControls(Map.of("../server", Map.of("b", 70))));
+    }
 }

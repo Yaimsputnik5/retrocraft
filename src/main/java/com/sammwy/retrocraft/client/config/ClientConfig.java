@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import com.google.gson.Gson;
@@ -14,6 +15,7 @@ import com.sammwy.retrocraft.roms.SaveStates;
 /** Personal preferences; never used to authorize or change server settings. */
 public final class ClientConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    public Map<String, Map<String, Integer>> controls = new LinkedHashMap<>();
     public int volume = 100;
     public int maxVideoFps = 60;
     public boolean renderWorldScreens = true;
@@ -24,7 +26,7 @@ public final class ClientConfig {
     public static ClientConfig load(Path file) throws IOException {
         if (!Files.exists(file)) return new ClientConfig();
         try {
-            if (Files.size(file) > 16_384) throw new IOException("Client config exceeds limit");
+            if (Files.size(file) > 131_072) throw new IOException("Client config exceeds limit");
             ClientConfig config = GSON.fromJson(Files.readString(file), ClientConfig.class);
             if (config == null) throw new IOException("Invalid client config");
             config.validate();
@@ -54,12 +56,53 @@ public final class ClientConfig {
         return copy;
     }
 
+    public Map<String, Integer> controls(String console) {
+        return Map.copyOf(controls.getOrDefault(console, Map.of()));
+    }
+
+    public ClientConfig withControls(Map<String, Map<String, Integer>> bindings) {
+        ClientConfig copy = GSON.fromJson(GSON.toJson(this), ClientConfig.class);
+        copy.controls = new LinkedHashMap<>();
+        bindings.forEach(
+                (console, values) -> {
+                    if (!values.isEmpty()) copy.controls.put(console, new LinkedHashMap<>(values));
+                });
+        copy.validate();
+        return copy;
+    }
+
     public void save(Path file) throws IOException {
         validate();
         SaveStates.writeAtomic(file, GSON.toJson(this).getBytes(StandardCharsets.UTF_8));
     }
 
     private void validate() {
+        if (controls == null || controls.size() > 128)
+            throw new IllegalArgumentException("Invalid controller bindings");
+        controls.forEach(
+                (console, values) -> {
+                    if (console == null
+                            || !console.matches("[a-z0-9_]{1,64}")
+                            || values == null
+                            || values.size() > 24)
+                        throw new IllegalArgumentException("Invalid controller profile");
+                    var actions =
+                            ControllerProfile.of(console).actions().stream()
+                                    .map(ControllerProfile.Action::id)
+                                    .toList();
+                    values.forEach(
+                            (action, key) -> {
+                                if (!actions.contains(action)
+                                        || key == null
+                                        || !(key == -1
+                                                || key >= -9 && key <= -2
+                                                || key >= 32 && key <= 348)
+                                        || key == 256
+                                        || key == 297)
+                                    throw new IllegalArgumentException(
+                                            "Invalid controller binding");
+                            });
+                });
         if (volume < 0 || volume > 100 || maxVideoFps < 1 || maxVideoFps > 144)
             throw new IllegalArgumentException("Client config values out of range");
     }

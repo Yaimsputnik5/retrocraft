@@ -77,6 +77,28 @@ public interface Libretro extends Library {
         public Timing timing = new Timing();
     }
 
+    @Structure.FieldOrder({"description", "id"})
+    class ControllerDescription extends Structure {
+        public String description;
+        public int id;
+
+        public ControllerDescription(Pointer pointer) {
+            super(pointer);
+            read();
+        }
+    }
+
+    @Structure.FieldOrder({"types", "count"})
+    class ControllerInfo extends Structure {
+        public Pointer types;
+        public int count;
+
+        public ControllerInfo(Pointer pointer) {
+            super(pointer);
+            read();
+        }
+    }
+
     int retro_api_version();
 
     void retro_set_environment(Environment callback);

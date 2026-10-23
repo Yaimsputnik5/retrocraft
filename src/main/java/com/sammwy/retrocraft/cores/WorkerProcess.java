@@ -8,6 +8,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import com.sammwy.retrocraft.cores.stream.*;
+import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 
 /** Blocking native IPC; call only from the instance's worker thread. */
@@ -190,10 +191,16 @@ public final class WorkerProcess implements AutoCloseable {
 
     /** One 16-bit RetroPad mask per controller port; missing ports read as idle. */
     public Output advance(int[] masks, boolean video, boolean sound) throws IOException {
+        PadInput[] pads = new PadInput[masks.length];
+        for (int i = 0; i < masks.length; i++) pads[i] = PadInput.digital(masks[i]);
+        return advance(pads, video, sound);
+    }
+
+    public Output advance(PadInput[] pads, boolean video, boolean sound) throws IOException {
         try {
             out.writeByte(WorkerProtocol.RUN);
             for (int port = 0; port < WorkerProtocol.PORTS; port++)
-                out.writeShort(port < masks.length ? masks[port] : 0);
+                (port < pads.length && pads[port] != null ? pads[port] : PadInput.IDLE).write(out);
             out.writeByte((video ? 1 : 0) | (sound ? 2 : 0));
             out.flush();
             int width = in.readUnsignedShort(), height = in.readUnsignedShort();

@@ -30,7 +30,7 @@ import net.minecraft.util.Identifier;
  * Personal and operator settings: a sidebar with one category per config group and a ROM library
  * browser. Values are edited into a draft and committed with Apply.
  */
-public final class SettingsScreen extends Screen {
+public final class SettingsScreen extends AnimatedScreen {
     private static final int SIDEBAR = 126,
             ROW_H = 32,
             SECTION_H = 18,
@@ -74,7 +74,7 @@ public final class SettingsScreen extends Screen {
     private List<SettingsPackets.GuiOpen.Entry> schema = List.of();
     private Map<String, SettingsPackets.GuiOpen.Entry> byKey = Map.of();
     private final Map<String, String> draft = new LinkedHashMap<>();
-    private static final int CLIENT = -1;
+    private static final int CLIENT = -1, CONTROLS = -2;
     private int category = CLIENT;
     private final Map<String, String> clientDraft = new LinkedHashMap<>();
     private float scroll;
@@ -84,6 +84,7 @@ public final class SettingsScreen extends Screen {
     private int statusColor;
     private long statusUntil;
     private final RomBrowser browser = new RomBrowser(new BrowserHost());
+    private final ControlsPane controlsPane = new ControlsPane();
     private final CorePane corePane = new CorePane(new CoreHost());
     private long requestedAt;
     private boolean scrollDrag;
@@ -218,6 +219,8 @@ public final class SettingsScreen extends Screen {
             corePane.setActive(
                     state == State.READY && category == ConfigKey.Category.CORES.ordinal());
         }
+        controlsPane.init(contentX, contentY, contentW, contentH);
+        controlsPane.setActive(category == CONTROLS);
         refreshFooter();
     }
 
@@ -315,7 +318,7 @@ public final class SettingsScreen extends Screen {
     }
 
     private boolean ready() {
-        return category == CLIENT || state == State.READY;
+        return category < 0 || state == State.READY;
     }
 
     private String value(SettingsPackets.GuiOpen.Entry entry) {
@@ -329,6 +332,16 @@ public final class SettingsScreen extends Screen {
     }
 
     private void applyDraft() {
+        if (category == CONTROLS) {
+            try {
+                controlsPane.apply();
+                status(Text.translatable("settings.retrocraft.saved"), GOOD);
+            } catch (IOException ex) {
+                status(Text.literal(ex.getMessage()), BAD);
+            }
+            refreshFooter();
+            return;
+        }
         if (category == CLIENT) {
             try {
                 ClientPreferences.apply(clientDraft);
@@ -362,6 +375,11 @@ public final class SettingsScreen extends Screen {
     }
 
     private void resetDraft() {
+        if (category == CONTROLS) {
+            controlsPane.resetDraft();
+            refreshFooter();
+            return;
+        }
         if (activeDraft().isEmpty()) return;
         activeDraft().clear();
         syncRows();
@@ -384,11 +402,15 @@ public final class SettingsScreen extends Screen {
         }
     }
 
+    private int pendingChanges() {
+        return category == CONTROLS ? controlsPane.dirtyCount() : activeDraft().size();
+    }
+
     private void refreshFooter() {
         apply.active =
                 ready()
-                        && !activeDraft().isEmpty()
-                        && (category == CLIENT
+                        && pendingChanges() > 0
+                        && (category < 0
                                 || !(backend instanceof SettingsBackend.Remote remote)
                                 || !remote.applying());
     }
@@ -402,6 +424,7 @@ public final class SettingsScreen extends Screen {
     private void selectCategory(int index) {
         if (index == category) return;
         category = index;
+        controlsPane.setActive(index == CONTROLS);
         scroll = 0;
         setFocused(null);
         for (var row : rows) {
@@ -416,10 +439,12 @@ public final class SettingsScreen extends Screen {
 
     private int categoryAt(double mx, double my) {
         if (mx >= px + 6 && mx < px + SIDEBAR - 6 && my >= py + 68 && my < py + 86) return CLIENT;
-        int y = py + 108;
-        for (int i = 0; i < ConfigKey.Category.values().length; i++, y += 20)
+        if (mx >= px + 6 && mx < px + SIDEBAR - 6 && my >= py + 88 && my < py + 106)
+            return CONTROLS;
+        int y = py + 126;
+        for (int i = 0; i < ConfigKey.Category.values().length; i++, y += 18)
             if (mx >= px + 6 && mx < px + SIDEBAR - 6 && my >= y && my < y + 18) return i;
-        return -2;
+        return -3;
     }
 
     @Override
@@ -435,10 +460,20 @@ public final class SettingsScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
+        if (!acceptingInput()) return true;
+        if (category == CONTROLS && controlsPane.recording()) {
+            controlsPane.mouseClicked(mx, my, button);
+            refreshFooter();
+            return true;
+        }
         {
             int idx = categoryAt(mx, my);
-            if (idx >= CLIENT) {
+            if (idx >= CONTROLS) {
                 selectCategory(idx);
+                return true;
+            }
+            if (category == CONTROLS && controlsPane.mouseClicked(mx, my, button)) {
+                refreshFooter();
                 return true;
             }
             if (!ready()) return super.mouseClicked(mx, my, button);
@@ -457,6 +492,8 @@ public final class SettingsScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double deltaX, double deltaY) {
+        if (!acceptingInput()) return true;
+        if (category == CONTROLS && controlsPane.mouseDragged(my)) return true;
         if (scrollDrag) {
             dragScroll(my);
             return true;
@@ -475,11 +512,14 @@ public final class SettingsScreen extends Screen {
         scrollDrag = false;
         browser.mouseReleased();
         corePane.mouseReleased();
+        controlsPane.mouseReleased();
         return super.mouseReleased(mx, my, button);
     }
 
     @Override
     public boolean mouseScrolled(double mx, double my, double horizontal, double vertical) {
+        if (!acceptingInput()) return true;
+        if (category == CONTROLS && controlsPane.mouseScrolled(mx, my, vertical)) return true;
         if (ready()
                 && category == ConfigKey.Category.LIBRARY.ordinal()
                 && browser.mouseScrolled(mx, my, horizontal, vertical)) return true;
@@ -505,6 +545,19 @@ public final class SettingsScreen extends Screen {
 
     @Override
     public boolean keyPressed(int key, int scanCode, int modifiers) {
+        if (closing()) return true;
+        if (category == CONTROLS && acceptingInput() && controlsPane.keyPressed(key, scanCode)) {
+            refreshFooter();
+            return true;
+        }
+        if (RetrocraftClient.SETTINGS_KEY.matchesKey(key, scanCode)) {
+            close();
+            return true;
+        }
+        if (!acceptingInput()) {
+            if (key == GLFW.GLFW_KEY_ESCAPE) close();
+            return true;
+        }
         if (ready()
                 && category == ConfigKey.Category.LIBRARY.ordinal()
                 && browser.keyPressed(key, scanCode, modifiers)) return true;
@@ -517,6 +570,7 @@ public final class SettingsScreen extends Screen {
 
     @Override
     public boolean charTyped(char chr, int modifiers) {
+        if (!acceptingInput() || controlsPane.recording()) return true;
         if (ready()
                 && category == ConfigKey.Category.LIBRARY.ordinal()
                 && browser.charTyped(chr, modifiers)) return true;
@@ -525,6 +579,7 @@ public final class SettingsScreen extends Screen {
 
     @Override
     public void filesDragged(List<Path> files) {
+        if (!acceptingInput()) return;
         if (ready() && category == ConfigKey.Category.LIBRARY.ordinal())
             browser.filesDropped(files);
     }
@@ -535,10 +590,9 @@ public final class SettingsScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext context, int mx, int my, float delta) {
+    protected void renderContents(DrawContext context, int mx, int my, float delta) {
         var tr = textRenderer;
         for (var row : rows) row.hide();
-        context.fill(0, 0, width, height, 0xB0080A0E);
         // Panel
         rounded(context, px + 3, py + 5, pw, ph, 0x90000000, 6);
         rounded(context, px, py, pw, ph, BG, 6);
@@ -566,7 +620,7 @@ public final class SettingsScreen extends Screen {
                                 .orElse("?");
         context.drawCenteredTextWithShadow(
                 tr,
-                version + "  ·  " + (category == CLIENT ? "Client" : "Server"),
+                version + "  ·  " + (category < 0 ? "Client" : "Server"),
                 px + SIDEBAR / 2 + 1,
                 py + 36,
                 MUTED);
@@ -575,8 +629,8 @@ public final class SettingsScreen extends Screen {
         // Content header
         if (ready()) {
             String categoryName =
-                    category == CLIENT
-                            ? "client"
+                    category < 0
+                            ? category == CONTROLS ? "controls" : "client"
                             : ConfigKey.Category.values()[category].name().toLowerCase(Locale.ROOT);
             context.drawTextWithShadow(
                     tr,
@@ -585,9 +639,8 @@ public final class SettingsScreen extends Screen {
                     py + 12,
                     TEXT);
             context.fill(contentX, py + 26, px + pw - 12, py + 27, 0x18FFFFFF);
-            context.fill(contentX, py + 26, contentX + 34, py + 27, ACCENT);
         }
-        switch (category == CLIENT ? State.READY : state) {
+        switch (category < 0 ? State.READY : state) {
             case CONNECTING -> {
                 int dots = (int) ((System.currentTimeMillis() / 350) % 4);
                 context.drawCenteredTextWithShadow(
@@ -614,7 +667,8 @@ public final class SettingsScreen extends Screen {
                 }
             }
             case READY -> {
-                if (category == ConfigKey.Category.LIBRARY.ordinal())
+                if (category == CONTROLS) controlsPane.render(context, mx, my);
+                else if (category == ConfigKey.Category.LIBRARY.ordinal())
                     renderLibrary(context, tr, mx, my, delta);
                 else if (category == ConfigKey.Category.CORES.ordinal())
                     corePane.render(context, mx, my, delta);
@@ -637,7 +691,7 @@ public final class SettingsScreen extends Screen {
                     px + SIDEBAR + 24,
                     py + ph - FOOTER + 7,
                     statusColor == BAD ? 0xFFF0A8A2 : MUTED);
-        } else if (ready() && !activeDraft().isEmpty()) {
+        } else if (ready() && pendingChanges() > 0) {
             context.fill(
                     px + SIDEBAR + 14,
                     py + ph - FOOTER + 9,
@@ -646,12 +700,12 @@ public final class SettingsScreen extends Screen {
                     ACCENT);
             context.drawTextWithShadow(
                     tr,
-                    Text.translatable("settings.retrocraft.unsaved", activeDraft().size()),
+                    Text.translatable("settings.retrocraft.unsaved", pendingChanges()),
                     px + SIDEBAR + 24,
                     py + ph - FOOTER + 7,
                     MUTED);
         }
-        super.render(context, mx, my, delta);
+        renderWidgets(context, mx, my, delta);
     }
 
     private void renderCategories(DrawContext context, TextRenderer tr, int mx, int my) {
@@ -672,14 +726,31 @@ public final class SettingsScreen extends Screen {
                 px + 24,
                 py + 73,
                 clientSelected ? TEXT : MUTED);
-        context.drawTextWithShadow(tr, Text.literal("Server"), px + 12, py + 96, MUTED);
-        int y = py + 108;
+        boolean controlsSelected = category == CONTROLS;
+        boolean controlsHot =
+                mx >= px + 6 && mx < px + SIDEBAR - 6 && my >= py + 88 && my < py + 106;
+        if (controlsSelected || controlsHot)
+            rounded(
+                    context,
+                    px + 6,
+                    py + 88,
+                    SIDEBAR - 12,
+                    18,
+                    controlsSelected ? 0xFF32284A : 0x14FFFFFF,
+                    3);
+        context.drawTextWithShadow(
+                tr,
+                Text.translatable("settings.retrocraft.category.controls"),
+                px + 24,
+                py + 93,
+                controlsSelected ? TEXT : MUTED);
+        context.drawTextWithShadow(tr, Text.literal("Server"), px + 12, py + 114, MUTED);
+        int y = py + 126;
         for (var cat : ConfigKey.Category.values()) {
             boolean selected = cat.ordinal() == category;
             boolean hot = mx >= px + 6 && mx < px + SIDEBAR - 6 && my >= y && my < y + 18;
             if (selected) {
                 rounded(context, px + 6, y, SIDEBAR - 12, 18, 0xFF32284A, 3);
-                context.fill(px + 6, y + 4, px + 8, y + 14, ACCENT);
             } else if (hot) rounded(context, px + 6, y, SIDEBAR - 12, 18, 0x14FFFFFF, 3);
             draw(context, icons[cat.ordinal()], px + 12, y + 5, selected ? ACCENT : 0xFF6B7288);
             context.drawTextWithShadow(
@@ -689,7 +760,7 @@ public final class SettingsScreen extends Screen {
                     px + 24,
                     y + 5,
                     selected ? TEXT : MUTED);
-            y += 20;
+            y += 18;
         }
     }
 
@@ -707,7 +778,7 @@ public final class SettingsScreen extends Screen {
             row.layout(contentX + contentW - 6, ry, visible);
             ry += row.height();
         }
-        context.enableScissor(contentX, clipY, contentX + contentW, clipY + clipH);
+        UiDrawing.scissor(context, contentX, clipY, contentX + contentW, clipY + clipH);
         for (var row : rows) {
             if (rowCategory(row) != category
                     || row.y + row.height() <= clipY
@@ -731,7 +802,8 @@ public final class SettingsScreen extends Screen {
     }
 
     private boolean scrollTrackHit(double mx, double my) {
-        return category != ConfigKey.Category.LIBRARY.ordinal()
+        return category != CONTROLS
+                && category != ConfigKey.Category.LIBRARY.ordinal()
                 && maxScroll() > 0
                 && mx >= px + pw - 13
                 && mx < px + pw - 5
@@ -770,6 +842,11 @@ public final class SettingsScreen extends Screen {
     public void renderBackground(DrawContext context, int mx, int my, float delta) {}
 
     @Override
+    protected void renderDimmer(DrawContext context, float visibility) {
+        context.fill(0, 0, width, height, ((int) (176 * visibility) << 24) | 0x080A0E);
+    }
+
+    @Override
     public boolean shouldPause() {
         return false;
     }
@@ -782,9 +859,9 @@ public final class SettingsScreen extends Screen {
     }
 
     @Override
-    public void close() {
+    protected void finishClose() {
         if (parent != null && client != null) client.setScreen(parent);
-        else super.close();
+        else super.finishClose();
     }
 
     private final class Row {

@@ -38,6 +38,12 @@ final class ClientPreferences {
         if (!config.renderHandheldScreens) Thumbnails.close();
     }
 
+    static void applyControls(Map<String, Map<String, Integer>> bindings) throws IOException {
+        ClientConfig next = config.withControls(bindings);
+        next.save(RetrocraftConfig.root().resolve("client.json"));
+        config = next;
+    }
+
     static void send() {
         if (ClientPlayNetworking.canSend(Packets.Preferences.ID))
             ClientPlayNetworking.send(

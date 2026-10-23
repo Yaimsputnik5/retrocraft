@@ -4,20 +4,19 @@ import java.util.UUID;
 
 import org.lwjgl.glfw.GLFW;
 
+import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.server.net.Packets;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 
-public final class ConsoleScreen extends Screen {
-    private static final int HEADER = 18, HUD = 52, MARGIN = 8;
+public final class ConsoleScreen extends AnimatedScreen {
+    private static final int HEADER = 18, MARGIN = 8;
     final UUID instance;
     private final ConsoleTheme theme;
     private final Text consoleName, displayTitle;
@@ -40,6 +39,10 @@ public final class ConsoleScreen extends Screen {
         displayTitle = Text.empty().append(consoleName).append(" · ").append(title);
         consoleStack =
                 new ItemStack(Registries.ITEM.get(Identifier.of("retrocraft", packet.console())));
+    }
+
+    String consoleId() {
+        return theme.id();
     }
 
     void update(Packets.Ui packet) {
@@ -89,34 +92,36 @@ public final class ConsoleScreen extends Screen {
         if (!controller) {
             x -= 74;
             addDrawableChild(
-                    ButtonWidget.builder(
-                                    Text.translatable("screen.retrocraft.take_control"),
-                                    b ->
-                                            ClientPlayNetworking.send(
-                                                    Packets.Request.of(
-                                                            Packets.CLAIM_INPUT, instance)))
-                            .dimensions(x, 4, 70, 14)
-                            .build());
+                    new SettingsWidgets.Flat(
+                            x,
+                            4,
+                            70,
+                            14,
+                            Text.translatable("screen.retrocraft.take_control"),
+                            () ->
+                                    ClientPlayNetworking.send(
+                                            Packets.Request.of(Packets.CLAIM_INPUT, instance))));
         }
     }
 
     @Override
     public void tick() {
         if (!subscribed || !ClientPlayNetworking.canSend(Packets.Request.ID)) return;
-        int mask = controller ? InputControls.buttons(client) : 0;
+        var input = controller ? InputControls.sample(client) : PadInput.IDLE;
         ClientPlayNetworking.send(
                 new Packets.Request(
-                        Packets.INPUT, instance, mask, RetrocraftClient.VIDEO.sequence(instance)));
+                        Packets.INPUT, instance, input, RetrocraftClient.VIDEO.sequence(instance)));
     }
 
     @Override
     public boolean keyPressed(int key, int scanCode, int modifiers) {
+        if (closing()) return true;
         if (key == GLFW.GLFW_KEY_ESCAPE) {
             close();
             return true;
         }
         if (RetrocraftClient.SETTINGS_KEY.matchesKey(key, scanCode)) {
-            client.setScreen(SettingsScreen.modMenu(null));
+            transitionTo(SettingsScreen.modMenu(null));
             return true;
         }
         // Game input must not activate focused GUI buttons (Enter/Space).
@@ -124,7 +129,7 @@ public final class ConsoleScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    protected void renderContents(DrawContext context, int mouseX, int mouseY, float delta) {
         var entry = ScreenTextures.get(instance);
         textureId = entry == null ? null : entry.id();
         if (entry != null) {
@@ -161,13 +166,12 @@ public final class ConsoleScreen extends Screen {
                         textRenderer,
                         Text.translatable("screen.retrocraft.connecting"),
                         width / 2,
-                        height - HUD - 10,
+                        height - PlayerHud.reservedHeight(theme) - 10,
                         0xffd8dde6);
             PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
-            super.render(context, mouseX, mouseY, delta);
+            renderWidgets(context, mouseX, mouseY, delta);
             return;
         }
-        context.fill(0, 0, width, height, 0x70000000);
         context.drawItem(consoleStack, MARGIN, 3);
         context.drawTextWithShadow(
                 textRenderer,
@@ -194,7 +198,8 @@ public final class ConsoleScreen extends Screen {
         // The video takes all the room between the top strip and the key legend, keeping its aspect
         // ratio, inside a slim console bezel.
         Bezel bezel = Bezel.of(theme.bezel());
-        int areaTop = HEADER + MARGIN, areaHeight = height - HUD - MARGIN - areaTop;
+        int areaTop = HEADER + MARGIN,
+                areaHeight = height - PlayerHud.reservedHeight(theme) - MARGIN - areaTop;
         int availW = width - 2 * MARGIN - bezel.left - bezel.right,
                 availH = areaHeight - bezel.top - bezel.bottom;
         float fit = Math.min((float) availW / frameWidth, (float) availH / frameHeight);
@@ -216,7 +221,13 @@ public final class ConsoleScreen extends Screen {
                     theme.handheld() ? 0xff1f2e1a : 0xffd8dde6);
         }
         PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
-        super.render(context, mouseX, mouseY, delta);
+        renderWidgets(context, mouseX, mouseY, delta);
+    }
+
+    @Override
+    protected void renderDimmer(DrawContext context, float visibility) {
+        if (!(inWorld && ClientPreferences.get().renderWorldScreens))
+            context.fill(0, 0, width, height, (int) (112 * visibility) << 24);
     }
 
     /** Padding the bezel needs around the video on each side, in GUI pixels. */

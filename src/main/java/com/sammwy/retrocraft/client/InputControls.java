@@ -2,37 +2,47 @@ package com.sammwy.retrocraft.client;
 
 import org.lwjgl.glfw.GLFW;
 
+import com.sammwy.retrocraft.client.config.ControllerProfile;
+import com.sammwy.retrocraft.cores.worker.PadInput;
+
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.InputUtil;
 
 final class InputControls {
-    private static final int[] KEYS = {
-        GLFW.GLFW_KEY_Z,
-        GLFW.GLFW_KEY_RIGHT_SHIFT,
-        GLFW.GLFW_KEY_ENTER,
-        GLFW.GLFW_KEY_UP,
-        GLFW.GLFW_KEY_DOWN,
-        GLFW.GLFW_KEY_LEFT,
-        GLFW.GLFW_KEY_RIGHT,
-        GLFW.GLFW_KEY_X,
-        GLFW.GLFW_KEY_A,
-        GLFW.GLFW_KEY_S,
-        GLFW.GLFW_KEY_Q,
-        GLFW.GLFW_KEY_W,
-        GLFW.GLFW_KEY_I,
-        GLFW.GLFW_KEY_K,
-        GLFW.GLFW_KEY_J,
-        GLFW.GLFW_KEY_L
-    };
-    private static final int[] IDS = {0, 2, 3, 4, 5, 6, 7, 8, 1, 9, 10, 11, 12, 13, 14, 15};
-
-    static int buttons(MinecraftClient client) {
-        if (!client.isWindowFocused()) return 0;
+    static PadInput sample(MinecraftClient client) {
+        if (!client.isWindowFocused()
+                || !(client.currentScreen instanceof ConsoleScreen screen)
+                || !screen.acceptingInput()) return PadInput.IDLE;
+        var profile = ControllerProfile.of(screen.consoleId());
         long window = client.getWindow().getHandle();
-        int mask = 0;
-        for (int i = 0; i < KEYS.length; i++)
-            if (InputUtil.isKeyPressed(window, KEYS[i])) mask |= 1 << IDS[i];
-        return mask;
+        return profile.sample(
+                ClientPreferences.get().controls(profile.id()),
+                key ->
+                        key >= 0
+                                ? InputUtil.isKeyPressed(window, key)
+                                : GLFW.glfwGetMouseButton(window, -key - 2) == GLFW.GLFW_PRESS);
+    }
+
+    static String keyName(int key) {
+        if (key == -1) return "—";
+        if (key <= -2)
+            return InputUtil.Type.MOUSE.createFromCode(-key - 2).getLocalizedText().getString();
+        return switch (key) {
+            case GLFW.GLFW_KEY_UP -> "↑";
+            case GLFW.GLFW_KEY_DOWN -> "↓";
+            case GLFW.GLFW_KEY_LEFT -> "←";
+            case GLFW.GLFW_KEY_RIGHT -> "→";
+            case GLFW.GLFW_KEY_LEFT_SHIFT -> "L Shift";
+            case GLFW.GLFW_KEY_RIGHT_SHIFT -> "R Shift";
+            case GLFW.GLFW_KEY_LEFT_CONTROL -> "L Ctrl";
+            case GLFW.GLFW_KEY_RIGHT_CONTROL -> "R Ctrl";
+            default -> InputUtil.fromKeyCode(key, 0).getLocalizedText().getString();
+        };
+    }
+
+    static String keyName(String console, ControllerProfile.Action action) {
+        var profile = ControllerProfile.of(console);
+        return keyName(profile.key(ClientPreferences.get().controls(console), action));
     }
 
     private InputControls() {}

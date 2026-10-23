@@ -18,7 +18,8 @@ public final class WorkerMain {
     private final Map<String, Memory> variables = new HashMap<>();
     private double aspectRatio, forceAspect;
     private int pixelFormat;
-    private final int[] input = new int[WorkerProtocol.PORTS];
+    private final PadInput[] input = new PadInput[WorkerProtocol.PORTS];
+    private final int[] controllerDevices = {1, 1, 1, 1};
     private boolean shutdown;
     private boolean hardwareRequested;
     private boolean captureVideo = true, captureAudio = true;
@@ -43,16 +44,7 @@ public final class WorkerMain {
 
     private short inputState(int port, int device, int index, int id) {
         if (port < 0 || port >= input.length) return 0;
-        int pad = input[port];
-        if ((device & 255) == 1 && index == 0)
-            return (short) (id == 256 ? pad : id >= 0 && id < 16 ? (pad >>> id) & 1 : 0);
-        // Digital keyboard directions also drive the left stick; I/J/K/L drive the right stick.
-        if ((device & 255) == 5 && id >= 0 && id < 2 && index >= 0 && index < 2) {
-            int negative = index == 0 ? (id == 0 ? 6 : 4) : (id == 0 ? 14 : 12);
-            int positive = index == 0 ? (id == 0 ? 7 : 5) : (id == 0 ? 15 : 13);
-            return (short) ((((pad >>> positive) & 1) - ((pad >>> negative) & 1)) * 32767);
-        }
-        return 0;
+        return input[port] == null ? 0 : input[port].state(device, index, id);
     }
 
     private final Memory systemDir;
@@ -135,7 +127,7 @@ public final class WorkerMain {
             if (core.retro_load_game(game) == 0) throw new IOException("Core rejected ROM");
             loaded = true;
             for (int port = 0; port < input.length; port++)
-                core.retro_set_controller_port_device(port, 1);
+                core.retro_set_controller_port_device(port, controllerDevices[port]);
             if (forceAspect > 0 || arcade) {
                 captureVideo = false;
                 captureAudio = false;
@@ -190,8 +182,7 @@ public final class WorkerMain {
                     saveBattery();
                     out.writeBoolean(true);
                 } else if (command == WorkerProtocol.RUN) {
-                    for (int port = 0; port < input.length; port++)
-                        input[port] = in.readUnsignedShort();
+                    for (int port = 0; port < input.length; port++) input[port] = PadInput.read(in);
                     int flags = in.readUnsignedByte();
                     captureVideo = (flags & 1) != 0;
                     captureAudio = (flags & 2) != 0;
@@ -232,7 +223,9 @@ public final class WorkerMain {
                 if (format < 0 || format > 2) return 0;
                 pixelFormat = format;
             }
-            case 11, 18, 35, 37 -> {}
+            case 11, 18, 37 -> {}
+            case 24 -> data.setLong(0, (1L << 1) | (1L << 5)); // joypad + analog
+            case 35 -> controllerInfo(data);
             case 27 -> data.setPointer(0, logPointer); // RETRO_ENVIRONMENT_GET_LOG_INTERFACE
             case 15 -> {
                 String key = data.getPointer(0).getString(0);
@@ -278,6 +271,35 @@ public final class WorkerMain {
             }
         }
         return 1;
+    }
+
+    private void controllerInfo(Pointer data) {
+        if (data == null) return;
+        int infoSize = new Libretro.ControllerInfo(data).size();
+        for (int port = 0; port < controllerDevices.length; port++) {
+            var info = new Libretro.ControllerInfo(data.share((long) port * infoSize));
+            if (info.types == null || info.count == 0) break;
+            if (info.count < 0 || info.count > 64) continue;
+            int descriptionSize = new Libretro.ControllerDescription(info.types).size();
+            int best = 0;
+            for (int i = 0; i < info.count; i++) {
+                var type =
+                        new Libretro.ControllerDescription(
+                                info.types.share((long) i * descriptionSize));
+                String name =
+                        type.description == null ? "" : type.description.toLowerCase(Locale.ROOT);
+                int score =
+                        name.contains("dualshock") || name.contains("dual shock")
+                                ? 3
+                                : (type.id & 255) == 5 && name.contains("analog")
+                                        ? 2
+                                        : type.id == 1 ? 1 : 0;
+                if (score > best) {
+                    controllerDevices[port] = type.id;
+                    best = score;
+                }
+            }
+        }
     }
 
     private void video(Pointer pixels, int width, int height, Libretro.SizeT pitch) {

@@ -7,13 +7,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.cores.*;
 import com.sammwy.retrocraft.cores.stream.FrameCodec;
 import com.sammwy.retrocraft.cores.stream.ThumbnailCodec;
 import com.sammwy.retrocraft.cores.transfer.*;
+import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.roms.*;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
 import com.sammwy.retrocraft.server.net.HybridPackets;
@@ -49,10 +50,10 @@ public final class HybridClient {
         volatile FrameCodec.Frame frame;
 
         /**
-         * Per-port RetroPad masks; this client owns its roster slot, the rest come from Pad
-         * broadcasts.
+         * Per-port virtual controller states; this client owns its roster slot, the rest come from
+         * Pad broadcasts.
          */
-        final AtomicIntegerArray ports = new AtomicIntegerArray(4);
+        final AtomicReferenceArray<PadInput> ports = new AtomicReferenceArray<>(4);
 
         volatile int rate;
         Downloads.Transfer romDownload;
@@ -142,11 +143,11 @@ public final class HybridClient {
             boolean visible =
                     client.currentScreen instanceof ConsoleScreen screen
                             && screen.instance.equals(local.offer.instance());
-            int buttons = visible ? InputControls.buttons(client) : 0;
+            PadInput buttons = visible ? InputControls.sample(client) : PadInput.IDLE;
             for (int port = 0; port < local.ports.length(); port++)
                 local.ports.set(
                         port,
-                        port == mine ? buttons : PlayerHud.mask(local.offer.instance(), port));
+                        port == mine ? buttons : PlayerHud.input(local.offer.instance(), port));
         }
     }
 
@@ -568,7 +569,7 @@ public final class HybridClient {
             return;
         }
         local.phase = Phase.RETURNING;
-        for (int p = 0; p < local.ports.length(); p++) local.ports.set(p, 0);
+        for (int p = 0; p < local.ports.length(); p++) local.ports.set(p, PadInput.IDLE);
         local.media.clear();
         local.audio.close();
         signal(local.offer, HybridPackets.Action.RETURN_BEGIN, 0);
@@ -617,8 +618,10 @@ public final class HybridClient {
                 local.ports.set(
                         port,
                         port == mine
-                                ? (local.phase == Phase.ACTIVE ? InputControls.buttons(client) : 0)
-                                : PlayerHud.mask(local.offer.instance(), port));
+                                ? (local.phase == Phase.ACTIVE
+                                        ? InputControls.sample(client)
+                                        : PadInput.IDLE)
+                                : PlayerHud.input(local.offer.instance(), port));
             local.volume =
                     ClientPreferences.get().volume
                             / 100f

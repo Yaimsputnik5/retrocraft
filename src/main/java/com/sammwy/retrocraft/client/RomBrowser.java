@@ -795,7 +795,7 @@ final class RomBrowser {
         }
         int listY = y + TOOLBAR + 4, listH = y + h - listY;
         context.fill(x, listY - 2, x + w, listY - 1, 0x18FFFFFF);
-        context.enableScissor(x, listY, x + w, listY + listH);
+        UiDrawing.scissor(context, x, listY, x + w, listY + listH);
         if (mode == GAMES) renderGames(context, tr, listY, listH);
         else renderFiles(context, tr, mx, my, listY, listH);
         context.disableScissor();

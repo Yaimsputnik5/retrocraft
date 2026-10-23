@@ -284,7 +284,7 @@ final class CorePane {
     void render(DrawContext context, int mx, int my, float delta) {
         if (!active) return;
         var tr = host.textRenderer();
-        context.enableScissor(x, y, x + w, y + h);
+        UiDrawing.scissor(context, x, y, x + w, y + h);
         int ry = y - (int) scroll;
         for (var core : BIOS_CORES) {
             if (ry + ROW > y && ry < y + h) renderCore(context, tr, core, ry, mx, my);

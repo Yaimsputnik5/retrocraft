@@ -1,17 +1,19 @@
 package com.sammwy.retrocraft.client;
 
+import org.lwjgl.glfw.GLFW;
+
 import com.sammwy.retrocraft.server.screen.ConsoleScreenHandler;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 
 public final class ConsoleInventoryScreen extends HandledScreen<ConsoleScreenHandler> {
-    private ButtonWidget power, eject;
+    private SettingsWidgets.Flat power, eject;
+    private final UiMotion motion = new UiMotion();
     private final ConsoleTheme theme;
     private final ItemStack consoleStack;
 
@@ -30,16 +32,22 @@ public final class ConsoleInventoryScreen extends HandledScreen<ConsoleScreenHan
         super.init();
         power =
                 addDrawableChild(
-                        ButtonWidget.builder(Text.empty(), b -> button(ConsoleScreenHandler.POWER))
-                                .dimensions(x + 8, y + 60, 78, 18)
-                                .build());
+                        new SettingsWidgets.Flat(
+                                x + 8,
+                                y + 60,
+                                78,
+                                18,
+                                Text.empty(),
+                                () -> button(ConsoleScreenHandler.POWER)));
         eject =
                 addDrawableChild(
-                        ButtonWidget.builder(
-                                        Text.translatable("screen.retrocraft.eject"),
-                                        b -> button(ConsoleScreenHandler.EJECT))
-                                .dimensions(x + 90, y + 60, 78, 18)
-                                .build());
+                        new SettingsWidgets.Flat(
+                                x + 90,
+                                y + 60,
+                                78,
+                                18,
+                                Text.translatable("screen.retrocraft.eject"),
+                                () -> button(ConsoleScreenHandler.EJECT)));
         updateButtons();
     }
 
@@ -71,7 +79,6 @@ public final class ConsoleInventoryScreen extends HandledScreen<ConsoleScreenHan
         context.fill(x + 1, y + 1, x + backgroundWidth - 1, y + backgroundHeight - 1, 0xff2b303a);
         context.fill(
                 x + 1, y + 1, x + backgroundWidth - 1, y + 80, ConsoleTheme.shade(shell, .28f));
-        context.fill(x + 1, y + 22, x + backgroundWidth - 1, y + 23, theme.accent());
         context.fill(
                 x + backgroundWidth - 15,
                 y + 8,
@@ -118,8 +125,68 @@ public final class ConsoleInventoryScreen extends HandledScreen<ConsoleScreenHan
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
-        drawMouseoverTooltip(context, mouseX, mouseY);
+        long now = System.nanoTime();
+        float visibility = motion.value(now);
+        if (!motion.shown() && motion.settled(now)) {
+            super.close();
+            return;
+        }
+        context.fill(0, 0, width, height, (int) (160 * visibility) << 24);
+        context.getMatrices().push();
+        try {
+            UiDrawing.pop(context, x + backgroundWidth / 2f, y + backgroundHeight / 2f, visibility);
+            int mx = acceptingInput() ? mouseX : -1, my = acceptingInput() ? mouseY : -1;
+            super.render(context, mx, my, delta);
+            if (acceptingInput()) drawMouseoverTooltip(context, mx, my);
+        } finally {
+            context.setShaderColor(1, 1, 1, 1);
+            context.getMatrices().pop();
+        }
+    }
+
+    @Override
+    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+        drawBackground(context, delta, mouseX, mouseY);
+    }
+
+    private boolean acceptingInput() {
+        return motion.shown() && motion.settled(System.nanoTime());
+    }
+
+    @Override
+    public void close() {
+        motion.show(false, System.nanoTime());
+        setFocused(null);
+    }
+
+    @Override
+    public boolean mouseClicked(double mx, double my, int button) {
+        return !acceptingInput() || super.mouseClicked(mx, my, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mx, double my, int button, double dx, double dy) {
+        return !acceptingInput() || super.mouseDragged(mx, my, button, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(double mx, double my, int button) {
+        return !acceptingInput() || super.mouseReleased(mx, my, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mx, double my, double horizontal, double vertical) {
+        return !acceptingInput() || super.mouseScrolled(mx, my, horizontal, vertical);
+    }
+
+    @Override
+    public boolean keyPressed(int key, int scanCode, int modifiers) {
+        if (!motion.shown()) return true;
+        if (key == GLFW.GLFW_KEY_ESCAPE || client.options.inventoryKey.matchesKey(key, scanCode)) {
+            close();
+            return true;
+        }
+        return !acceptingInput() || super.keyPressed(key, scanCode, modifiers);
     }
 
     @Override

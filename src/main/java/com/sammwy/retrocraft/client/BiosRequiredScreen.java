@@ -3,11 +3,10 @@ package com.sammwy.retrocraft.client;
 import static com.sammwy.retrocraft.client.SettingsWidgets.*;
 
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
 
 /** Gives the player an actionable firmware error using the existing BIOS manager. */
-final class BiosRequiredScreen extends Screen {
+final class BiosRequiredScreen extends AnimatedScreen {
     private final String coreId;
     private final boolean administrator;
     private int x, y, w, h;
@@ -26,7 +25,7 @@ final class BiosRequiredScreen extends Screen {
     @Override
     protected void init() {
         w = Math.min(300, width - 24);
-        h = 76 + textRenderer.wrapLines(explanation(), w - 28).size() * 11;
+        h = 68 + textRenderer.wrapLines(explanation(), w - 28).size() * 11;
         x = (width - w) / 2;
         y = (height - h) / 2;
         int gap = administrator ? 8 : 0;
@@ -39,7 +38,7 @@ final class BiosRequiredScreen extends Screen {
                                     buttonWidth,
                                     18,
                                     Text.translatable("bios.retrocraft.open"),
-                                    () -> client.setScreen(SettingsScreen.bios(coreId)))
+                                    () -> transitionTo(SettingsScreen.bios(coreId)))
                             .accent(true));
         addDrawableChild(
                 new Flat(
@@ -52,21 +51,24 @@ final class BiosRequiredScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.fill(0, 0, width, height, 0xA0100C18);
+    protected void renderContents(DrawContext context, int mouseX, int mouseY, float delta) {
         rounded(context, x, y, w, h, PANEL, 5);
-        context.fill(x + 14, y + 12, x + 36, y + 14, ACCENT);
-        context.drawText(textRenderer, title, x + 14, y + 22, TEXT, false);
-        int lineY = y + 39;
+        context.drawText(textRenderer, title, x + 14, y + 14, TEXT, false);
+        int lineY = y + 31;
         for (var line : textRenderer.wrapLines(explanation(), w - 28)) {
             context.drawText(textRenderer, line, x + 14, lineY, MUTED, false);
             lineY += 11;
         }
-        super.render(context, mouseX, mouseY, delta);
+        renderWidgets(context, mouseX, mouseY, delta);
     }
 
     @Override
     public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
+
+    @Override
+    protected void renderDimmer(DrawContext context, float visibility) {
+        context.fill(0, 0, width, height, ((int) (160 * visibility) << 24) | 0x100C18);
+    }
 
     @Override
     public boolean shouldPause() {

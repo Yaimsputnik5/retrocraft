@@ -2,6 +2,9 @@ package com.sammwy.retrocraft.client;
 
 import java.util.*;
 
+import com.sammwy.retrocraft.client.config.ControllerProfile;
+import com.sammwy.retrocraft.client.config.ControllerProfile.Action;
+import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.server.net.Packets;
 
 import net.minecraft.client.MinecraftClient;
@@ -15,7 +18,7 @@ import net.minecraft.util.Identifier;
  * Bottom-of-screen controller "cards": one per occupied pad slot (P1 blue, P2 red, P3 green, P4
  * yellow), with the player's head and name on a saturated header and a translucent pad strip whose
  * chips flash and pop on every remote/local press. State is fed by {@link Packets.Players} (roster
- * + host) and {@link Packets.Pad} (masks).
+ * + host) and {@link Packets.Pad} (virtual controller states).
  */
 public final class PlayerHud {
     private static final int[] COLORS = {0xFF55A8FF, 0xFFFF5D5D, 0xFF63D97E, 0xFFFFD24A};
@@ -34,6 +37,7 @@ public final class PlayerHud {
         UUID player;
         boolean host;
         int mask;
+        PadInput input = PadInput.IDLE;
         final long[] pressAt = new long[16];
         long joinedAt, lastPress;
     }
@@ -42,7 +46,11 @@ public final class PlayerHud {
         final Slot[] slots = {new Slot(), new Slot(), new Slot(), new Slot()};
     }
 
-    private record HudButton(int mask, String label, String key) {}
+    private record HudButton(Action action, String label) {
+        int mask() {
+            return action.mask();
+        }
+    }
 
     private record Cell(HudButton button, int col, int row) {}
 
@@ -61,6 +69,7 @@ public final class PlayerHud {
             if (!entry.player().equals(slot.player)) {
                 slot.player = entry.player();
                 slot.mask = 0;
+                slot.input = PadInput.IDLE;
                 Arrays.fill(slot.pressAt, 0);
                 slot.joinedAt = System.nanoTime();
                 slot.lastPress = 0;
@@ -71,6 +80,7 @@ public final class PlayerHud {
             if (!seen[i] && state.slots[i].player != null) {
                 state.slots[i].player = null;
                 state.slots[i].mask = 0;
+                state.slots[i].input = PadInput.IDLE;
                 state.slots[i].host = false;
             }
     }
@@ -79,15 +89,16 @@ public final class PlayerHud {
         if (packet.slot() < 0 || packet.slot() >= 4) return;
         State state = SESSIONS.get(packet.instance());
         if (state == null) return;
-        Slot slot = state.slots[packet.slot()];
-        int rising = packet.buttons() & ~slot.mask;
-        if (rising != 0) {
-            long now = System.nanoTime();
-            slot.lastPress = now;
-            for (int bit = 0; bit < 16; bit++)
-                if ((rising & (1 << bit)) != 0) slot.pressAt[bit] = now;
-        }
-        slot.mask = packet.buttons();
+        update(state.slots[packet.slot()], packet.input());
+    }
+
+    private static void update(Slot slot, PadInput input) {
+        int rising = input.buttons() & ~slot.mask;
+        long now = System.nanoTime();
+        if (!slot.input.equals(input) && !input.equals(PadInput.IDLE)) slot.lastPress = now;
+        for (int bit = 0; bit < 16; bit++) if ((rising & (1 << bit)) != 0) slot.pressAt[bit] = now;
+        slot.mask = input.buttons();
+        slot.input = input;
     }
 
     static void drop(UUID instance) {
@@ -107,28 +118,47 @@ public final class PlayerHud {
         return -1;
     }
 
-    /**
-     * Last broadcast mask of a slot, used to feed the ports a hybrid owner does not hold locally.
-     */
-    static int mask(UUID instance, int slot) {
+    /** Last broadcast controller state, used for the ports a hybrid owner does not hold locally. */
+    static PadInput input(UUID instance, int slot) {
         State state = SESSIONS.get(instance);
-        return state != null && slot >= 0 && slot < 4 ? state.slots[slot].mask : 0;
+        return state != null && slot >= 0 && slot < 4 ? state.slots[slot].input : PadInput.IDLE;
     }
 
     /** Face-button geometry per console: middle column first, then the face grid. */
     private static PadLayout layout(ConsoleTheme theme) {
         Map<Integer, HudButton> by = new HashMap<>();
-        for (var binding : theme.bindings())
-            if (binding.mask() != 0xf0)
-                by.put(
-                        binding.mask(),
-                        new HudButton(binding.mask(), binding.label(), binding.key()));
+        for (var button : theme.profile().buttons())
+            by.put(button.action().mask(), new HudButton(button.action(), button.label()));
         List<HudButton> mid = new ArrayList<>();
         if (by.get(1 << 3) != null) mid.add(by.get(1 << 3)); // Start on top
         if (by.get(1 << 2) != null) mid.add(by.get(1 << 2)); // Select/Mode/Coin below
         List<Cell> face = new ArrayList<>();
         int cols = 2, rows = 1;
         switch (theme.id()) {
+            case "ps1_console", "ps2_console" -> {
+                face.add(new Cell(by.get(1 << 9), 1, 0));
+                face.add(new Cell(by.get(1 << 1), 0, 1));
+                face.add(new Cell(by.get(1 << 8), 2, 1));
+                face.add(new Cell(by.get(1 << 0), 1, 2));
+                face.add(new Cell(by.get(1 << 10), 3, 0));
+                face.add(new Cell(by.get(1 << 11), 4, 0));
+                face.add(new Cell(by.get(1 << 12), 3, 1));
+                face.add(new Cell(by.get(1 << 13), 4, 1));
+                cols = 5;
+                rows = 3;
+            }
+            case "dreamcast_console", "gamecube_console", "wii_console" -> {
+                face.add(new Cell(by.get(1 << 9), 1, 0));
+                face.add(new Cell(by.get(1 << 1), 0, 1));
+                face.add(new Cell(by.get(1 << 8), 2, 1));
+                face.add(new Cell(by.get(1 << 0), 1, 2));
+                face.add(new Cell(by.get(1 << 10), 3, 0));
+                face.add(new Cell(by.get(1 << 11), 4, 0));
+                face.add(new Cell(by.get(1 << 12), 3, 1));
+                face.add(new Cell(by.get(1 << 13), 4, 1));
+                cols = 5;
+                rows = 3;
+            }
             case "snes_console" -> {
                 face.add(new Cell(by.get(1 << 9), 1, 0));
                 face.add(new Cell(by.get(1 << 1), 0, 1));
@@ -150,11 +180,12 @@ public final class PlayerHud {
                 rows = 2;
             }
             case "n64_console" -> {
-                face.add(new Cell(by.get(1 << 0), 0, 0));
-                face.add(new Cell(by.get(1 << 8), 1, 0));
-                face.add(new Cell(by.get(1 << 10), 0, 1));
+                face.add(new Cell(by.get(1 << 1), 0, 0));
+                face.add(new Cell(by.get(1 << 0), 0, 1));
+                face.add(new Cell(by.get(1 << 10), 1, 0));
                 face.add(new Cell(by.get(1 << 11), 1, 1));
                 face.add(new Cell(by.get(1 << 12), 0, 2));
+                cols = 2;
                 rows = 3;
             }
             case "gba_handheld" -> {
@@ -176,16 +207,19 @@ public final class PlayerHud {
             }
             default -> { // NES/GB style: plain B A row
                 int col = 0;
-                for (var binding : theme.bindings())
-                    if (binding.mask() != 0xf0
-                            && binding.mask() != (1 << 2)
-                            && binding.mask() != (1 << 3))
-                        face.add(new Cell(by.get(binding.mask()), col++, 0));
+                for (var button : theme.profile().buttons())
+                    if (button.action() != Action.START && button.action() != Action.SELECT)
+                        face.add(new Cell(by.get(button.action().mask()), col++, 0));
                 cols = Math.max(1, col);
             }
         }
         face.removeIf(cell -> cell.button() == null);
         return new PadLayout(mid, face, cols, rows);
+    }
+
+    static int reservedHeight(ConsoleTheme theme) {
+        if (theme.profile().sticks() > 0) return 76;
+        return LAYOUTS.computeIfAbsent(theme.id(), ignored -> layout(theme)).rows() > 2 ? 64 : 52;
     }
 
     static void render(
@@ -199,6 +233,10 @@ public final class PlayerHud {
         if (!ClientPreferences.get().showPlayerHud) return;
         State state = SESSIONS.get(instance);
         if (state == null || client.getNetworkHandler() == null) return;
+        if (client.player != null) {
+            int mine = slotOf(instance, client.player.getUuid());
+            if (mine >= 0) update(state.slots[mine], InputControls.sample(client));
+        }
         List<Integer> order = new ArrayList<>(4);
         for (int i = 0; i < 4; i++) if (state.slots[i].player != null) order.add(i);
         if (order.isEmpty()) return;
@@ -208,7 +246,7 @@ public final class PlayerHud {
         for (var cell : layout.face())
             widths.computeIfAbsent(
                     cell.button(),
-                    b -> Math.max(9, Math.round(font.getWidth(b.label()) * .72f) + 5));
+                    b -> Math.max(11, Math.round(font.getWidth(hudLabel(b.label())) * .72f) + 5));
         for (var b : layout.middle())
             widths.computeIfAbsent(
                     b, button -> Math.max(9, Math.round(font.getWidth(button.label()) * .72f) + 5));
@@ -216,10 +254,12 @@ public final class PlayerHud {
         int cellW =
                 layout.face().stream().mapToInt(cell -> widths.get(cell.button())).max().orElse(0);
         int midH = layout.middle().isEmpty() ? 0 : layout.middle().size() * (CHIP_H + 2) - 2;
-        int faceH = layout.rows() * (CHIP_H + 4) - 4;
+        int faceH = layout.rows() * (CHIP_H + 6) - 6;
         int faceW = layout.face().isEmpty() ? 0 : layout.cols() * cellW + (layout.cols() - 1) * 2;
-        int rowH = Math.max(DPAD, Math.max(midH, faceH));
-        int rowW = DPAD + (midW > 0 ? 6 + midW : 0) + (faceW > 0 ? 6 + faceW : 0);
+        int directionW = theme.profile().sticks() > 0 ? 39 : DPAD;
+        int directionH = theme.profile().sticks() > 0 ? 49 : DPAD;
+        int rowH = Math.max(directionH, Math.max(midH, faceH));
+        int rowW = directionW + (midW > 0 ? 6 + midW : 0) + (faceW > 0 ? 6 + faceW : 0);
 
         int bodyH = 3 + rowH + 3, cardH = HEADER_H + bodyH, y = height - cardH - 4;
         var handler = client.getNetworkHandler();
@@ -283,7 +323,6 @@ public final class PlayerHud {
             rounded(context, px - 1, y - 1, w + 2, cardH + 2, 0x7A000000, 4);
             rounded(context, px, y, w, cardH, over(0xB0181B22, color, .22f), 4);
             roundedTop(context, px, y, w, HEADER_H, withAlpha(color, 0xFF), 4);
-            context.fill(px, y + HEADER_H - 1, px + w, y + HEADER_H, shade(color, .55f));
             // Header: head (with the host crown), name and a "P#" tag on the right.
             int hx = px + PAD, hy = y + 1;
             if (slot.host) crown(context, hx + 4, y - 3);
@@ -303,21 +342,39 @@ public final class PlayerHud {
             // Key hints show on join for ~5s, then only after 5s without presses; any press hides
             // them.
             boolean hints =
-                    slot.lastPress == 0
-                            ? now - slot.joinedAt < 5_000_000_000L
-                            : now - slot.lastPress > 5_000_000_000L;
+                    client.player != null
+                            && slot.player.equals(client.player.getUuid())
+                            && (slot.lastPress == 0
+                                    ? now - slot.joinedAt < 5_000_000_000L
+                                    : now - slot.lastPress > 5_000_000_000L);
             int rowX = px + (w - rowW) / 2, rowY = y + HEADER_H + 3;
             dpad(
                     context,
                     font,
-                    rowX,
-                    rowY + (rowH - DPAD) / 2,
+                    rowX + (directionW - DPAD) / 2,
+                    rowY + (rowH - directionH) / 2,
                     slot,
                     color,
                     now,
                     theme.diagonals(),
-                    hints);
-            int cx = rowX + DPAD + 6;
+                    hints,
+                    theme.id());
+            if (theme.profile().sticks() > 0) {
+                int sy = rowY + (rowH - directionH) / 2 + 29;
+                stick(
+                        context,
+                        font,
+                        rowX + (theme.profile().sticks() == 1 ? 12 : 0),
+                        sy,
+                        slot,
+                        false,
+                        color,
+                        hints,
+                        theme.id());
+                if (theme.profile().sticks() > 1)
+                    stick(context, font, rowX + 24, sy, slot, true, color, hints, theme.id());
+            }
+            int cx = rowX + directionW + 6;
             if (midW > 0) {
                 int my = rowY + (rowH - midH) / 2;
                 for (int m = 0; m < layout.middle().size(); m++) {
@@ -335,7 +392,8 @@ public final class PlayerHud {
                             color,
                             now,
                             layout.middle().size() > 1 && m == 0,
-                            hints);
+                            hints,
+                            theme.id());
                     my += CHIP_H + 2;
                 }
                 cx += midW + 6;
@@ -347,14 +405,15 @@ public final class PlayerHud {
                             context,
                             font,
                             cx + cell.col() * (cellW + 2),
-                            fy + cell.row() * (CHIP_H + 4),
+                            fy + cell.row() * (CHIP_H + 6),
                             cellW,
                             cell.button(),
                             slot,
                             color,
                             now,
                             false,
-                            hints);
+                            hints,
+                            theme.id());
             }
             matrices.pop();
         }
@@ -374,7 +433,8 @@ public final class PlayerHud {
             int color,
             long now,
             boolean diagonals,
-            boolean hints) {
+            boolean hints,
+            String console) {
         int[][] arms = {{1, 0, UP}, {1, 2, DOWN}, {0, 1, LEFT}, {2, 1, RIGHT}};
         int[][] corners = {
             {0, 0, UP | LEFT}, {2, 0, UP | RIGHT}, {0, 2, DOWN | LEFT}, {2, 2, DOWN | RIGHT}
@@ -388,7 +448,13 @@ public final class PlayerHud {
         context.fill(x + CELL, y + CELL, x + 2 * CELL, y + 2 * CELL, 0xD0333A48);
         context.fill(x + CELL + 1, y + CELL + 1, x + 2 * CELL - 1, y + 2 * CELL - 1, 0x9014181E);
         if (hints)
-            keyHint(context, font, "↑↓←→", x + DPAD / 2f, y + DPAD + 1, (slot.mask & 0xf0) != 0);
+            keyHint(
+                    context,
+                    font,
+                    directionKeys(console, false, false),
+                    x + DPAD / 2f,
+                    y + DPAD + 1,
+                    (slot.mask & 0xf0) != 0);
     }
 
     private static void dpadCell(
@@ -444,7 +510,8 @@ public final class PlayerHud {
             int color,
             long now,
             boolean hintAbove,
-            boolean hints) {
+            boolean hints,
+            String console) {
         boolean held = (slot.mask & button.mask()) != 0;
         float since = (now - slot.pressAt[Integer.numberOfTrailingZeros(button.mask())]) / 1e6f;
         float pop = held && since < POP_MS ? 1 + .3f * (1 - since / POP_MS) : 1;
@@ -462,23 +529,97 @@ public final class PlayerHud {
         }
         rounded(context, x, y, w, CHIP_H, bg, 2);
         context.fill(x + 1, y, x + w - 1, y + 1, withAlpha(fg, held ? 0x30 : 0x14));
-        scaledText(
-                context,
-                font,
-                button.label(),
-                x + (w - Math.round(font.getWidth(button.label()) * .72f)) / 2f,
-                y + 2f,
-                fg,
-                false);
+        if (!PadGlyphs.draw(context, button.label(), x + (w - 7) / 2, y + 1, held)) {
+            String label = hudLabel(button.label());
+            scaledText(
+                    context,
+                    font,
+                    label,
+                    x + (w - Math.round(font.getWidth(label) * .72f)) / 2f,
+                    y + 2f,
+                    fg,
+                    false);
+        }
         matrices.pop();
         if (hints)
             keyHint(
                     context,
                     font,
-                    button.key(),
+                    InputControls.keyName(console, button.action()),
                     x + w / 2f,
                     hintAbove ? y - 5 : y + CHIP_H + 1,
                     held);
+    }
+
+    private static String hudLabel(String label) {
+        return switch (label) {
+            case "cross", "circle", "square", "triangle" -> "  ";
+            case "C left" -> "C←";
+            case "C right" -> "C→";
+            case "C up" -> "C↑";
+            case "C down" -> "C↓";
+            default -> label;
+        };
+    }
+
+    private static String directionKeys(String console, boolean analog, boolean right) {
+        Action[] actions =
+                !analog
+                        ? new Action[] {Action.UP, Action.LEFT, Action.DOWN, Action.RIGHT}
+                        : right
+                                ? new Action[] {
+                                    Action.RIGHT_UP,
+                                    Action.RIGHT_LEFT,
+                                    Action.RIGHT_DOWN,
+                                    Action.RIGHT_RIGHT
+                                }
+                                : new Action[] {
+                                    Action.LEFT_UP,
+                                    Action.LEFT_LEFT,
+                                    Action.LEFT_DOWN,
+                                    Action.LEFT_RIGHT
+                                };
+        StringJoiner names = new StringJoiner("");
+        for (Action action : actions) names.add(InputControls.keyName(console, action));
+        return names.toString();
+    }
+
+    private static void stick(
+            DrawContext context,
+            TextRenderer font,
+            int x,
+            int y,
+            Slot slot,
+            boolean right,
+            int color,
+            boolean hints,
+            String console) {
+        short ax = right ? slot.input.rightX() : slot.input.leftX();
+        short ay = right ? slot.input.rightY() : slot.input.leftY();
+        boolean pressed = (slot.mask & (right ? 1 << 15 : 1 << 14)) != 0;
+        boolean moving = ax != 0 || ay != 0;
+        rounded(context, x, y, 15, 15, pressed ? withAlpha(color, 0xE6) : 0xD0333A48, 5);
+        rounded(context, x + 2, y + 2, 11, 11, 0xFF161A22, 3);
+        int dx = Math.round(ax / 32767f * 3), dy = Math.round(ay / 32767f * 3);
+        rounded(context, x + 5 + dx, y + 5 + dy, 5, 5, moving || pressed ? color : 0xFF818B9D, 2);
+        scaledText(
+                context,
+                font,
+                ControllerProfile.of(console).playStation()
+                        ? right ? "R3" : "L3"
+                        : right ? console.equals("n64_console") ? "C" : "R" : "L",
+                x + 5,
+                y - 6,
+                0xBFCCD2DD,
+                false);
+        if (hints)
+            keyHint(
+                    context,
+                    font,
+                    font.trimToWidth(directionKeys(console, true, right), 38),
+                    x + 7.5f,
+                    y + 16,
+                    moving);
     }
 
     /** Text drawn at .72 scale so the shrunken card stays proportional. */

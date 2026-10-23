@@ -11,6 +11,7 @@ import net.minecraft.text.Text;
 /** Small side cards also render above open console/settings screens. */
 final class DownloadHud {
     static Downloads DOWNLOADS = new Downloads();
+    private static final DownloadNotifications NOTIFICATIONS = new DownloadNotifications();
 
     static void register() {
         HudRenderCallback.EVENT.register(
@@ -26,22 +27,25 @@ final class DownloadHud {
     private static void render(DrawContext context) {
         var client = MinecraftClient.getInstance();
         var entries = DOWNLOADS.entries();
-        if (entries.isEmpty()) return;
+        long now = System.nanoTime();
         int width = Math.min(168, context.getScaledWindowWidth() - 16);
         int x = context.getScaledWindowWidth() - width - 8;
         int count =
                 Math.min(
                         client.currentScreen == null ? 2 : 1,
-                        Math.min(
-                                entries.size(),
-                                Math.max(1, (context.getScaledWindowHeight() - 32) / 60)));
-        int y = 8;
-        int first = (int) ((System.nanoTime() / 3_000_000_000L) % entries.size());
+                        Math.max(1, (context.getScaledWindowHeight() - 32) / 60));
+        var cards = NOTIFICATIONS.update(entries, count, now);
+        if (cards.isEmpty()) return;
         var tr = client.textRenderer;
         context.getMatrices().push();
         context.getMatrices().translate(0, 0, 400);
-        for (int i = 0; i < count; i++, y += 60) {
-            var entry = entries.get((first + i) % entries.size());
+        for (var card : cards) {
+            var entry = card.entry;
+            int y = 8 + card.slot * 60;
+            float visibility = card.motion.value(now);
+            context.getMatrices().push();
+            context.getMatrices().translate((width + 12) * (1f - visibility), 0, 0);
+            context.setShaderColor(1, 1, 1, visibility);
             boolean failed = entry.state() == Downloads.State.FAILED;
             int accent =
                     failed
@@ -49,13 +53,18 @@ final class DownloadHud {
                             : entry.state() == Downloads.State.COMPLETE
                                     ? SettingsWidgets.GOOD
                                     : SettingsWidgets.ACCENT;
-            SettingsWidgets.rounded(context, x, y, width, 54, 0xEE1E1930, 4);
-            context.fill(x + 1, y + 7, x + 3, y + 47, accent);
+            SettingsWidgets.rounded(context, x, y + 2, width, 54, 0x40000000, 4);
+            SettingsWidgets.rounded(context, x, y, width, 54, 0xF21E1930, 4);
             String status =
                     entry.state() == Downloads.State.DOWNLOADING
                             ? "Downloading " + entry.kind()
                             : failed ? entry.kind() + " failed" : entry.kind() + " ready";
-            String percent = entry.percent() < 0 ? "…" : entry.percent() + "%";
+            String percent =
+                    failed
+                            ? "!"
+                            : entry.state() == Downloads.State.COMPLETE
+                                    ? "100%"
+                                    : entry.percent() < 0 ? "…" : entry.percent() + "%";
             context.drawText(
                     tr,
                     Text.literal(tr.trimToWidth(status, width - 53)),
@@ -72,15 +81,22 @@ final class DownloadHud {
                     y + 19,
                     SettingsWidgets.MUTED,
                     false);
-            context.fill(x + 10, y + 32, x + width - 10, y + 35, SettingsWidgets.EDGE);
-            int track = width - 20;
-            if (entry.percent() >= 0)
-                context.fill(
-                        x + 10, y + 32, x + 10 + track * entry.percent() / 100, y + 35, accent);
-            else {
-                int segment = Math.max(1, track / 4);
-                int offset = (int) ((System.nanoTime() / 15_000_000L) % (track - segment + 1));
-                context.fill(x + 10 + offset, y + 32, x + 10 + offset + segment, y + 35, accent);
+            if (entry.state() == Downloads.State.DOWNLOADING) {
+                context.fill(x + 10, y + 32, x + width - 10, y + 35, SettingsWidgets.EDGE);
+                int track = width - 20;
+                if (entry.percent() >= 0)
+                    context.fill(
+                            x + 10, y + 32, x + 10 + track * entry.percent() / 100, y + 35, accent);
+                else {
+                    int segment = Math.max(1, track / 4);
+                    int offset =
+                            Math.round(
+                                    (track - segment)
+                                            * (1f - (float) Math.cos(now / 650_000_000d))
+                                            / 2f);
+                    context.fill(
+                            x + 10 + offset, y + 32, x + 10 + offset + segment, y + 35, accent);
+                }
             }
             context.drawText(
                     tr,
@@ -89,13 +105,15 @@ final class DownloadHud {
                     y + 40,
                     SettingsWidgets.MUTED,
                     false);
+            context.setShaderColor(1, 1, 1, 1);
+            context.getMatrices().pop();
         }
         if (entries.size() > count)
             context.drawText(
                     tr,
                     "+" + (entries.size() - count) + " downloads",
                     x + 10,
-                    y,
+                    8 + count * 60,
                     SettingsWidgets.MUTED,
                     true);
         context.getMatrices().pop();

@@ -196,8 +196,8 @@ public final class RetrocraftClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(
                 client -> {
                     while (SETTINGS_KEY.wasPressed()) {
-                        if (!(client.currentScreen instanceof SettingsScreen))
-                            client.setScreen(SettingsScreen.modMenu(client.currentScreen));
+                        if (client.currentScreen instanceof SettingsScreen screen) screen.close();
+                        else client.setScreen(SettingsScreen.modMenu(client.currentScreen));
                     }
                     EMULATION.tick(client);
                     SettingsClient.tick();

@@ -4,8 +4,10 @@ import java.nio.file.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.IntFunction;
 import java.util.function.IntUnaryOperator;
 
+import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 import com.sammwy.retrocraft.roms.GameSaves;
 import com.sammwy.retrocraft.roms.SaveStates;
@@ -38,7 +40,15 @@ public final class ClientEmulator implements AutoCloseable {
             int checkpointSeconds,
             IntUnaryOperator input,
             Listener listener) {
-        this(jar, core, rom, snapshot, snapshot.getParent(), checkpointSeconds, input, listener);
+        this(
+                jar,
+                core,
+                rom,
+                snapshot,
+                snapshot.getParent(),
+                checkpointSeconds,
+                port -> PadInput.digital(input.applyAsInt(port)),
+                listener);
     }
 
     public ClientEmulator(
@@ -48,7 +58,7 @@ public final class ClientEmulator implements AutoCloseable {
             Path snapshot,
             Path bios,
             int checkpointSeconds,
-            IntUnaryOperator input,
+            IntFunction<PadInput> input,
             Listener listener) {
         checkpointInterval(checkpointSeconds);
         thread =
@@ -78,10 +88,10 @@ public final class ClientEmulator implements AutoCloseable {
                                         long next = System.nanoTime(),
                                                 nextSave = next + checkpointNanos;
                                         long period = Math.round(1_000_000_000d / worker.fps());
-                                        int[] masks = new int[WorkerProtocol.PORTS];
+                                        PadInput[] masks = new PadInput[WorkerProtocol.PORTS];
                                         while (committed && !returning && !closed) {
                                             for (int port = 0; port < masks.length; port++)
-                                                masks[port] = input.applyAsInt(port);
+                                                masks[port] = input.apply(port);
                                             listener.output(
                                                     worker.advance(masks, true, true),
                                                     worker.sampleRate());
