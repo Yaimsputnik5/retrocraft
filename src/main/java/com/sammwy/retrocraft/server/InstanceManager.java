@@ -127,7 +127,7 @@ public final class InstanceManager implements AutoCloseable {
         /** Controller slots; only the first one is usable on handhelds. Slot 0 also holds the emulation lease. */
         final InputSource[] pads = new InputSource[WorkerProtocol.PORTS];
         volatile boolean wantsVideo, wantsAudio, observed, finished, destroy;
-        long invalidSince;
+        volatile long invalidSince;
         boolean poweredOff;
         final AtomicBoolean cleanupStarted = new AtomicBoolean();
         volatile FrameCodec.Frame lastFrame;
@@ -549,7 +549,10 @@ public final class InstanceManager implements AutoCloseable {
         if (session.failure != null) { error(player, failureKey(session.failure)); return; }
         detachVideo(player.getUuid());
         VideoWatcher existing = session.videoWatchers.get(player.getUuid());
-        if (existing != null) existing.ambient = false; else session.videoWatchers.put(player.getUuid(), new VideoWatcher());
+        if (existing != null) {
+            existing.ambient = false; existing.lastSeen = System.nanoTime();
+            existing.lastAcknowledged = existing.lastSent; existing.needsKeyframe = true;
+        } else session.videoWatchers.put(player.getUuid(), new VideoWatcher());
         videoWatching.put(player.getUuid(), session.data.id());
         session.forceKeyframe = true;
         joinInput(player, session.data.id());
@@ -716,7 +719,7 @@ public final class InstanceManager implements AutoCloseable {
                     && now - session.lastIncomingChunk > TimeUnit.SECONDS.toNanos(15)) revoke(session, true);
             if (session.ownership.mode() == Ownership.Mode.CLIENT && now - session.lastCheckpointAt
                     > TimeUnit.SECONDS.toNanos(BlobTransfer.timeoutSeconds(Math.max(config.ownerTimeoutSeconds, config.checkpointIntervalSeconds * 3L + 5), session.checkpointBytes, 2))) revoke(session, true);
-            if (session.thread == null && session.observed && session.failure == null && session.ownership.serverMayRun() && serverMayEmulate()
+            if (session.thread == null && session.observed && session.failure == null && session.ownership.serverMayRun() && serverMayEmulate(session)
                     && preparedCores.containsKey(config.coreId(session.game.cartridge().id().toString())) && activeCount() < config.maxActiveInstances) start(session);
             coordinateOwnership(session, now);
             if (session.thread == null && !session.host.valid() && !session.observed && session.ownership.serverMayRun()) {
@@ -810,7 +813,11 @@ public final class InstanceManager implements AutoCloseable {
         List<UUID> targets = new ArrayList<>();
         for (var entry : session.videoWatchers.entrySet()) {
             VideoWatcher watcher = entry.getValue();
-            if (watcher.lastSent - watcher.lastAcknowledged >= 4) { watcher.needsKeyframe = true; continue; }
+            if (watcher.lastSent - watcher.lastAcknowledged >= 4) {
+                watcher.needsKeyframe = true;
+                if (now - watcher.lastResync < TimeUnit.SECONDS.toNanos(1)) continue;
+                watcher.lastResync = now; watcher.lastAcknowledged = watcher.lastSent;
+            }
             if (server.getPlayerManager().getPlayer(entry.getKey()) != null) targets.add(entry.getKey());
             if (watcher.needsKeyframe) session.forceKeyframe = true;
         }
@@ -842,16 +849,23 @@ public final class InstanceManager implements AutoCloseable {
     }
 
     private static void resetVideo(Session session) {
-        session.encoder = new FrameCodec.Encoder();
+        session.encoder = session.encoder.restart();
         session.videoGeneration++;
         session.encodingVideo = false;
         session.forceKeyframe = true;
+        for (VideoWatcher watcher : session.videoWatchers.values()) {
+            watcher.lastAcknowledged = watcher.lastSent; watcher.needsKeyframe = true;
+        }
     }
 
-    private boolean serverMayEmulate() { return config.emulationMode != RetrocraftConfig.EmulationMode.CLIENT; }
+    private boolean serverMayEmulate(Session session) {
+        return config.emulationMode != RetrocraftConfig.EmulationMode.CLIENT
+                || config.coreId(session.game.cartridge().id().toString()).equals("mame2003");
+    }
     private boolean clientMayEmulate() { return config.emulationMode != RetrocraftConfig.EmulationMode.SERVER; }
     /** ROMs over the client pool bound never leave the server — hybrid degrades to server-side, client mode just refuses. */
     private boolean clientFits(Session session) {
+        if (config.coreId(session.game.cartridge().id().toString()).equals("mame2003")) return false;
         if (session.clientFit != null) return session.clientFit;
         if (!session.checkingFit) {
             session.checkingFit = true;
@@ -948,7 +962,14 @@ public final class InstanceManager implements AutoCloseable {
                     session.process = process; session.sampleRate = process.sampleRate();
                     long period = Math.round(1_000_000_000d / process.fps());
                     long next = System.nanoTime();
-                    while (!stopping && !session.destroy && session.observed && !session.handoffStop && session.ownership.serverMayRun() && serverMayEmulate()) {
+                    while (!stopping && !session.destroy && !session.handoffStop && session.ownership.serverMayRun() && serverMayEmulate(session)
+                            && (session.observed || !process.supportsSnapshots())) {
+                        if (!session.observed) {
+                            if (session.invalidSince > 0 && System.nanoTime() - session.invalidSince > TimeUnit.SECONDS.toNanos(3)) break;
+                            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(50));
+                            next = System.nanoTime();
+                            continue;
+                        }
                         int[] masks = new int[WorkerProtocol.PORTS];
                         long polled = System.nanoTime();
                         for (int port = 0; port < masks.length; port++) {
@@ -961,7 +982,7 @@ public final class InstanceManager implements AutoCloseable {
                         if (next < now - period * 4) next = now;
                         if (next > now) LockSupport.parkNanos(next - now);
                     }
-                    if (!session.destroy) process.save();
+                    if (!session.destroy && process.supportsSnapshots()) process.save();
                 }
             } catch (Throwable ex) { session.failure = ex; Retrocraft.LOG.error("Console instance {} failed", session.data.id(), ex); }
             finally {

@@ -41,6 +41,7 @@ public final class WorkerProcess implements AutoCloseable {
     private final DataOutputStream out;
     private final double fps;
     private final int sampleRate;
+    private final boolean supportsSnapshots;
 
     public WorkerProcess(Path workerJar, Path core, Path rom, Path state, Path log) throws IOException {
         this(workerJar, core, rom, state, state.getParent(), log);
@@ -68,6 +69,7 @@ public final class WorkerProcess implements AutoCloseable {
             if (!token.equals(in.readUTF()) || in.readInt() != WorkerProtocol.MAGIC) throw new IOException("Invalid worker handshake");
             fps = in.readDouble();
             sampleRate = in.readInt();
+            supportsSnapshots = in.readBoolean();
             if (!Double.isFinite(fps) || fps < 40 || fps > 120 || sampleRate < 8000 || sampleRate > 192000)
                 throw new IOException("Invalid worker timing");
             process = child;
@@ -102,6 +104,7 @@ public final class WorkerProcess implements AutoCloseable {
     }
 
     public double fps() { return fps; }
+    public boolean supportsSnapshots() { return supportsSnapshots; }
     public int sampleRate() { return sampleRate; }
 
     public Output advance(int mask) throws IOException {

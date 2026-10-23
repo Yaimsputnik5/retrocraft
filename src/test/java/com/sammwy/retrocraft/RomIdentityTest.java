@@ -25,4 +25,19 @@ class RomIdentityTest {
         Files.write(materialized, new byte[]{1}, StandardOpenOption.WRITE);
         assertFalse(RomSource.matches(materialized, id, limit));
     }
+
+    @Test void arcadeRomUsesItsLibraryDirectorySoParentSetsRemainVisible() throws Exception {
+        Path library = Files.createDirectory(root.resolve("roms"));
+        Path arcade = Files.createDirectory(library.resolve("Mame"));
+        Path set = Files.write(arcade.resolve("mk2.zip"), new byte[]{1, 2, 3});
+        Files.write(arcade.resolve("parent.zip"), new byte[]{4, 5});
+        String id = InstanceStore.sha256(set);
+        Path cache = root.resolve("cache").resolve(id);
+        Files.createDirectories(cache);
+        Files.copy(set, cache.resolve("mk2.zip"));
+        var source = new RomSource("Mame/mk2.zip", null, -1);
+        assertEquals(set, source.original(library, id, 1024));
+        Files.write(set, new byte[]{6});
+        assertThrows(java.io.IOException.class, () -> source.original(library, id, 1024));
+    }
 }

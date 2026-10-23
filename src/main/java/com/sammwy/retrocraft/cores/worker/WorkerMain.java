@@ -47,12 +47,14 @@ public final class WorkerMain {
     }
 
     private final Memory systemDir;
+    private final boolean arcade;
 
     private WorkerMain(String corePath, Path statePath, Path bios) throws IOException {
         this.statePath = statePath;
         Files.createDirectories(statePath.getParent());
         directory = cString(statePath.getParent().toAbsolutePath().toString());
         systemDir = cString((bios == null ? statePath.getParent() : bios).toAbsolutePath().toString());
+        arcade = Path.of(corePath).getFileName().toString().startsWith("mame2003_");
         core = Native.load(corePath, Libretro.class);
         if (core.retro_api_version() != 1) throw new IOException("Unsupported libretro ABI");
     }
@@ -110,7 +112,7 @@ public final class WorkerMain {
             if (core.retro_load_game(game) == 0) throw new IOException("Core rejected ROM");
             loaded = true;
             for (int port = 0; port < input.length; port++) core.retro_set_controller_port_device(port, 1);
-            if (forceAspect > 0) {
+            if (forceAspect > 0 || arcade) {
                 captureVideo = false; captureAudio = false;
                 core.retro_run();
                 captureVideo = true; captureAudio = true;
@@ -128,6 +130,8 @@ public final class WorkerMain {
             out.writeInt(WorkerProtocol.MAGIC);
             out.writeDouble(av.timing.fps);
             out.writeInt((int) Math.round(av.timing.sampleRate));
+            long snapshotSize = core.retro_serialize_size().longValue();
+            out.writeBoolean(snapshotSize > 0 && snapshotSize <= WorkerProtocol.MAX_STATE);
             out.flush();
             while (true) {
                 int command;

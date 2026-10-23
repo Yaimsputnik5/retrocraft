@@ -23,7 +23,11 @@ public final class FrameCodec {
 
     public static final class Encoder {
         private Frame previous;
-        private long sequence;
+        private volatile long sequence;
+
+        public Encoder() {}
+        private Encoder(long sequence) { this.sequence = sequence; }
+        public Encoder restart() { return new Encoder(sequence); }
 
         public Encoded encode(Frame frame, boolean forceKeyframe) throws IOException {
             boolean key = forceKeyframe || previous == null || previous.width != frame.width || previous.height != frame.height;

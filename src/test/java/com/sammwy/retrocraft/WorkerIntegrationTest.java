@@ -115,4 +115,38 @@ class WorkerIntegrationTest {
         }
         assertFalse(Files.exists(state));
     }
+
+    @Test void arcadeWithoutSavestatesKeepsItsWorkerAlive() throws Exception {
+        String core = System.getProperty("retrocraft.testMameCore");
+        String rom = System.getProperty("retrocraft.testMameRom");
+        String bios = System.getProperty("retrocraft.testMameBios");
+        assumeTrue(core != null && rom != null && bios != null);
+        Path state = root.resolve("arcade/snapshot.bin");
+        try (WorkerProcess worker = new WorkerProcess(Path.of(System.getProperty("retrocraft.workerJar")),
+                Path.of(core), Path.of(rom), state, Path.of(bios), root.resolve("arcade/worker.log"))) {
+            assertFalse(worker.supportsSnapshots());
+            for (int i = 0; i < 10; i++) worker.advance(new int[4], false, false);
+            assertFalse(Files.exists(state));
+        }
+    }
+
+    @Test void arcadeWithSavestatesCanSaveAndRestoreAtHandoff() throws Exception {
+        String core = System.getProperty("retrocraft.testMameCore");
+        String rom = System.getProperty("retrocraft.testMameSavableRom");
+        String bios = System.getProperty("retrocraft.testMameBios");
+        assumeTrue(core != null && rom != null && bios != null);
+        Path state = root.resolve("arcade-savable/snapshot.bin");
+        Path jar = Path.of(System.getProperty("retrocraft.workerJar"));
+        try (WorkerProcess worker = new WorkerProcess(jar, Path.of(core), Path.of(rom), state,
+                Path.of(bios), root.resolve("arcade-savable/first.log"))) {
+            assertTrue(worker.supportsSnapshots());
+            worker.save();
+            assertTrue(Files.size(state) > 1000);
+        }
+        try (WorkerProcess restored = new WorkerProcess(jar, Path.of(core), Path.of(rom), state,
+                Path.of(bios), root.resolve("arcade-savable/second.log"))) {
+            assertTrue(restored.supportsSnapshots());
+            restored.advance(new int[4], false, false);
+        }
+    }
 }

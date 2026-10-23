@@ -30,4 +30,11 @@ public record RomSource(String file, String member, int ordinal) {
     public static boolean matches(Path rom, String hash, long limit) throws IOException {
         return hash.equals(RomScanner.hash(rom, Files.size(rom), limit));
     }
+    public Path original(Path library, String hash, long limit) throws IOException {
+        if (!hash.matches("[0-9a-f]{64}")) throw new IOException("Invalid ROM identity");
+        Path root = library.toRealPath(), source = root.resolve(file).normalize().toRealPath();
+        if (!source.startsWith(root) || !Files.isRegularFile(source) || !matches(source, hash, limit))
+            throw new IOException("Arcade ROM changed or escaped library");
+        return source;
+    }
 }

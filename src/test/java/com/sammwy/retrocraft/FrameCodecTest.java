@@ -42,6 +42,19 @@ class FrameCodecTest {
         assertEquals(key.sequence(), decoder.sequence());
     }
 
+    @Test void restartingVideoAfterOwnershipReturnKeepsSequenceAndForcesKeyframe() throws Exception {
+        var encoder = new FrameCodec.Encoder();
+        var decoder = new FrameCodec.Decoder();
+        var frame = new FrameCodec.Frame(256, 240, new byte[256 * 240 * 3]);
+        decoder.decode(encoder.encode(frame, false));
+        for (int i = 0; i < 20; i++) decoder.decode(encoder.encode(frame, false));
+        encoder = encoder.restart();
+        var returned = encoder.encode(frame, false);
+        assertTrue(returned.keyframe());
+        assertNotNull(decoder.decode(returned));
+        assertEquals(22, returned.sequence());
+    }
+
     @Test void malformedAndOversizedCompressedFramesAreRejected() throws Exception {
         byte[] raw = new byte[2_000_000];
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();

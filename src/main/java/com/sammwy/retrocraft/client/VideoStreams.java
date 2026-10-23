@@ -73,6 +73,7 @@ final class VideoStreams {
         long now = System.nanoTime();
         for (UUID id : List.copyOf(streams.keySet())) {
             Stream stream = streams.get(id);
+            if (now - stream.lastSeen > 1_000_000_000L) resync(id, stream);
             if (now - stream.lastSeen > 2_000_000_000L) { stop(id); continue; }
             if (ClientPlayNetworking.canSend(Packets.Request.ID)) ClientPlayNetworking.send(new Packets.Request(Packets.VIDEO_ACK, id, 0, sequence(id)));
         }

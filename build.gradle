@@ -72,4 +72,8 @@ test {
     if (System.getenv('RETROCRAFT_TEST_CORE')) systemProperty 'retrocraft.testCore', System.getenv('RETROCRAFT_TEST_CORE')
     if (System.getenv('RETROCRAFT_TEST_N64_CORE')) systemProperty 'retrocraft.testN64Core', System.getenv('RETROCRAFT_TEST_N64_CORE')
     if (System.getenv('RETROCRAFT_TEST_N64_ROM')) systemProperty 'retrocraft.testN64Rom', System.getenv('RETROCRAFT_TEST_N64_ROM')
+    if (System.getenv('RETROCRAFT_TEST_MAME_CORE')) systemProperty 'retrocraft.testMameCore', System.getenv('RETROCRAFT_TEST_MAME_CORE')
+    if (System.getenv('RETROCRAFT_TEST_MAME_ROM')) systemProperty 'retrocraft.testMameRom', System.getenv('RETROCRAFT_TEST_MAME_ROM')
+    if (System.getenv('RETROCRAFT_TEST_MAME_SAVABLE_ROM')) systemProperty 'retrocraft.testMameSavableRom', System.getenv('RETROCRAFT_TEST_MAME_SAVABLE_ROM')
+    if (System.getenv('RETROCRAFT_TEST_MAME_BIOS')) systemProperty 'retrocraft.testMameBios', System.getenv('RETROCRAFT_TEST_MAME_BIOS')
 }

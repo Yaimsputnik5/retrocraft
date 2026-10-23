@@ -12,7 +12,10 @@ import java.util.function.Consumer;
 public final class RomIndex {
     public record Game(CartridgeItem cartridge, String id, String name, String filename, RomSource source, Path root, Path cache, long maxBytes) {
         public RomCatalog.Entry catalogEntry() { return new RomCatalog.Entry(cartridge.id().toString(), id, name); }
-        public Path materialize() throws IOException { return source.materialize(root, cache, id, filename, maxBytes); }
+        public Path materialize() throws IOException {
+            return cartridge.id().toString().equals("retrocraft:mame") && source.ordinal() < 0 ? source.original(root, id, maxBytes)
+                    : source.materialize(root, cache, id, filename, maxBytes);
+        }
     }
     private final Map<String, Game> games;
     private RomIndex(Map<String, Game> games) { this.games = Collections.unmodifiableMap(games); }
