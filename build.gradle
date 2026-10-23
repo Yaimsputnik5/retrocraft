@@ -31,6 +31,7 @@ dependencies {
     compileOnly 'net.java.dev.jna:jna:5.15.0'
     workerLibraries 'net.java.dev.jna:jna:5.15.0'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testImplementation 'net.java.dev.jna:jna:5.15.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

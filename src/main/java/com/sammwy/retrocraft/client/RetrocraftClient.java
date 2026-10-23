@@ -30,6 +30,7 @@ public final class RetrocraftClient implements ClientModInitializer {
     private final AudioStreams audio = new AudioStreams();
     private final VideoStreams video = new VideoStreams();
     static VideoStreams VIDEO;
+    static AudioStreams AUDIO;
     public static HybridClient EMULATION;
     private final List<RomCatalog.Entry> pendingCatalog = new ArrayList<>();
     private int catalogGeneration;
@@ -39,7 +40,8 @@ public final class RetrocraftClient implements ClientModInitializer {
         ClientPreferences.load();
         KeyBinding settingsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.retrocraft.settings", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_F8, "category.retrocraft"));
-        EMULATION = new HybridClient(audio); VIDEO = video;
+        EMULATION = new HybridClient(audio); VIDEO = video; AUDIO = audio;
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> ClientPreferences.send());
         for (var console : ConsoleRegistry.consoles()) {
             if (console.type() == ConsoleType.HANDHELD)
                 FabricModelPredicateProviderRegistry.register(Registries.ITEM.get(console.id()), Identifier.of("retrocraft", "powered"),

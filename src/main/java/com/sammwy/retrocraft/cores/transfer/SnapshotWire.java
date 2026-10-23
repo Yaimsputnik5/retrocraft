@@ -12,10 +12,10 @@ public final class SnapshotWire {
         try (var zip = new DeflaterOutputStream(compressed, deflater)) { zip.write(state); }
         finally { deflater.end(); }
         boolean useCompression = compressed.size() < state.length;
-        var wire = new ByteArrayOutputStream();
+        var wire = new ByteArrayOutputStream(9 + (useCompression ? compressed.size() : state.length));
         try (var out = new DataOutputStream(wire)) {
             out.writeInt(MAGIC); out.writeInt(state.length); out.writeBoolean(useCompression);
-            out.write(useCompression ? compressed.toByteArray() : state);
+            if (useCompression) compressed.writeTo(out); else out.write(state);
         }
         return wire.toByteArray();
     }

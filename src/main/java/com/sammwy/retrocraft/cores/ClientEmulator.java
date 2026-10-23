@@ -21,22 +21,21 @@ public final class ClientEmulator implements AutoCloseable {
     private volatile WorkerProcess process;
     private final Thread thread;
 
-    private static Path biosDir(Path core) {
-        // The pool layout is POOL/platform/<coreId>/<binary> — the parent dir name is the trusted id.
-        return com.sammwy.retrocraft.server.config.RetrocraftConfig.systemDir(core.getParent().getFileName().toString());
-    }
-
     /** {@code input} maps a controller port (0-3) to its current 16-bit RetroPad mask. */
     public ClientEmulator(Path jar, Path core, Path rom, Path snapshot, int checkpointSeconds, IntUnaryOperator input, Listener listener) {
+        this(jar, core, rom, snapshot, snapshot.getParent(), checkpointSeconds, input, listener);
+    }
+
+    public ClientEmulator(Path jar, Path core, Path rom, Path snapshot, Path bios, int checkpointSeconds, IntUnaryOperator input, Listener listener) {
         thread = Thread.ofVirtual().name("retrocraft-client-emulator").unstarted(() -> {
-            try (WorkerProcess worker = new WorkerProcess(jar, core, rom, snapshot, biosDir(core), snapshot.resolveSibling("worker.log"))) {
+            try (WorkerProcess worker = new WorkerProcess(jar, core, rom, snapshot, bios, snapshot.resolveSibling("worker.log"))) {
                 process = worker;
                 listener.prepared();
                 while (!committed && !returning && !closed) LockSupport.parkNanos(10_000_000L);
                 long next = System.nanoTime(), nextSave = next + checkpointSeconds * 1_000_000_000L;
                 long period = Math.round(1_000_000_000d / worker.fps());
+                int[] masks = new int[WorkerProtocol.PORTS];
                 while (committed && !returning && !closed) {
-                    int[] masks = new int[WorkerProtocol.PORTS];
                     for (int port = 0; port < masks.length; port++) masks[port] = input.applyAsInt(port);
                     listener.output(worker.advance(masks, true, true), worker.sampleRate());
                     long now = System.nanoTime();

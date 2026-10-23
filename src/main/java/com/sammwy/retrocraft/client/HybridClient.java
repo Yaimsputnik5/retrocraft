@@ -46,7 +46,7 @@ public final class HybridClient {
         long audioSequence, checkpointSequence, lastHeartbeat, nextVideoKey, nextStream;
         Local(HybridPackets.Lease offer) { this.offer = offer; relayVideo = offer.docked(); }
         synchronized void output(WorkerProcess.Output output, int sampleRate) {
-            frame = output.frame(); rate = sampleRate;
+            if (output.frame() != null) frame = output.frame(); rate = sampleRate;
             if (pcm.size() + output.audio().length > Math.min(262_144, sampleRate)) pcm.reset();
             pcm.writeBytes(output.audio());
         }
@@ -70,11 +70,17 @@ public final class HybridClient {
     int thumbnailSeconds() { return thumbnailSeconds; }
 
     void settings(HybridPackets.Settings packet) {
-        if (!packet.pool().equals(KnownCores.POOL) || packet.checkpointSeconds() < 1 || packet.checkpointSeconds() > 30 || packet.streamFps() < 1 || packet.streamFps() > 20
-                || packet.thumbnailSeconds() < 1 || packet.thumbnailSeconds() > 60) return;
+        if (!packet.pool().equals(KnownCores.POOL) || packet.checkpointSeconds() < 1 || packet.checkpointSeconds() > 30 || packet.streamFps() < 1 || packet.streamFps() > 144
+                || packet.thumbnailSeconds() < 1 || packet.thumbnailSeconds() > 600) return;
         thumbnailSeconds = packet.thumbnailSeconds(); uploadThumbnails = packet.thumbnailUpload(); emulationMode = packet.emulationMode();
-        if (packet.generation() == settingsGeneration) return; // soft config resend; cores already match
-        settingsGeneration = packet.generation(); checkpointSeconds = packet.checkpointSeconds(); streamFps = packet.streamFps();
+        checkpointSeconds = packet.checkpointSeconds(); streamFps = Math.min(20, packet.streamFps());
+        if (packet.generation() == settingsGeneration) {
+            // Re-acknowledge soft updates: the server may have invalidated readiness without changing cores.
+            if (workerJar != null) ClientPlayNetworking.send(new HybridPackets.Status(settingsGeneration, HybridPackets.READY,
+                    prepared.values().stream().map(CoreManager.Prepared::identity).toList()));
+            return;
+        }
+        settingsGeneration = packet.generation();
         int generation = settingsGeneration; UUID token = connection;
         Map<String, CoreManager.Prepared> previous = Map.copyOf(prepared);
         long started = System.nanoTime();
@@ -212,7 +218,7 @@ public final class HybridClient {
         if (local.starting || local.rom == null || local.snapshot == null || local.phase != Phase.RECEIVING) return;
         local.starting = true;
         CoreManager.Prepared core = prepared.get(local.offer.core());
-        local.emulator = new ClientEmulator(workerJar, core.path(), local.rom, local.snapshot, checkpointSeconds, local.ports::get, new ClientEmulator.Listener() {
+        local.emulator = new ClientEmulator(workerJar, core.path(), local.rom, local.snapshot, RetrocraftConfig.systemDir(local.offer.core()), checkpointSeconds, local.ports::get, new ClientEmulator.Listener() {
             public void prepared() { callbacks.add(() -> { if (current(local, token) && local.phase == Phase.RECEIVING) { local.phase = Phase.PREPARED; signal(local.offer, HybridPackets.Action.PREPARED, 0); } }); }
             public void output(WorkerProcess.Output output, int rate) { local.output(output, rate); }
             public void checkpoint(byte[] bytes, boolean last) {
@@ -268,8 +274,7 @@ public final class HybridClient {
             local.volume = ClientPreferences.get().volume / 100f * client.options.getSoundVolume(SoundCategory.MASTER) * client.options.getSoundVolume(SoundCategory.RECORDS);
             if (local.phase == Phase.ACTIVE) {
                 if (now - local.lastHeartbeat > 500_000_000L) { signal(local.offer, HybridPackets.Action.HEARTBEAT, 0); local.lastHeartbeat = now; }
-                if (now >= local.nextStream) {
-                    local.nextStream = now + 1_000_000_000L / streamFps;
+                {
                     byte[] pcm = local.takeAudio();
                     if (pcm.length > 0) {
                         if (local.gain > 0) local.audio.offer(local.rate, pcm, local.volume * local.gain);
@@ -278,8 +283,9 @@ public final class HybridClient {
                             catch (IOException ex) { fail(local, connection, ex); }
                         }
                     }
-                    if (local.relayVideo && local.frame != null && !local.encodingVideo && local.media.size() < 2
+                    if (now >= local.nextStream && local.relayVideo && local.frame != null && !local.encodingVideo && local.media.size() < 2
                             && local.media.stream().noneMatch(sender -> sender.kind() == BlobTransfer.Kind.VIDEO)) {
+                        local.nextStream = now + 1_000_000_000L / streamFps;
                         local.encodingVideo = true;
                         boolean key = local.forceKey || now >= local.nextVideoKey;
                         local.forceKey = false;

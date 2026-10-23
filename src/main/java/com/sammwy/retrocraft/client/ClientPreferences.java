@@ -4,6 +4,8 @@ import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.client.config.ClientConfig;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
 import com.sammwy.retrocraft.server.net.SettingsPackets;
+import com.sammwy.retrocraft.server.net.Packets;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -21,8 +23,14 @@ final class ClientPreferences {
         ClientConfig next = config.changed(changes);
         next.save(RetrocraftConfig.root().resolve("client.json"));
         config = next;
+        send();
+        if (config.volume == 0 && RetrocraftClient.AUDIO != null) RetrocraftClient.AUDIO.close();
         if (RetrocraftClient.VIDEO != null) RetrocraftClient.VIDEO.preferencesChanged();
         if (!config.renderHandheldScreens) Thumbnails.close();
+    }
+    static void send() {
+        if (ClientPlayNetworking.canSend(Packets.Preferences.ID)) ClientPlayNetworking.send(
+                new Packets.Preferences(config.volume > 0, config.renderWorldScreens, config.renderHandheldScreens));
     }
     static List<SettingsPackets.GuiOpen.Entry> schema() {
         return List.of(

@@ -14,6 +14,17 @@ public final class Packets {
     public static final int CLOSE = 1, INPUT = 2, POWER_OFF = 3, RESYNC = 4, CLAIM_INPUT = 6, AUDIO_ACK = 7, EJECT = 8, VIDEO_ACK = 9;
     public static final int PLAY = 1, STOP = 2, ROLE = 3;
 
+    /** Personal subscriptions only. Server permissions and emulation limits are unaffected. */
+    public record Preferences(boolean audio, boolean worldVideo, boolean thumbnails) implements CustomPayload {
+        public static final Preferences DEFAULT = new Preferences(true, true, true);
+        public static final Id<Preferences> ID = new Id<>(Identifier.of("retrocraft", "preferences"));
+        public static final PacketCodec<RegistryByteBuf, Preferences> CODEC = new PacketCodec<>() {
+            public Preferences decode(RegistryByteBuf b) { return new Preferences(b.readBoolean(), b.readBoolean(), b.readBoolean()); }
+            public void encode(RegistryByteBuf b, Preferences p) { b.writeBoolean(p.audio); b.writeBoolean(p.worldVideo); b.writeBoolean(p.thumbnails); }
+        };
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
     public record Request(int action, UUID instance, int buttons, long acknowledgedSequence) implements CustomPayload {
         public static final Id<Request> ID = new Id<>(Identifier.of("retrocraft", "request"));
         public static final PacketCodec<RegistryByteBuf, Request> CODEC = new PacketCodec<>() {
@@ -138,6 +149,7 @@ public final class Packets {
 
     public static void register() {
         PayloadTypeRegistry.playC2S().register(Request.ID, Request.CODEC);
+        PayloadTypeRegistry.playC2S().register(Preferences.ID, Preferences.CODEC);
         PayloadTypeRegistry.playC2S().register(ThumbnailUpload.ID, ThumbnailUpload.CODEC);
         PayloadTypeRegistry.playS2C().register(Ui.ID, Ui.CODEC);
         PayloadTypeRegistry.playS2C().register(Video.ID, Video.CODEC);

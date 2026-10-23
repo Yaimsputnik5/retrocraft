@@ -45,7 +45,8 @@ public final class BlobTransfer {
     }
     public static final class Receiver {
         private volatile Chunk first;
-        private ByteArrayOutputStream bytes;
+        private byte[] bytes;
+        private int received;
         private long lastActivity;
         public int reserved() { return first == null ? 0 : first.total; }
         public boolean expired(long now) { return first != null && now - lastActivity > 15_000_000_000L; }
@@ -54,14 +55,15 @@ public final class BlobTransfer {
                     || chunk.offset < 0 || chunk.offset > chunk.total - chunk.bytes.length || !chunk.hash.matches("[0-9a-f]{64}")) throw new IOException("Invalid chunk bounds");
             if (first == null) {
                 if (chunk.offset != 0) throw new IOException("Missing first chunk");
-                first = chunk; bytes = new ByteArrayOutputStream(Math.min(chunk.total, CHUNK));
+                bytes = new byte[chunk.total]; received = 0; first = chunk;
             }
             if (!first.instance.equals(chunk.instance) || first.epoch != chunk.epoch || first.kind != chunk.kind
-                    || first.sequence != chunk.sequence || first.total != chunk.total || !first.hash.equals(chunk.hash) || chunk.offset != bytes.size())
+                    || first.sequence != chunk.sequence || first.total != chunk.total || !first.hash.equals(chunk.hash) || chunk.offset != received)
                 throw new IOException("Mixed, replayed or out-of-order transfer");
-            bytes.writeBytes(chunk.bytes); lastActivity = now;
-            if (bytes.size() != first.total) return null;
-            byte[] result = bytes.toByteArray();
+            System.arraycopy(chunk.bytes, 0, bytes, received, chunk.bytes.length);
+            received += chunk.bytes.length; lastActivity = now;
+            if (received != first.total) return null;
+            byte[] result = bytes;
             if (!hash(result).equals(first.hash)) throw new IOException("Blob checksum mismatch");
             first = null; bytes = null; return result;
         }

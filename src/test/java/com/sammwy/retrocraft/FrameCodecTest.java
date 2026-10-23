@@ -64,4 +64,27 @@ class FrameCodecTest {
         assertThrows(IllegalArgumentException.class, () -> new FrameCodec.Frame(513, 240, new byte[0]));
         assertThrows(IllegalArgumentException.class, () -> new FrameCodec.Frame(0, 0, new byte[0]));
     }
+
+    @Test void denseUpdatesUseKeyframesAndEmptyDeltasReuseThePicture() throws Exception {
+        var encoder = new FrameCodec.Encoder(); var decoder = new FrameCodec.Decoder();
+        byte[] pixels = new byte[256 * 240 * 3];
+        decoder.decode(encoder.encode(new FrameCodec.Frame(256, 240, pixels), false));
+        byte[] noise = pixels.clone(); new Random(10).nextBytes(noise);
+        var dense = encoder.encode(new FrameCodec.Frame(256, 240, noise), false);
+        assertTrue(dense.keyframe());
+        var frame = decoder.decode(dense);
+        assertArrayEquals(noise, frame.rgb());
+        var unchanged = encoder.encode(frame, false);
+        assertSame(frame, decoder.decode(unchanged));
+        assertEquals(unchanged.sequence(), decoder.sequence());
+    }
+
+    @Test void trailingCompressedBytesAreRejectedWithoutAdvancingTheDecoder() throws Exception {
+        var encoded = new FrameCodec.Encoder().encode(new FrameCodec.Frame(8, 8, new byte[192]), false);
+        byte[] corrupt = java.util.Arrays.copyOf(encoded.data(), encoded.data().length + 1024);
+        var decoder = new FrameCodec.Decoder();
+        assertThrows(IOException.class, () -> decoder.decode(new FrameCodec.Encoded(1, -1, true, corrupt)));
+        assertEquals(-1, decoder.sequence());
+        assertNotNull(decoder.decode(encoded));
+    }
 }

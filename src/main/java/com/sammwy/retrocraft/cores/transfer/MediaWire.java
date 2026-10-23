@@ -7,7 +7,7 @@ import java.io.*;
 public final class MediaWire {
     public record Audio(int rate, byte[] pcm) {}
     public static byte[] video(FrameCodec.Encoded frame) throws IOException {
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(frame.data().length + 21);
         try (DataOutputStream out = new DataOutputStream(bytes)) { out.writeLong(frame.sequence()); out.writeLong(frame.base()); out.writeBoolean(frame.keyframe()); out.writeInt(frame.data().length); out.write(frame.data()); }
         return bytes.toByteArray();
     }
@@ -19,7 +19,7 @@ public final class MediaWire {
         }
     }
     public static byte[] audio(int rate, byte[] pcm) throws IOException {
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(pcm.length + 4);
         try (DataOutputStream out = new DataOutputStream(bytes)) { out.writeInt(rate); out.write(pcm); }
         return bytes.toByteArray();
     }

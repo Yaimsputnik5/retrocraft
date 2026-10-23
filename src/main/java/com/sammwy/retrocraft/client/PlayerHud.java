@@ -33,6 +33,7 @@ public final class PlayerHud {
     private record HudButton(int mask, String label, String key) {}
     private record Cell(HudButton button, int col, int row) {}
     /** Stacked centre column (Start/Select style) plus a face grid laid out like the real pad. */
+    private static final Map<String, PadLayout> LAYOUTS = new HashMap<>();
     private record PadLayout(List<HudButton> middle, List<Cell> face, int cols, int rows) {}
 
     static void roster(Packets.Players packet) {
@@ -147,7 +148,7 @@ public final class PlayerHud {
         for (int i = 0; i < 4; i++) if (state.slots[i].player != null) order.add(i);
         if (order.isEmpty()) return;
 
-        PadLayout layout = layout(theme);
+        PadLayout layout = LAYOUTS.computeIfAbsent(theme.id(), ignored -> layout(theme));
         Map<HudButton, Integer> widths = new HashMap<>();
         for (var cell : layout.face()) widths.computeIfAbsent(cell.button(), b -> Math.max(9, Math.round(font.getWidth(b.label()) * .72f) + 5));
         for (var b : layout.middle()) widths.computeIfAbsent(b, button -> Math.max(9, Math.round(font.getWidth(button.label()) * .72f) + 5));

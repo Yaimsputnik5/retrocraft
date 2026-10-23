@@ -14,6 +14,7 @@ final class AudioStreams implements AutoCloseable {
     }
     private final Map<UUID, Stream> streams = new HashMap<>();
     void accept(MinecraftClient client, Packets.Audio packet) {
+        if (ClientPreferences.get().volume == 0) return;
         if (!Float.isFinite(packet.gain()) || packet.gain() < 0 || packet.gain() > 1) return;
         Stream stream = streams.computeIfAbsent(packet.instance(), ignored -> new Stream());
         if (packet.sequence() <= stream.sequence) return;

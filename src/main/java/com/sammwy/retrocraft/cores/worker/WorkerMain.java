@@ -21,6 +21,7 @@ public final class WorkerMain {
     private boolean hardwareRequested;
     private boolean captureVideo = true, captureAudio = true;
     private FrameCodec.Frame frame = new FrameCodec.Frame(256, 240, new byte[256 * 240 * 3]);
+    private final VideoConverter converter = new VideoConverter();
     private final ByteArrayOutputStream audio = new ByteArrayOutputStream();
 
     // Keep strong references: JNA callbacks must live as long as the native core.
@@ -138,8 +139,10 @@ public final class WorkerMain {
                 try { command = in.readUnsignedByte(); } catch (EOFException ex) { break; }
                 if (command == WorkerProtocol.QUIT) { saveBattery(); break; }
                 if (command == WorkerProtocol.SAVE) {
-                    save();
+                    save(); saveBattery();
                     out.writeBoolean(true);
+                } else if (command == WorkerProtocol.BATTERY) {
+                    saveBattery(); out.writeBoolean(true);
                 } else if (command == WorkerProtocol.RUN) {
                     for (int port = 0; port < input.length; port++) input[port] = in.readUnsignedShort();
                     int flags = in.readUnsignedByte();
@@ -223,44 +226,9 @@ public final class WorkerMain {
     }
 
     private void video(Pointer pixels, int width, int height, Libretro.SizeT pitch) {
-        if (!captureVideo) return;
-        if (pixels == null) return; // libretro frame duplication
+        if (!captureVideo || pixels == null) return; // libretro frame duplication
         if (Pointer.nativeValue(pixels) == -1L) throw new IllegalStateException("Hardware frame requires a graphics context");
-        if (width < 1 || height < 1 || width > 4096 || height > 4096)
-            throw new IllegalStateException("Unsupported video geometry");
-        int bpp = pixelFormat == 1 ? 4 : 2;
-        if (pitch.longValue() < (long) width * bpp || pitch.longValue() > 32768) throw new IllegalStateException("Invalid video pitch");
-        double scale = Math.min(1, Math.min((double) FrameCodec.MAX_WIDTH / width, (double) FrameCodec.MAX_HEIGHT / height));
-        int[] size = displaySize(Math.max(1, (int) Math.floor(width * scale)), Math.max(1, (int) Math.floor(height * scale)), aspectRatio);
-        int outputWidth = size[0], outputHeight = size[1];
-        byte[] rgb = new byte[outputWidth * outputHeight * 3];
-        for (int y = 0; y < outputHeight; y++) {
-            for (int x = 0; x < outputWidth; x++) {
-                long offset = (long) ((int) ((long) y * height / outputHeight)) * pitch.longValue() + (long) ((int) ((long) x * width / outputWidth)) * bpp;
-                int p = bpp == 4 ? pixels.getInt(offset) : Short.toUnsignedInt(pixels.getShort(offset));
-                int r, g, b;
-                if (pixelFormat == 1) { r = (p >>> 16) & 255; g = (p >>> 8) & 255; b = p & 255; }
-                else {
-                    int greenBits = pixelFormat == 2 ? 6 : 5;
-                    r = ((p >>> (greenBits + 5)) & 31) * 255 / 31;
-                    g = ((p >>> 5) & ((1 << greenBits) - 1)) * 255 / ((1 << greenBits) - 1);
-                    b = (p & 31) * 255 / 31;
-                }
-                int target = (y * outputWidth + x) * 3;
-                rgb[target] = (byte) r; rgb[target + 1] = (byte) g; rgb[target + 2] = (byte) b;
-            }
-        }
-        frame = new FrameCodec.Frame(outputWidth, outputHeight, rgb);
-    }
-
-    // Cores report the intended display aspect in av_info; resample the whole frame so
-    // surfaces never stretch it (e.g. N64 VI output vs its real 4:3 signal).
-    static int[] displaySize(int width, int height, double aspectRatio) {
-        if (aspectRatio > 0 && Math.abs((double) width / height / aspectRatio - 1) > 0.02) {
-            if ((double) width / height > aspectRatio) width = Math.max(1, (int) Math.round(height * aspectRatio));
-            else height = Math.max(1, (int) Math.round(width / aspectRatio));
-        }
-        return new int[]{width, height};
+        frame = converter.convert(pixels, width, height, pitch.longValue(), pixelFormat, aspectRatio);
     }
 
     private void sample(short left, short right) {

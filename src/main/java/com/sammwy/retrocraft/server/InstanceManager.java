@@ -45,6 +45,7 @@ public final class InstanceManager implements AutoCloseable {
     private Path workerJar;
     private CoreManager cores;
     private final Map<String, CoreManager.Prepared> preparedCores = new ConcurrentHashMap<>();
+    private final Map<UUID, Packets.Preferences> preferences = new HashMap<>();
     private final Map<UUID, Integer> clientGenerations = new HashMap<>();
     private final Set<UUID> readyClients = new HashSet<>();
     private final Set<UUID> verifiedClients = new HashSet<>(), biosReadyClients = new HashSet<>();
@@ -125,6 +126,7 @@ public final class InstanceManager implements AutoCloseable {
         boolean encodingVideo;
         int videoGeneration;
         /** Controller slots; only the first one is usable on handhelds. Slot 0 also holds the emulation lease. */
+        volatile int[] inputMasks = new int[WorkerProtocol.PORTS];
         final InputSource[] pads = new InputSource[WorkerProtocol.PORTS];
         volatile boolean wantsVideo, wantsAudio, observed, finished, destroy;
         volatile long invalidSince;
@@ -600,6 +602,7 @@ public final class InstanceManager implements AutoCloseable {
         int slot = slotOf(session, player);
         if (slot < 0) return;
         session.pads[slot] = null;
+        publishInputs(session, System.nanoTime());
         if (slot == 0) returnOwnership(session);
         broadcastPad(session, slot, 0);
         notifyRoles(session);
@@ -618,7 +621,13 @@ public final class InstanceManager implements AutoCloseable {
         }
         releaseInput(player);
     }
+    public void preferences(ServerPlayerEntity player, Packets.Preferences packet) {
+        preferences.put(player.getUuid(), packet);
+    }
+    private Packets.Preferences preferences(UUID player) { return preferences.getOrDefault(player, Packets.Preferences.DEFAULT); }
+
     public void disconnect(UUID player) {
+        preferences.remove(player);
         for (Session session : sessions.values()) if (player.equals(session.ownership.owner())) revoke(session, false);
         readyClients.remove(player); verifiedClients.remove(player); biosReadyClients.remove(player);
         clientGenerations.remove(player); outbound.remove(player); romUploads.remove(player);
@@ -657,6 +666,7 @@ public final class InstanceManager implements AutoCloseable {
                     int mask = packet.buttons() & 0xffff;
                     if (input.buttons != mask) { input.buttons = mask; broadcastPad(session, slot, mask); }
                     input.lastSeen = now;
+                    publishInputs(session, now);
                 }
             }
             case Packets.CLOSE -> { if (video != null) detachVideo(playerId); }
@@ -744,7 +754,17 @@ public final class InstanceManager implements AutoCloseable {
         }
     }
 
+    private static void publishInputs(Session session, long now) {
+        int[] masks = new int[WorkerProtocol.PORTS];
+        for (int port = 0; port < masks.length; port++) {
+            InputSource source = session.pads[port];
+            if (source != null && now - source.lastSeen < TimeUnit.SECONDS.toNanos(2)) masks[port] = source.buttons;
+        }
+        if (!Arrays.equals(masks, session.inputMasks)) session.inputMasks = masks;
+    }
+
     private void updateSubscriptions(Session session, long now) {
+        publishInputs(session, now);
         boolean valid = session.host.valid() && session.data.id().equals(session.host.instance());
         if (valid) session.invalidSince = 0; else if (session.invalidSince == 0) session.invalidSince = now;
         // A handheld being dropped or picked up keeps playing while discovery swaps the host.
@@ -759,21 +779,27 @@ public final class InstanceManager implements AutoCloseable {
                 detachVideo(id);
             }
         }
-        Set<UUID> listeners = new HashSet<>();
+        Set<UUID> listeners = new HashSet<>(), viewers = new HashSet<>();
         boolean inWorld = inWorld(session);
         if (grace && session.failure == null) for (var player : server.getPlayerManager().getPlayerList()) {
-            if (player.getWorld() != session.host.world() || !ServerPlayNetworking.canSend(player, Packets.Audio.ID)) continue;
-            double distance = player.getPos().distanceTo(session.host.soundPosition());
-            if (distance >= config.audioRadius) continue;
-            listeners.add(player.getUuid());
-            session.audioWatchers.computeIfAbsent(player.getUuid(), ignored -> new AudioWatcher(1)).gain = (float) (1 - distance / config.audioRadius);
-            // Anyone near a television or arcade cabinet sees the picture on the block without opening the play screen.
-            if (inWorld && !session.videoWatchers.containsKey(player.getUuid())) {
-                VideoWatcher watcher = new VideoWatcher(); watcher.ambient = true;
-                session.videoWatchers.put(player.getUuid(), watcher); session.forceKeyframe = true;
+            if (player.getWorld() != session.host.world()) continue;
+            double distanceSquared = player.getPos().squaredDistanceTo(session.host.soundPosition());
+            if (distanceSquared >= (double) config.audioRadius * config.audioRadius) continue;
+            UUID id = player.getUuid();
+            var personal = preferences(id);
+            if (personal.audio() && ServerPlayNetworking.canSend(player, Packets.Audio.ID)) {
+                listeners.add(id);
+                session.audioWatchers.computeIfAbsent(id, ignored -> new AudioWatcher(1)).gain = (float) (1 - Math.sqrt(distanceSquared) / config.audioRadius);
+            }
+            if (inWorld && personal.worldVideo() && ServerPlayNetworking.canSend(player, Packets.Video.ID)) {
+                viewers.add(id);
+                if (!session.videoWatchers.containsKey(id)) {
+                    VideoWatcher watcher = new VideoWatcher(); watcher.ambient = true;
+                    session.videoWatchers.put(id, watcher); session.forceKeyframe = true;
+                }
             }
         }
-        for (var entry : List.copyOf(session.videoWatchers.entrySet())) if (entry.getValue().ambient && (!inWorld || !listeners.contains(entry.getKey()))) {
+        for (var entry : List.copyOf(session.videoWatchers.entrySet())) if (entry.getValue().ambient && !viewers.contains(entry.getKey())) {
             session.videoWatchers.remove(entry.getKey());
             if (session.videoWatchers.isEmpty()) resetVideo(session);
         }
@@ -792,9 +818,6 @@ public final class InstanceManager implements AutoCloseable {
     }
 
     private void stream(Session session, long now) {
-        if (now + 1_000_000L < session.nextStream) return;
-        long period = 1_000_000_000L / config.streamFps;
-        session.nextStream = Math.max(session.nextStream, now - period) + period;
         WorkerProcess.Output output = session.media.drain();
         if (output == null) return;
         if (output.frame() != null) {
@@ -809,9 +832,12 @@ public final class InstanceManager implements AutoCloseable {
             var player = server.getPlayerManager().getPlayer(listener.getKey());
             if (player != null && !session.ownership.clientMayRun(player.getUuid(), session.ownership.epoch())) { send(player, new Packets.Audio(session.data.id(), session.audioSequence, session.sampleRate, watcher.gain, output.audio())); watcher.lastSent = session.audioSequence; }
         }
-        if (output.frame() == null || session.videoWatchers.isEmpty() || session.encodingVideo) return;
+        if (now + 1_000_000L < session.nextStream || session.lastFrame == null || session.videoWatchers.isEmpty() || session.encodingVideo) return;
+        long period = 1_000_000_000L / Math.min(20, config.streamFps);
+        session.nextStream = Math.max(session.nextStream, now - period) + period;
         List<UUID> targets = new ArrayList<>();
         for (var entry : session.videoWatchers.entrySet()) {
+            if (session.ownership.clientMayRun(entry.getKey(), session.ownership.epoch())) continue;
             VideoWatcher watcher = entry.getValue();
             if (watcher.lastSent - watcher.lastAcknowledged >= 4) {
                 watcher.needsKeyframe = true;
@@ -827,7 +853,7 @@ public final class InstanceManager implements AutoCloseable {
         session.encodingVideo = true;
         int generation = session.videoGeneration;
         FrameCodec.Encoder encoder = session.encoder;
-        FrameCodec.Frame picture = output.frame();
+        FrameCodec.Frame picture = session.lastFrame;
         Thread.ofVirtual().name("retrocraft-video-encode").start(() -> {
             try {
                 var frame = encoder.encode(picture, key);
@@ -890,7 +916,7 @@ public final class InstanceManager implements AutoCloseable {
         if (carrier == null) return null;
         Set<ServerPlayerEntity> audience = new HashSet<>(PlayerLookup.tracking(carrier));
         if (carrier instanceof ServerPlayerEntity player) audience.add(player);
-        audience.removeIf(player -> !ServerPlayNetworking.canSend(player, Packets.Thumbnail.ID));
+        audience.removeIf(player -> !preferences(player.getUuid()).thumbnails() || !ServerPlayNetworking.canSend(player, Packets.Thumbnail.ID));
         return audience.isEmpty() ? null : audience;
     }
 
@@ -961,7 +987,8 @@ public final class InstanceManager implements AutoCloseable {
                 try (WorkerProcess process = openServerProcess(session, core, rom, state)) {
                     session.process = process; session.sampleRate = process.sampleRate();
                     long period = Math.round(1_000_000_000d / process.fps());
-                    long next = System.nanoTime();
+                    long next = System.nanoTime(), nextVideo = next;
+                    long nextSave = next + TimeUnit.SECONDS.toNanos(config.autosaveIntervalSeconds);
                     while (!stopping && !session.destroy && !session.handoffStop && session.ownership.serverMayRun() && serverMayEmulate(session)
                             && (session.observed || !process.supportsSnapshots())) {
                         if (!session.observed) {
@@ -970,13 +997,15 @@ public final class InstanceManager implements AutoCloseable {
                             next = System.nanoTime();
                             continue;
                         }
-                        int[] masks = new int[WorkerProtocol.PORTS];
-                        long polled = System.nanoTime();
-                        for (int port = 0; port < masks.length; port++) {
-                            InputSource input = session.pads[port];
-                            masks[port] = input != null && polled - input.lastSeen < TimeUnit.SECONDS.toNanos(2) ? input.buttons : 0;
+                        long before = System.nanoTime();
+                        boolean video = session.thumbDue || session.wantsVideo && before >= nextVideo;
+                        if (video) nextVideo = before + 1_000_000_000L / Math.min(20, config.streamFps);
+                        session.media.offer(process.advance(session.inputMasks, video, session.wantsAudio), process.sampleRate());
+                        if (before >= nextSave) {
+                            if (process.supportsSnapshots()) process.save(); else process.saveBattery();
+                            persistSave(session);
+                            nextSave = System.nanoTime() + TimeUnit.SECONDS.toNanos(config.autosaveIntervalSeconds);
                         }
-                        session.media.offer(process.advance(masks, session.wantsVideo || session.thumbDue, session.wantsAudio), process.sampleRate());
                         long now = System.nanoTime();
                         next += period;
                         if (next < now - period * 4) next = now;
@@ -1109,9 +1138,10 @@ public final class InstanceManager implements AutoCloseable {
         try {
             boolean global = config.saveMode == RetrocraftConfig.SaveMode.GLOBAL;
             Path battery = store.directory(session.data.id()).resolve("battery.sav");
-            if (session.poweredOff && Files.isRegularFile(battery))
+            if (Files.isRegularFile(battery))
                 saves.persistBattery(session.data.owner(), global, session.data.gameId(), battery);
-            else saves.persist(session.data.owner(), global, session.data.gameId(), store.snapshot(session.data.id()), !session.poweredOff);
+            if (!session.poweredOff || !Files.isRegularFile(battery))
+                saves.persist(session.data.owner(), global, session.data.gameId(), store.snapshot(session.data.id()), !session.poweredOff);
         }
         catch (IOException ex) { Retrocraft.LOG.warn("Cannot persist save for {}", session.data.id()); }
     }
@@ -1332,7 +1362,7 @@ public final class InstanceManager implements AutoCloseable {
         UUID owner = session.ownership.owner();
         if (owner == null || session.ownership.mode() != Ownership.Mode.CLIENT) return;
         boolean audio = session.audioWatchers.keySet().stream().anyMatch(id -> !id.equals(owner));
-        boolean video = session.host.definition().type() == ConsoleType.DOCKED || session.videoWatchers.keySet().stream().anyMatch(id -> !id.equals(owner));
+        boolean video = session.videoWatchers.keySet().stream().anyMatch(id -> !id.equals(owner));
         AudioWatcher listener = session.audioWatchers.get(owner);
         float gain = listener == null ? 0 : listener.gain;
         if (session.demandEpoch == session.ownership.epoch() && audio == session.relayAudio && video == session.relayVideo && Math.abs(gain - session.ownerGain) < .02f) return;
@@ -1501,7 +1531,7 @@ public final class InstanceManager implements AutoCloseable {
             catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
             if (session.thread.isAlive()) { Retrocraft.LOG.error("Console {} exceeded shutdown deadline", session.data.id()); if (session.process != null) session.process.abort(); session.thread.interrupt(); }
         }
-        for (Session session : sessions.values()) if (!session.destroy && session.thread != null && !session.thread.isAlive()) persistSave(session);
+        for (Session session : sessions.values()) if (!session.destroy && (session.thread == null || !session.thread.isAlive())) persistSave(session);
         sessions.clear(); videoWatching.clear(); inputSessions.clear(); failedDiscovery.clear(); outbound.clear(); readyClients.clear(); callbacks.clear(); romUploads.clear();
     }
 }

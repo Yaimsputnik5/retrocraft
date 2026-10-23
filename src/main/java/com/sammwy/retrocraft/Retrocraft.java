@@ -72,6 +72,9 @@ public final class Retrocraft implements ModInitializer {
                     }
                 }).build());
         Packets.register();
+        ServerPlayNetworking.registerGlobalReceiver(Packets.Preferences.ID, (packet, context) -> {
+            if (instances != null) instances.preferences(context.player(), packet);
+        });
         HybridPackets.register();
         SettingsPackets.register();
         ServerPlayNetworking.registerGlobalReceiver(HybridPackets.Status.ID, (packet, context) -> { if (instances != null) instances.coreStatus(context.player(), packet); });

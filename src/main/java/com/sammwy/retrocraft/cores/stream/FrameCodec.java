@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
+import java.util.zip.Inflater;
 
 /** RGB888, 8x8 changed tiles, zlib. A delta always names its exact predecessor. */
 public final class FrameCodec {
@@ -53,6 +54,14 @@ public final class FrameCodec {
                     }
                 }
             }
+            // Dense tile changes cost more than a full RGB frame; switch without a second tile scan.
+            if (!key && raw.size() >= frame.rgb.length + 4) {
+                key = true;
+                raw.reset();
+                try (DataOutputStream out = new DataOutputStream(raw)) {
+                    out.writeShort(frame.width); out.writeShort(frame.height); out.write(frame.rgb);
+                }
+            }
             ByteArrayOutputStream compressed = new ByteArrayOutputStream();
             Deflater deflater = new Deflater(Deflater.BEST_SPEED);
             try (DeflaterOutputStream out = new DeflaterOutputStream(compressed, deflater)) { raw.writeTo(out); }
@@ -77,14 +86,22 @@ public final class FrameCodec {
             // Bounded decompression prevents compressed packets from allocating arbitrary memory.
             byte[] raw;
             int limit = MAX_WIDTH * MAX_HEIGHT * 3 + (MAX_WIDTH / TILE) * (MAX_HEIGHT / TILE) * 2 + 4;
-            try (InflaterInputStream in = new InflaterInputStream(new ByteArrayInputStream(packet.data))) {
+            Inflater inflater = new Inflater();
+            var compressed = new ByteArrayInputStream(packet.data);
+            try (InflaterInputStream in = new InflaterInputStream(compressed, inflater)) {
                 raw = in.readNBytes(limit + 1);
                 if (raw.length > limit) throw new IOException("Frame expands beyond limit");
-            }
+                if (!inflater.finished() || inflater.getRemaining() != 0 || compressed.available() != 0)
+                    throw new IOException("Trailing or incomplete compressed frame");
+            } finally { inflater.end(); }
             try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(raw))) {
                 int width = in.readUnsignedShort(), height = in.readUnsignedShort();
                 try { checkSize(width, height); } catch (IllegalArgumentException ex) { throw new IOException(ex); }
                 if (!packet.keyframe && (width != frame.width || height != frame.height)) throw new IOException("Delta geometry changed");
+                if (!packet.keyframe && in.available() == 0) {
+                    sequence = packet.sequence;
+                    return frame; // Empty delta: preserve the immutable picture and avoid a clone/GPU upload.
+                }
                 byte[] rgb = packet.keyframe ? new byte[width * height * 3] : frame.rgb.clone();
                 if (packet.keyframe) in.readFully(rgb);
                 else {

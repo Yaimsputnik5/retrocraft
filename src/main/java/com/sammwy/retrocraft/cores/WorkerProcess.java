@@ -51,8 +51,7 @@ public final class WorkerProcess implements AutoCloseable {
         String token = UUID.randomUUID().toString();
         Files.createDirectories(state.getParent());
         if (bios != null) Files.createDirectories(bios);
-        String executable = System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java";
-        Path java = Path.of(System.getProperty("java.home"), "bin", executable);
+        Path java = Path.of(javaExecutable());
         Process child = null;
         Socket connection = null;
         try (ServerSocket listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
@@ -140,6 +139,11 @@ public final class WorkerProcess implements AutoCloseable {
             out.flush();
             if (!in.readBoolean()) throw new IOException("Snapshot rejected");
         } catch (EOFException ex) { throw workerExited("saving a snapshot", ex); }
+    }
+
+    public void saveBattery() throws IOException {
+        out.writeByte(WorkerProtocol.BATTERY); out.flush();
+        if (!in.readBoolean()) throw new IOException("Battery save rejected");
     }
 
     private IOException workerExited(String stage, EOFException cause) {
