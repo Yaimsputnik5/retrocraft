@@ -44,10 +44,13 @@ public final class WorkerMain {
         return 0;
     }
 
-    private WorkerMain(String corePath, Path statePath) throws IOException {
+    private final Memory systemDir;
+
+    private WorkerMain(String corePath, Path statePath, Path bios) throws IOException {
         this.statePath = statePath;
         Files.createDirectories(statePath.getParent());
         directory = cString(statePath.getParent().toAbsolutePath().toString());
+        systemDir = cString((bios == null ? statePath.getParent() : bios).toAbsolutePath().toString());
         core = Native.load(corePath, Libretro.class);
         if (core.retro_api_version() != 1) throw new IOException("Unsupported libretro ABI");
     }
@@ -64,14 +67,15 @@ public final class WorkerMain {
             return;
         }
         // Never use stdout for IPC: native cores can print to it. Loopback works on all three OSes.
-        if (args.length != 5) { System.err.println("Expected core, ROM, snapshot, port, token"); System.exit(2); }
+        if (args.length < 5) { System.err.println("Expected core, ROM, snapshot, port, token"); System.exit(2); }
+        Path bios = args.length > 5 && !args[5].isBlank() ? Path.of(args[5]) : null;
         try (Socket socket = new Socket(InetAddress.getLoopbackAddress(), Integer.parseInt(args[3]));
              DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
              DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()))) {
             socket.setTcpNoDelay(true);
             out.writeUTF(args[4]);
             out.flush();
-            new WorkerMain(args[0], Path.of(args[2])).run(Path.of(args[1]), in, out);
+            new WorkerMain(args[0], Path.of(args[2]), bios).run(Path.of(args[1]), in, out);
         } catch (Throwable ex) {
             ex.printStackTrace(System.err);
             System.exit(1);
@@ -149,7 +153,8 @@ public final class WorkerMain {
             case 2 -> data.setByte(0, (byte) 0); // cropped overscan
             case 3 -> data.setByte(0, (byte) 1); // duplicate frame support
             case 7 -> shutdown = true;
-            case 9, 31 -> data.setPointer(0, directory);
+            case 9 -> data.setPointer(0, systemDir);   // GET_SYSTEM_DIRECTORY: BIOS/firmware tree
+            case 31 -> data.setPointer(0, directory);  // GET_SAVE_DIRECTORY
             case 10 -> {
                 int format = data.getInt(0);
                 if (format < 0 || format > 2) return 0;

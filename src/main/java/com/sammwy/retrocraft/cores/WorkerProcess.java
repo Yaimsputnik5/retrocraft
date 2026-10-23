@@ -41,8 +41,13 @@ public final class WorkerProcess implements AutoCloseable {
     private final int sampleRate;
 
     public WorkerProcess(Path workerJar, Path core, Path rom, Path state, Path log) throws IOException {
+        this(workerJar, core, rom, state, state.getParent(), log);
+    }
+
+    public WorkerProcess(Path workerJar, Path core, Path rom, Path state, Path bios, Path log) throws IOException {
         String token = UUID.randomUUID().toString();
         Files.createDirectories(state.getParent());
+        if (bios != null) Files.createDirectories(bios);
         String executable = System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java";
         Path java = Path.of(System.getProperty("java.home"), "bin", executable);
         Process child = null;
@@ -51,7 +56,7 @@ public final class WorkerProcess implements AutoCloseable {
             listener.setSoTimeout(20_000);
             child = new ProcessBuilder(java.toString(), "-Xms16m", "-Xmx96m", "-jar", workerJar.toAbsolutePath().toString(),
                     core.toAbsolutePath().toString(), rom.toAbsolutePath().toString(), state.toAbsolutePath().toString(),
-                    Integer.toString(listener.getLocalPort()), token)
+                    Integer.toString(listener.getLocalPort()), token, bios == null ? "" : bios.toAbsolutePath().toString())
                     .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile())).start();
             connection = listener.accept();
             connection.setSoTimeout(15_000);

@@ -49,7 +49,7 @@ public final class InstanceManager implements AutoCloseable {
     private Set<String> requiredCores = Set.of();
     private final Set<String> preparingCores = new HashSet<>();
     private List<RomCatalog.Entry> publishedCatalog = List.of();
-    private final RomLibrary romLibrary;
+    private final RomLibrary romLibrary, biosLibrary;
     private final Map<UUID, Upload> romUploads = new HashMap<>();
     private boolean pendingScan;
     private int coreGeneration;
@@ -145,6 +145,7 @@ public final class InstanceManager implements AutoCloseable {
         workerJar = WorkerRuntime.extract(RetrocraftConfig.serverCache().resolve("runtime"));
         cores = new CoreManager(RetrocraftConfig.serverCache().resolve("cores"), workerJar);
         romLibrary = new RomLibrary(RetrocraftConfig.root().resolve("roms"));
+        biosLibrary = new RomLibrary(RetrocraftConfig.root().resolve("bios"));
         roms = loadLibrary(false);
         libraryUpdated();
         cleanOrphanSaves();
@@ -215,7 +216,8 @@ public final class InstanceManager implements AutoCloseable {
                 if (session.thread == null) session.failure = null;
             }
         }
-        Set<String> needed = roms.games().stream().map(game -> config.coreId(game.cartridge().id().toString())).collect(java.util.stream.Collectors.toUnmodifiableSet());
+        Set<String> needed = roms.games().stream().map(game -> config.coreId(game.cartridge().id().toString()))
+                .filter(config::coreEnabled).collect(java.util.stream.Collectors.toUnmodifiableSet());
         boolean coresChanged = coreGeneration == 0 || !requiredCores.equals(needed);
         boolean catalogChanged = !publishedCatalog.equals(roms.catalog());
         requiredCores = needed; publishedCatalog = roms.catalog();
@@ -271,13 +273,14 @@ public final class InstanceManager implements AutoCloseable {
     /** RomManagementPacket: directory listings and library mutations, one request id per response. */
     public void romAction(ServerPlayerEntity player, SettingsPackets.RomAction packet) {
         if (!operator(player)) return;
+        boolean bios = packet.area() == SettingsPackets.AREA_BIOS;
         try {
             switch (packet.action()) {
-                case SettingsPackets.LIST -> sendRomList(player, packet.request(), packet.path());
-                case SettingsPackets.DELETE -> { romLibrary.delete(packet.path()); romChanged(player, packet.request()); }
-                case SettingsPackets.RENAME -> { romLibrary.rename(packet.path(), packet.target()); romChanged(player, packet.request()); }
-                case SettingsPackets.MOVE -> { romLibrary.move(packet.path(), packet.target()); romChanged(player, packet.request()); }
-                case SettingsPackets.MKDIR -> { romLibrary.mkdir(packet.path()); romChanged(player, packet.request()); }
+                case SettingsPackets.LIST -> sendRomList(player, packet.request(), packet.path(), bios);
+                case SettingsPackets.DELETE -> { library(bios).delete(packet.path()); romChanged(player, packet.request(), !bios); }
+                case SettingsPackets.RENAME -> { romLibrary.rename(packet.path(), packet.target()); romChanged(player, packet.request(), !bios); }
+                case SettingsPackets.MOVE -> { romLibrary.move(packet.path(), packet.target()); romChanged(player, packet.request(), !bios); }
+                case SettingsPackets.MKDIR -> { romLibrary.mkdir(packet.path()); romChanged(player, packet.request(), !bios); }
                 case SettingsPackets.RESCAN -> { rescan(); send(player, new SettingsPackets.RomEvent(packet.request(), SettingsPackets.ACTION, true, "")); }
                 default -> send(player, SettingsPackets.RomEvent.fail(packet.request(), "Unknown action"));
             }
@@ -285,21 +288,111 @@ public final class InstanceManager implements AutoCloseable {
             send(player, SettingsPackets.RomEvent.fail(packet.request(), ex.getMessage() == null ? "Operation failed" : ex.getMessage()));
         }
     }
-    private void romChanged(ServerPlayerEntity player, int request) {
+    private RomLibrary library(boolean bios) { return bios ? biosLibrary : romLibrary; }
+    private void romChanged(ServerPlayerEntity player, int request, boolean rescan) {
         send(player, new SettingsPackets.RomEvent(request, SettingsPackets.ACTION, true, ""));
-        rescan();
+        if (rescan) rescan();
     }
-    private void sendRomList(ServerPlayerEntity player, int request, String path) throws IOException {
-        var listing = romLibrary.list(path);
+    private void sendRomList(ServerPlayerEntity player, int request, String path, boolean bios) throws IOException {
+        var listing = library(bios).list(path);
         send(player, new SettingsPackets.RomList(request, path, listing.truncated(),
                 listing.entries().stream().map(e -> new SettingsPackets.RomList.Entry(e.name(), e.directory(), e.size())).toList()));
     }
 
+    /** Core library management: state listing, on-demand download/delete, enable toggles and BIOS removal. */
+    public void coreAction(ServerPlayerEntity player, SettingsPackets.CoreAction packet) {
+        if (!operator(player)) return;
+        String coreId = packet.coreId();
+        try {
+            switch (packet.action()) {
+                case SettingsPackets.LIST -> sendCoreList(player, packet.request());
+                case SettingsPackets.CORE_DOWNLOAD -> {
+                    KnownCores.get(coreId); // allowlist check before any IO
+                    if (preparedCores.containsKey(coreId)) { sendCoreList(player, packet.request()); return; }
+                    preparingCores.add(coreId);
+                    sendCoreList(player, packet.request()); // first push shows the in-flight download
+                    Thread.ofVirtual().name("retrocraft-core-download-" + coreId).start(() -> {
+                        try {
+                            var prepared = cores.prepare(coreId);
+                            callbacks.add(() -> {
+                                preparingCores.remove(coreId); preparedCores.put(coreId, prepared);
+                                sendCoreList(player, packet.request());
+                                send(player, new SettingsPackets.RomEvent(packet.request(), SettingsPackets.ACTION, true, ""));
+                            });
+                        } catch (Exception ex) {
+                            callbacks.add(() -> {
+                                preparingCores.remove(coreId);
+                                send(player, SettingsPackets.RomEvent.fail(packet.request(), ex.getMessage() == null ? "Download failed" : ex.getMessage()));
+                            });
+                        }
+                    });
+                }
+                case SettingsPackets.CORE_DELETE -> {
+                    deleteCore(coreId);
+                    send(player, new SettingsPackets.RomEvent(packet.request(), SettingsPackets.ACTION, true, ""));
+                    sendCoreList(player, packet.request());
+                }
+                case SettingsPackets.CORE_ENABLE, SettingsPackets.CORE_DISABLE -> {
+                    KnownCores.get(coreId);
+                    boolean enable = packet.action() == SettingsPackets.CORE_ENABLE;
+                    config.enabledCores = new ArrayList<>(config.enabledCores == null ? List.of() : config.enabledCores);
+                    if (enable == config.enabledCores.contains(coreId)) { sendCoreList(player, packet.request()); return; }
+                    if (enable) config.enabledCores.add(coreId); else config.enabledCores.remove(coreId);
+                    config.save(); applyConfig(); rescan();
+                    send(player, new SettingsPackets.RomEvent(packet.request(), SettingsPackets.ACTION, true, ""));
+                    sendCoreList(player, packet.request());
+                }
+                case SettingsPackets.BIOS_DELETE -> {
+                    biosLibrary.delete(coreId + "/" + packet.target());
+                    send(player, new SettingsPackets.RomEvent(packet.request(), SettingsPackets.ACTION, true, ""));
+                    sendCoreList(player, packet.request());
+                }
+                default -> send(player, SettingsPackets.RomEvent.fail(packet.request(), "Unknown core action"));
+            }
+        } catch (IOException | RuntimeException ex) {
+            send(player, SettingsPackets.RomEvent.fail(packet.request(), ex.getMessage() == null ? "Operation failed" : ex.getMessage()));
+        }
+    }
+
+    private void sendCoreList(ServerPlayerEntity player, int request) {
+        var platform = KnownCores.Platform.current();
+        List<SettingsPackets.CoreList.Entry> entries = new ArrayList<>();
+        for (var core : KnownCores.all()) {
+            Path dir = RetrocraftConfig.serverCache().resolve("cores").resolve(KnownCores.POOL).resolve(platform.key()).resolve(core.id());
+            Path binary = dir.resolve(KnownCores.filename(core.id(), platform));
+            boolean installed = Files.isRegularFile(binary) && Files.isRegularFile(dir.resolve("receipt.properties"));
+            long size = 0;
+            try { if (installed) size = Files.size(binary); } catch (IOException ignored) { }
+            List<SettingsPackets.CoreList.Bios> bios = new ArrayList<>();
+            if (core.needsBios()) {
+                try {
+                    for (var file : biosLibrary.list(core.id()).entries())
+                        if (!file.directory()) bios.add(new SettingsPackets.CoreList.Bios(file.name(), file.size()));
+                } catch (IOException ignored) { }
+            }
+            entries.add(new SettingsPackets.CoreList.Entry(core.id(), core.display(), core.needsBios(), installed,
+                    config.coreEnabled(core.id()), preparingCores.contains(core.id()), size, List.copyOf(bios)));
+        }
+        send(player, new SettingsPackets.CoreList(request, List.copyOf(entries)));
+    }
+
+    private void deleteCore(String id) throws IOException {
+        KnownCores.get(id);
+        preparedCores.remove(id); preparingCores.remove(id);
+        Path dir = RetrocraftConfig.serverCache().resolve("cores").resolve(KnownCores.POOL)
+                .resolve(KnownCores.Platform.current().key()).resolve(id).toAbsolutePath().normalize();
+        Path pool = RetrocraftConfig.serverCache().resolve("cores").resolve(KnownCores.POOL).toAbsolutePath().normalize();
+        if (!dir.startsWith(pool)) throw new IOException("Invalid core path");
+        if (Files.exists(dir)) try (var walk = Files.walk(dir)) {
+            for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
+        }
+    }
+
     private static final class Upload {
-        final int id; final String dir, name, sha256; final long total;
+        final int id; final int area; final String dir, name, sha256; final long total;
         final ByteArrayOutputStream data; long lastActivity;
-        Upload(int id, String dir, String name, long total, String sha256) {
-            this.id = id; this.dir = dir; this.name = name; this.sha256 = sha256; this.total = total;
+        Upload(int id, int area, String dir, String name, long total, String sha256) {
+            this.id = id; this.area = area; this.dir = dir; this.name = name; this.sha256 = sha256; this.total = total;
             data = new ByteArrayOutputStream((int) Math.min(total, 1 << 20));
             lastActivity = System.nanoTime();
         }
@@ -320,8 +413,8 @@ public final class InstanceManager implements AutoCloseable {
             if (romUploads.size() >= 8 && !romUploads.containsKey(player.getUuid())) throw new IOException("Too many concurrent uploads");
             if (packet.total() < 1 || packet.total() > Math.min((long) config.maxRomSizeMiB * 1024 * 1024, BlobTransfer.MAX_ROM)) throw new IOException("File outside the ROM size limit");
             if (!packet.sha256().matches("[0-9a-f]{64}")) throw new IOException("Invalid checksum");
-            romLibrary.destination(packet.dir(), packet.name()); // names, folder and collisions checked up front
-            romUploads.put(player.getUuid(), new Upload(packet.id(), packet.dir(), packet.name(), packet.total(), packet.sha256()));
+            library(packet.area() == SettingsPackets.AREA_BIOS).destination(packet.dir(), packet.name()); // names, folder and collisions checked up front
+            romUploads.put(player.getUuid(), new Upload(packet.id(), packet.area(), packet.dir(), packet.name(), packet.total(), packet.sha256()));
             send(player, new SettingsPackets.RomEvent(packet.id(), SettingsPackets.UPLOAD_ACCEPT, true, ""));
         } catch (IOException | RuntimeException ex) {
             send(player, new SettingsPackets.RomEvent(packet.id(), SettingsPackets.UPLOAD_FAIL, true, ex.getMessage() == null ? "Upload rejected" : ex.getMessage()));
@@ -337,10 +430,10 @@ public final class InstanceManager implements AutoCloseable {
             if (upload.data.size() < upload.total) return;
             byte[] bytes = upload.data.toByteArray(); romUploads.remove(player.getUuid());
             if (!BlobTransfer.hash(bytes).equals(upload.sha256)) throw new IOException("Upload checksum mismatch");
-            SaveStates.writeAtomic(romLibrary.destination(upload.dir, upload.name), bytes);
+            SaveStates.writeAtomic(library(upload.area == SettingsPackets.AREA_BIOS).destination(upload.dir, upload.name), bytes);
             Retrocraft.LOG.info("{} uploaded ROM {}", player.getGameProfile().getName(), upload.name);
             send(player, new SettingsPackets.RomEvent(packet.id(), SettingsPackets.UPLOAD_DONE, true, upload.name));
-            rescan();
+            if (upload.area != SettingsPackets.AREA_BIOS) rescan();
         } catch (IOException | RuntimeException ex) {
             romUploads.remove(player.getUuid());
             send(player, new SettingsPackets.RomEvent(packet.id(), SettingsPackets.UPLOAD_FAIL, true, ex.getMessage() == null ? "Upload failed" : ex.getMessage()));
@@ -479,7 +572,7 @@ public final class InstanceManager implements AutoCloseable {
     }
     public void disconnect(UUID player) {
         for (Session session : sessions.values()) if (player.equals(session.ownership.owner())) revoke(session, false);
-        readyClients.remove(player); clientGenerations.remove(player); outbound.remove(player); romUploads.remove(player);
+        readyClients.remove(player); clientGenerations.remove(player); outbound.remove(player); romUploads.remove(player); biosSent.remove(player);
         detachVideo(player);
         for (Session session : sessions.values()) { session.audioWatchers.remove(player); session.videoWatchers.remove(player); }
     }
@@ -781,14 +874,16 @@ public final class InstanceManager implements AutoCloseable {
 
     private WorkerProcess openServerProcess(Session session, Path core, Path rom, Path state) throws IOException {
         Path log = store.directory(session.data.id()).resolve("worker.log");
-        try { return new WorkerProcess(workerJar, core, rom, state, log); }
+        // The pool layout is POOL/platform/<coreId>/<binary> — the parent dir name is the trusted id.
+        Path bios = RetrocraftConfig.biosDir(core.getParent().getFileName().toString());
+        try { return new WorkerProcess(workerJar, core, rom, state, bios, log); }
         catch (IOException ex) {
             if (ex instanceof EOFException && workerLogSays(log, "Core rejected ROM")) throw new RomRejectedException(ex);
             if (!Files.exists(store.backup(session.data.id()))) throw ex;
             Retrocraft.LOG.warn("Latest checkpoint rejected for {}; restoring previous complete state", session.data.id());
             byte[] previous = Files.readAllBytes(store.backup(session.data.id()));
             SaveStates.validate(previous); SaveStates.writeAtomic(state, previous);
-            return new WorkerProcess(workerJar, core, rom, state, log);
+            return new WorkerProcess(workerJar, core, rom, state, bios, log);
         }
     }
 
@@ -882,6 +977,29 @@ public final class InstanceManager implements AutoCloseable {
         send(player, new HybridPackets.Settings(coreGeneration, KnownCores.POOL, config.checkpointIntervalSeconds, config.streamFps,
                 config.thumbnailIntervalSeconds, config.thumbnailUpload, config.emulationMode.ordinal(),
                 requiredCores.stream().sorted().map(id -> preparedCores.get(id).identity()).toList()));
+        pushBios(player);
+    }
+
+    private final Map<UUID, Set<String>> biosSent = new HashMap<>();
+    /** Cores that emulate client-side need their BIOS on the client too — pushed once per player per file. */
+    private void pushBios(ServerPlayerEntity player) {
+        if (!ServerPlayNetworking.canSend(player, SettingsPackets.BiosChunk.ID)) return;
+        Set<String> sent = biosSent.computeIfAbsent(player.getUuid(), ignored -> new HashSet<>());
+        for (String id : requiredCores) {
+            if (!KnownCores.get(id).needsBios()) continue;
+            try {
+                for (var file : biosLibrary.list(id).entries()) {
+                    if (file.directory() || file.size() < 1 || file.size() > 8 * 1024 * 1024) continue;
+                    byte[] bytes = Files.readAllBytes(biosLibrary.read(id + "/" + file.name()));
+                    String sha = BlobTransfer.hash(bytes);
+                    if (!sent.add(id + ":" + file.name() + ":" + sha)) continue;
+                    for (int offset = 0; offset < bytes.length; offset += BlobTransfer.CHUNK) {
+                        int end = Math.min(bytes.length, offset + BlobTransfer.CHUNK);
+                        send(player, new SettingsPackets.BiosChunk(id, file.name(), offset, bytes.length, sha, Arrays.copyOfRange(bytes, offset, end)));
+                    }
+                }
+            } catch (IOException ignored) { }
+        }
     }
 
     public void coreStatus(ServerPlayerEntity player, HybridPackets.Status packet) {

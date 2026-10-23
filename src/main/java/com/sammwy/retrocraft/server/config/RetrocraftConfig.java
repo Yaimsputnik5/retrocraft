@@ -2,6 +2,7 @@ package com.sammwy.retrocraft.server.config;
 
 import com.google.gson.*;
 import com.google.gson.annotations.SerializedName;
+import com.sammwy.retrocraft.cores.KnownCores;
 import net.fabricmc.loader.api.FabricLoader;
 import java.io.*;
 import java.nio.file.*;
@@ -31,7 +32,9 @@ public final class RetrocraftConfig {
         }
     }
 
-    public Map<String, String> cores = new HashMap<>(com.sammwy.retrocraft.cores.KnownCores.defaultMappings());
+    public Map<String, String> cores = new HashMap<>(KnownCores.defaultMappings());
+    /** Cores the server will prepare and offer; the library can still download any known core on demand. */
+    public List<String> enabledCores = new ArrayList<>(KnownCores.defaults());
     public int checkpointIntervalSeconds = 2;
     public int transferTimeoutSeconds = 30;
     public int ownerTimeoutSeconds = 8;
@@ -55,11 +58,14 @@ public final class RetrocraftConfig {
     public static Path savesRoot() { return root().resolve("saves"); }
     public Path file() { return root().resolve("server.json"); }
 
+    public boolean coreEnabled(String id) { return enabledCores != null && enabledCores.contains(id); }
+    public static Path biosDir(String coreId) { return root().resolve("bios").resolve(coreId); }
+
     public String coreId(String cartridge) {
         String configured = cores.get(cartridge);
         // File paths from the old prototype cannot become client download instructions.
-        if (configured == null || configured.contains("/") || configured.contains("\\")) configured = com.sammwy.retrocraft.cores.KnownCores.defaultForCartridge(cartridge);
-        return com.sammwy.retrocraft.cores.KnownCores.get(configured).id();
+        if (configured == null || configured.contains("/") || configured.contains("\\")) configured = KnownCores.defaultForCartridge(cartridge);
+        return KnownCores.get(configured).id();
     }
 
     public void save() throws IOException {
@@ -85,17 +91,19 @@ public final class RetrocraftConfig {
             }
             catch (JsonParseException ex) { throw new IOException("Invalid " + (migrated ? legacy : file), ex); }
         } else config = new RetrocraftConfig();
-        if (config == null || config.cores == null || config.cores.values().stream().anyMatch(v -> v == null || v.isBlank()) || config.audioRadius < 1 || config.audioRadius > 128
+        // Configs written before the core library existed get the default enabled set.
+        if (config != null && config.enabledCores == null) config.enabledCores = new ArrayList<>(KnownCores.defaults());
+        if (config == null || config.cores == null || config.cores.values().stream().anyMatch(v -> v == null || v.isBlank()) || config.audioRadius < 1 || config.audioRadius > 256
                 || config.checkpointIntervalSeconds < 1 || config.checkpointIntervalSeconds > 30
                 || config.transferTimeoutSeconds < 10 || config.transferTimeoutSeconds > 120
                 || config.ownerTimeoutSeconds < 3 || config.ownerTimeoutSeconds > 60
-                || config.streamFps < 1 || config.streamFps > 20
-                || config.keyframeIntervalSeconds < 1 || config.keyframeIntervalSeconds > 60
+                || config.streamFps < 1 || config.streamFps > 144
+                || config.keyframeIntervalSeconds < 1 || config.keyframeIntervalSeconds > 600
                 || config.autosaveIntervalSeconds < 5 || config.autosaveIntervalSeconds > 3600
                 || config.maxActiveInstances < 1 || config.maxActiveInstances > 64
                 || config.watcherTimeoutSeconds < 5 || config.watcherTimeoutSeconds > 120
                 || config.maxRomSizeMiB < 1 || config.maxRomSizeMiB > 64
-                || config.thumbnailIntervalSeconds < 1 || config.thumbnailIntervalSeconds > 60
+                || config.thumbnailIntervalSeconds < 1 || config.thumbnailIntervalSeconds > 600
                 || config.emulationMode == null || config.saveMode == null)
             throw new IOException("Retrocraft config values out of range");
         if (migrated || !Files.exists(file)) config.save();

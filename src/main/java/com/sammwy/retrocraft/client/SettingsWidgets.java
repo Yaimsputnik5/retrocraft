@@ -61,10 +61,10 @@ final class SettingsWidgets {
         void value(boolean v) { value = v; }
         @Override protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
             int track = value ? (isHovered() ? ACCENT_HI : ACCENT) : (isHovered() ? 0xFF3A3352 : 0xFF282138);
-            rounded(context, getX(), getY() + 2, 30, 10, track, 5);
-            int kx = value ? getX() + 18 : getX() + 2;
-            rounded(context, kx, getY(), 10, 14, value ? ON_ACCENT : 0xFFCDC4E4, 4);
-            if (!value) context.fill(kx + 3, getY() + 5, kx + 7, getY() + 9, 0xFF181226);
+            rounded(context, getX(), getY() + 1, 30, 12, track, 6);
+            int kx = value ? getX() + 20 : getX() + 2;
+            rounded(context, kx, getY() + 3, 8, 8, value ? ON_ACCENT : 0xFFCDC4E4, 4);
+            if (!value) context.fill(kx + 3, getY() + 6, kx + 5, getY() + 8, 0xFF181226);
         }
         @Override public void onClick(double mouseX, double mouseY) { value = !value; onChange.accept(value); }
         @Override public void appendClickableNarrations(net.minecraft.client.gui.screen.narration.NarrationMessageBuilder builder) { appendDefaultNarrations(builder); }

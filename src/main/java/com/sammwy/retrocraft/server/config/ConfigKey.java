@@ -11,13 +11,13 @@ import java.util.stream.*;
 
 /** Typed view over {@link RetrocraftConfig}: one entry per key, shared by /retrocraft config, JSON load and command completion. */
 public enum ConfigKey {
-    thumbnailIntervalSeconds(Category.STREAMING, 1, 60, c -> Integer.toString(c.thumbnailIntervalSeconds), (c, v) -> c.thumbnailIntervalSeconds = integer(v, 1, 60)),
+    thumbnailIntervalSeconds(Category.STREAMING, 1, 600, c -> Integer.toString(c.thumbnailIntervalSeconds), (c, v) -> c.thumbnailIntervalSeconds = integer(v, 1, 600)),
     thumbnailUpload(Category.STREAMING, Kind.BOOL, c -> Boolean.toString(c.thumbnailUpload), (c, v) -> c.thumbnailUpload = bool(v), () -> Stream.of("true", "false")),
     emulationMode(Category.EMULATION, Kind.ENUM, c -> c.emulationMode.id, (c, v) -> c.emulationMode = EmulationMode.parse(v), () -> Arrays.stream(EmulationMode.values()).map(mode -> mode.id)),
     saveMode(Category.EMULATION, Kind.ENUM, c -> c.saveMode.id, (c, v) -> c.saveMode = SaveMode.parse(v), () -> Arrays.stream(SaveMode.values()).map(mode -> mode.id)),
-    streamFps(Category.STREAMING, 1, 20, c -> Integer.toString(c.streamFps), (c, v) -> c.streamFps = integer(v, 1, 20)),
-    audioRadius(Category.STREAMING, 1, 128, c -> Integer.toString(c.audioRadius), (c, v) -> c.audioRadius = integer(v, 1, 128)),
-    keyframeIntervalSeconds(Category.STREAMING, 1, 60, c -> Integer.toString(c.keyframeIntervalSeconds), (c, v) -> c.keyframeIntervalSeconds = integer(v, 1, 60)),
+    streamFps(Category.STREAMING, 1, 144, c -> Integer.toString(c.streamFps), (c, v) -> c.streamFps = integer(v, 1, 144)),
+    audioRadius(Category.STREAMING, 1, 256, c -> Integer.toString(c.audioRadius), (c, v) -> c.audioRadius = integer(v, 1, 256)),
+    keyframeIntervalSeconds(Category.STREAMING, 1, 600, c -> Integer.toString(c.keyframeIntervalSeconds), (c, v) -> c.keyframeIntervalSeconds = integer(v, 1, 600)),
     autosaveIntervalSeconds(Category.SESSIONS, 5, 3600, c -> Integer.toString(c.autosaveIntervalSeconds), (c, v) -> c.autosaveIntervalSeconds = integer(v, 5, 3600)),
     maxActiveInstances(Category.EMULATION, 1, 64, c -> Integer.toString(c.maxActiveInstances), (c, v) -> c.maxActiveInstances = integer(v, 1, 64)),
     watcherTimeoutSeconds(Category.SESSIONS, 5, 120, c -> Integer.toString(c.watcherTimeoutSeconds), (c, v) -> c.watcherTimeoutSeconds = integer(v, 5, 120)),
@@ -27,7 +27,7 @@ public enum ConfigKey {
     maxRomSizeMiB(Category.LIBRARY, 1, 64, c -> Integer.toString(c.maxRomSizeMiB), (c, v) -> c.maxRomSizeMiB = integer(v, 1, 64));
 
     /** Sidebar grouping used by the settings GUI. */
-    public enum Category { EMULATION, STREAMING, SESSIONS, LIBRARY }
+    public enum Category { EMULATION, STREAMING, SESSIONS, CORES, LIBRARY }
     /** Control the GUI renders for the value: a number field, a pill toggle or a cycling choice. */
     public enum Kind { INT, BOOL, ENUM }
 

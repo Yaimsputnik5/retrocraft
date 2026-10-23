@@ -66,6 +66,9 @@ public final class RomLibrary {
         Files.move(source, target);
     }
 
+    /** Resolves an existing library file for reading (uploads use {@link #destination}, which rejects collisions). */
+    public Path read(String rel) throws IOException { return resolveExisting(rel); }
+
     public void mkdir(String rel) throws IOException {
         Path path = resolve(rel);
         if (!safeName(path.getFileName().toString())) throw new IOException("Invalid folder name");
@@ -79,6 +82,12 @@ public final class RomLibrary {
     public Path destination(String dir, String name) throws IOException {
         if (!safeName(name)) throw new IOException("Invalid file name");
         Path parent = resolve(dir);
+        if (!Files.exists(parent)) {
+            // Folders named by the caller (e.g. bios/<coreId>) are created on first upload.
+            for (Path segment : realRoot().relativize(parent))
+                if (!safeName(segment.toString())) throw new IOException("Invalid folder name");
+            Files.createDirectories(parent);
+        }
         if (!Files.isDirectory(parent)) throw new IOException("Destination folder does not exist");
         Path target = parent.resolve(name).normalize();
         if (!target.startsWith(realRoot())) throw new IOException("Path escaped library");

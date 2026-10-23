@@ -2,7 +2,9 @@ package com.sammwy.retrocraft.client;
 
 import com.sammwy.retrocraft.server.config.ConfigKey;
 import com.sammwy.retrocraft.server.net.SettingsPackets;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.Drawable;
 import net.minecraft.client.gui.Element;
@@ -31,6 +33,7 @@ public final class SettingsScreen extends Screen {
     private static final String[] GLYPH_CHIP = {" X X X ", "XXXXXXX", "X XXX X", "X XXX X", "X XXX X", "XXXXXXX", " X X X "};
     private static final String[] GLYPH_WAVES = {"  X    ", " XX  X ", "X X X X", "X X X X", "X X X X", " XX  X ", "  X    "};
     private static final String[] GLYPH_CLOCK = {" XXXXX ", "X  X  X", "X  X  X", "X  XX X", "X     X", "X     X", " XXXXX "};
+    private static final String[] GLYPH_CORE = {" X X X ", "X     X", "X XXX X", "X XXX X", "X XXX X", "X     X", " X X X "};
     private static final String[] GLYPH_FOLDER = {"XXX     ", "X  XXXXX", "X      X", "X      X", "X      X", "X      X", "XXXXXXX "};
     private static final String[] GLYPH_MINUS = {"       ", "       ", "       ", " XXXXX ", "       ", "       ", "       "};
     private static final String[] GLYPH_PLUS = {"       ", "   X   ", "   X   ", " XXXXX ", "   X   ", "   X   ", "       "};
@@ -49,6 +52,7 @@ public final class SettingsScreen extends Screen {
     private final List<Row> rows = new ArrayList<>();
     private Text status; private int statusColor; private long statusUntil;
     private final RomBrowser browser = new RomBrowser(new BrowserHost());
+    private final CorePane corePane = new CorePane(new CoreHost());
     private long requestedAt;
     private boolean scrollDrag;
     private int px, py, pw, ph;
@@ -117,6 +121,8 @@ public final class SettingsScreen extends Screen {
             buildRows();
             browser.init(contentX, contentY + ROW_H + 6, contentW, contentH - ROW_H - 6);
             browser.setActive(category == ConfigKey.Category.LIBRARY.ordinal());
+            corePane.init(contentX, contentY, contentW, contentH);
+            corePane.setActive(category == ConfigKey.Category.CORES.ordinal());
         }
         refreshFooter();
     }
@@ -209,6 +215,7 @@ public final class SettingsScreen extends Screen {
         if (index == category) return;
         category = index; scroll = 0;
         browser.setActive(index == ConfigKey.Category.LIBRARY.ordinal());
+        corePane.setActive(index == ConfigKey.Category.CORES.ordinal());
         SettingsWidgets.click(client);
     }
 
@@ -233,6 +240,7 @@ public final class SettingsScreen extends Screen {
             if (idx >= 0) { selectCategory(idx); return true; }
             if (scrollTrackHit(mx, my)) { scrollDrag = true; dragScroll(my); return true; }
             if (category == ConfigKey.Category.LIBRARY.ordinal() && browser.mouseClicked(mx, my, button)) return true;
+            if (category == ConfigKey.Category.CORES.ordinal() && corePane.mouseClicked(mx, my, button)) return true;
         }
         return super.mouseClicked(mx, my, button);
     }
@@ -240,17 +248,20 @@ public final class SettingsScreen extends Screen {
     @Override public boolean mouseDragged(double mx, double my, int button, double deltaX, double deltaY) {
         if (scrollDrag) { dragScroll(my); return true; }
         if (state == State.READY && category == ConfigKey.Category.LIBRARY.ordinal() && browser.mouseDragged(mx, my)) return true;
+        if (state == State.READY && category == ConfigKey.Category.CORES.ordinal() && corePane.mouseDragged(mx, my)) return true;
         return super.mouseDragged(mx, my, button, deltaX, deltaY);
     }
 
     @Override public boolean mouseReleased(double mx, double my, int button) {
         scrollDrag = false;
         browser.mouseReleased();
+        corePane.mouseReleased();
         return super.mouseReleased(mx, my, button);
     }
 
     @Override public boolean mouseScrolled(double mx, double my, double horizontal, double vertical) {
         if (state == State.READY && category == ConfigKey.Category.LIBRARY.ordinal() && browser.mouseScrolled(mx, my, horizontal, vertical)) return true;
+        if (state == State.READY && category == ConfigKey.Category.CORES.ordinal() && corePane.mouseScrolled(mx, my, horizontal, vertical)) return true;
         if (state == State.READY && mx >= contentX && mx < contentX + contentW && my >= contentY && my < contentY + contentH) {
             scroll = Math.max(0, Math.min(scroll - (float) vertical * 14, maxScroll()));
             return true;
@@ -295,7 +306,7 @@ public final class SettingsScreen extends Screen {
         rounded(context, px + 1, py + 1, SIDEBAR - 1, ph - 2, 0xFF0E0B16, 5);
         context.fill(px + SIDEBAR - 7, py + 4, px + SIDEBAR, py + ph - 4, 0xFF0E0B16);
         context.drawTexture(LOGO_TEX, px + (SIDEBAR - 104) / 2, py + 9, 104, 22, 0, 0, LOGO_W, LOGO_H, LOGO_W, LOGO_H);
-        String version = "v" + net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("retrocraft").map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("?");
+        String version = "v" + FabricLoader.getInstance().getModContainer("retrocraft").map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("?");
         context.drawCenteredTextWithShadow(tr, version + (backend != null ? "  ·  " + backend.scope().getString() : ""), px + SIDEBAR / 2 + 1, py + 36, MUTED);
         context.fill(px + 8, py + 48, px + SIDEBAR - 8, py + 49, 0x18FFFFFF);
         renderCategories(context, tr, mx, my);
@@ -319,6 +330,7 @@ public final class SettingsScreen extends Screen {
             }
             case READY -> {
                 if (category == ConfigKey.Category.LIBRARY.ordinal()) renderLibrary(context, tr, mx, my, delta);
+                else if (category == ConfigKey.Category.CORES.ordinal()) corePane.render(context, mx, my, delta);
                 else renderSettings(context, tr, mx, my, delta);
             }
         }
@@ -334,8 +346,8 @@ public final class SettingsScreen extends Screen {
         super.render(context, mx, my, delta);
     }
 
-    private void renderCategories(DrawContext context, net.minecraft.client.font.TextRenderer tr, int mx, int my) {
-        String[][] icons = {GLYPH_CHIP, GLYPH_WAVES, GLYPH_CLOCK, GLYPH_FOLDER};
+    private void renderCategories(DrawContext context, TextRenderer tr, int mx, int my) {
+        String[][] icons = {GLYPH_CHIP, GLYPH_WAVES, GLYPH_CLOCK, GLYPH_CORE, GLYPH_FOLDER};
         int y = py + 56;
         for (var cat : ConfigKey.Category.values()) {
             boolean selected = cat.ordinal() == category;
@@ -350,7 +362,7 @@ public final class SettingsScreen extends Screen {
         }
     }
 
-    private void renderSettings(DrawContext context, net.minecraft.client.font.TextRenderer tr, int mx, int my, float delta) {
+    private void renderSettings(DrawContext context, TextRenderer tr, int mx, int my, float delta) {
         int clipY = contentY, clipH = contentH;
         // Position rows first so hover math and widget coordinates agree.
         int ry = contentY - (int) scroll;
@@ -388,7 +400,7 @@ public final class SettingsScreen extends Screen {
         scroll = Math.max(0, Math.min(max, (float) ((my - contentY - scrollThumb() / 2.0) / Math.max(1, contentH - scrollThumb()) * max)));
     }
 
-    private void renderLibrary(DrawContext context, net.minecraft.client.font.TextRenderer tr, int mx, int my, float delta) {
+    private void renderLibrary(DrawContext context, TextRenderer tr, int mx, int my, float delta) {
         // The one scalar that lives in this category stays pinned above the browser.
         for (var row : rows) {
             if (rowCategory(row) != category) { row.hide(); continue; }
@@ -413,7 +425,6 @@ public final class SettingsScreen extends Screen {
         else super.close();
     }
 
-    // ---------- rows ----------
 
     private final class Row {
         final SettingsPackets.GuiOpen.Entry entry; // null → section header
@@ -441,7 +452,7 @@ public final class SettingsScreen extends Screen {
             }
         }
 
-        void render(DrawContext context, net.minecraft.client.font.TextRenderer tr, int mx, int my, float delta) {
+        void render(DrawContext context, TextRenderer tr, int mx, int my, float delta) {
             if (entry == null) {
                 context.fill(contentX + 2, y + 12, contentX + contentW - 8, y + 13, 0x18FFFFFF);
                 context.drawTextWithShadow(tr, Text.translatable("settings.retrocraft.cores"), contentX + 2, y + 4, MUTED);
@@ -473,11 +484,17 @@ public final class SettingsScreen extends Screen {
 
     private final class BrowserHost implements RomBrowser.Host {
         @Override public SettingsBackend backend() { return backend; }
-        @Override public net.minecraft.client.font.TextRenderer textRenderer() { return textRenderer; }
+        @Override public TextRenderer textRenderer() { return textRenderer; }
         @Override public MinecraftClient client() { return client; }
         @Override public void status(Text text, int color) { SettingsScreen.this.status(text, color); }
         @Override public <T extends Element & Drawable & Selectable> T add(T widget) { return addDrawableChild(widget); }
         @Override public <T extends Element & Selectable> T addHidden(T element) { return addSelectableChild(element); }
         @Override public void removeInput(Element element) { remove(element); }
+    }
+
+    private final class CoreHost implements CorePane.Host {
+        @Override public SettingsBackend backend() { return backend; }
+        @Override public TextRenderer textRenderer() { return textRenderer; }
+        @Override public void status(Text text, int color) { SettingsScreen.this.status(text, color); }
     }
 }

@@ -242,7 +242,6 @@ final class RomBrowser {
         else host.status(Text.translatable("settings.retrocraft.error", message == null ? "?" : message), BAD);
     }
 
-    // ---------- upload ----------
 
     private void pickFile() {
         if (picking) return;
@@ -278,7 +277,6 @@ final class RomBrowser {
         });
     }
 
-    // ---------- input ----------
 
     boolean keyPressed(int key, int scanCode, int modifiers) {
         if (!active) return false;
@@ -401,7 +399,6 @@ final class RomBrowser {
         return Math.max(0, Math.min(value, Math.max(0, content - (h - TOOLBAR - 8))));
     }
 
-    // ---------- render ----------
 
     void render(DrawContext context, int mx, int my, float delta) {
         updateToolbar();

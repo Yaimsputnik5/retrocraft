@@ -80,6 +80,7 @@ public final class Retrocraft implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.ConfigApply.ID, (packet, context) -> { if (instances != null) instances.applySettings(context.player(), packet); });
         ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.RomAction.ID, (packet, context) -> { if (instances != null) instances.romAction(context.player(), packet); });
         ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.RomUpload.ID, (packet, context) -> { if (instances != null) instances.romUpload(context.player(), packet); });
+        ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.CoreAction.ID, (packet, context) -> { if (instances != null) instances.coreAction(context.player(), packet); });
         ServerPlayNetworking.registerGlobalReceiver(Packets.ThumbnailUpload.ID, (packet, context) -> { if (instances != null) instances.thumbnailUpload(context.player(), packet); });
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> { if (instances != null) { instances.close(); instances = null; } });
         CommandRegistrationCallback.EVENT.register((dispatcher, access, environment) -> {
