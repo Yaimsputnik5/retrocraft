@@ -59,12 +59,12 @@ final class CameraRig {
             MathHelper.lerp(t, from.y, target.pos.y),
             MathHelper.lerp(t, from.z, target.pos.z),
             yaw + dyaw * t,
-            MathHelper.lerp(t, pitch, 0),
+            MathHelper.lerp(t, pitch, target.pitch),
             t
         };
     }
 
-    private record Target(Vec3d pos, float yaw) {}
+    private record Target(Vec3d pos, float yaw, float pitch) {}
 
     /**
      * Screen glass centre and size from the block at {@link #screen}; the camera backs off just
@@ -74,6 +74,7 @@ final class CameraRig {
         BlockState state = client.world.getBlockState(screen);
         float x0, x1, y0, y1, z;
         Direction facing;
+        float tilt = 0;
         if (state.getBlock() instanceof TvBlock tv) {
             TvBlock.Size size = tv.size;
             facing = state.get(TvBlock.FACING);
@@ -82,19 +83,24 @@ final class CameraRig {
             y0 = size.screenY0;
             y1 = size.screenY1;
             z = size.screenZ;
-        } else if (state.getBlock() instanceof DockedConsoleBlock) {
+        } else if (state.getBlock() instanceof DockedConsoleBlock block
+                && block.definition().isArcade()) {
             facing = state.get(DockedConsoleBlock.FACING);
-            x0 = 1.5f;
-            x1 = 14.5f;
-            y0 = 16;
-            y1 = 26;
-            z = 2.5f;
+            x0 = ArcadeCabinet.SCREEN_X0;
+            x1 = ArcadeCabinet.SCREEN_X1;
+            y0 = ArcadeCabinet.SCREEN_Y0;
+            y1 = ArcadeCabinet.SCREEN_Y1;
+            z = ArcadeCabinet.SCREEN_Z;
+            tilt = ArcadeCabinet.SCREEN_TILT;
         } else return null;
-        Vec3d normal = Vec3d.of(facing.getVector());
+        double angle = Math.toRadians(tilt), cosine = Math.cos(angle), sine = Math.sin(angle);
+        Vec3d horizontal = Vec3d.of(facing.getVector());
+        Vec3d normal = horizontal.multiply(cosine).add(0, sine, 0);
+        double halfHeight = (y1 - y0) / 2.0;
         Vec3d centre =
                 Vec3d.ofCenter(screen)
-                        .add(0, (y0 + y1) / 32.0 - .5, 0)
-                        .add(normal.multiply(.5 - z / 16.0));
+                        .add(0, (y0 + halfHeight * cosine) / 16.0 - .5, 0)
+                        .add(horizontal.multiply(.5 - (z + halfHeight * sine) / 16.0));
         double width = (x1 - x0) / 16.0, height = (y1 - y0) / 16.0;
         double fov = Math.toRadians(client.options.getFov().getValue()),
                 aspect =
@@ -107,7 +113,8 @@ final class CameraRig {
                                         height / (2 * Math.tan(fov / 2)),
                                         width / (2 * Math.tan(fov / 2) * aspect))
                                 * 1.15);
-        return new Target(centre.add(normal.multiply(distance)), facing.getOpposite().asRotation());
+        return new Target(
+                centre.add(normal.multiply(distance)), facing.getOpposite().asRotation(), tilt);
     }
 
     private CameraRig() {}

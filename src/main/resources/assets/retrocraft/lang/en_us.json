@@ -61,8 +61,8 @@
   "block.retrocraft.n64_console": "Nintendo 64",
   "console.retrocraft.n64_console": "Nintendo 64",
   "item.retrocraft.mame": "Arcade Machine ROM Set",
-  "block.retrocraft.mame_console": "Arcade Machine",
-  "console.retrocraft.mame_console": "Arcade Machine",
+  "block.retrocraft.mame_console": "Pac-Man Arcade Machine",
+  "console.retrocraft.mame_console": "Pac-Man Arcade Machine",
   "item.retrocraft.ps1": "PlayStation Disc",
   "item.retrocraft.ps2": "PlayStation 2 Disc",
   "item.retrocraft.dreamcast": "Dreamcast Disc",
@@ -180,5 +180,9 @@
   "settings.retrocraft.key.cameraFocus": "Focus camera",
   "settings.retrocraft.key.cameraFocus.desc": "Move the camera toward world screens.",
   "key.retrocraft.settings": "Open Retrocraft settings",
-  "category.retrocraft": "Retrocraft"
+  "category.retrocraft": "Retrocraft",
+  "block.retrocraft.mame_tetris_console": "Tetris Arcade Machine",
+  "console.retrocraft.mame_tetris_console": "Tetris Arcade Machine",
+  "block.retrocraft.mame_space_invaders_console": "Space Invaders Arcade Machine",
+  "console.retrocraft.mame_space_invaders_console": "Space Invaders Arcade Machine"
 }

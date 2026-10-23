@@ -126,7 +126,7 @@ record ConsoleTheme(
                                     new Binding(R, "W", "R"),
                                     new Binding(L2, "I", "Z"),
                                     START_KEY));
-            case "mame_console" ->
+            case "mame_console", "mame_tetris_console", "mame_space_invaders_console" ->
                     new ConsoleTheme(
                             console,
                             Bezel.ARCADE,

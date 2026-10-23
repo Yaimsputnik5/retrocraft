@@ -51,29 +51,35 @@ public final class DockedConsoleBlock extends BlockWithEntity {
     @Override
     protected VoxelShape getOutlineShape(
             BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        String id = definition.id().getPath();
-        if (id.equals("mame_console"))
-            return state.get(FACING).getAxis() == Direction.Axis.X
-                    ? Block.createCuboidShape(0, 0, -1, 16, 40, 17)
-                    : Block.createCuboidShape(-1, 0, 0, 17, 40, 16);
-        if (id.equals("wii_console"))
-            return state.get(FACING).getAxis() == Direction.Axis.X
-                    ? Block.createCuboidShape(2, 0, 5.25, 14.2, 14.6, 10.75)
-                    : Block.createCuboidShape(5.25, 0, 2, 10.75, 14.6, 14.2);
-        if (id.equals("gamecube_console"))
-            return state.get(FACING).getAxis() == Direction.Axis.X
-                    ? Block.createCuboidShape(2, 0, 2.2, 14.8, 12.1, 13.8)
-                    : Block.createCuboidShape(2.2, 0, 2, 13.8, 12.1, 14.8);
-        double height = id.equals("nes_console") ? 6.5 : 5.8;
-        return state.get(FACING).getAxis() == Direction.Axis.X
-                ? Block.createCuboidShape(2, 0, 1, 14, height, 15)
-                : Block.createCuboidShape(1, 0, 2, 15, height, 14);
+        double[] bounds =
+                switch (definition.id().getPath()) {
+                    case "nes_console" -> new double[] {1, 1.79, 15, 14, 5.85};
+                    case "snes_console" -> new double[] {1, 2.43, 15, 13.5, 5.74};
+                    case "genesis_console", "megadrive_console" ->
+                            new double[] {1, 2.43, 15, 13.5, 4.39};
+                    case "n64_console" -> new double[] {1, 2.43, 15, 13.5, 5.24};
+                    case "ps1_console" -> new double[] {1, 2.42, 15, 13.5, 3.94};
+                    case "ps2_console" -> new double[] {1, 2.01, 15, 13.5, 4.69};
+                    case "dreamcast_console" -> new double[] {1.35, 2.42, 14.4, 13.5, 4.22};
+                    case "gamecube_console" -> new double[] {2.35, 2.36, 13.65, 15.2, 9.35};
+                    case "wii_console" -> new double[] {5.15, 2.1, 10.85, 14.3, 14.39};
+                    case "mame_console", "mame_tetris_console", "mame_space_invaders_console" ->
+                            new double[] {-4.05, -3.15, 20.05, 19.05, 48};
+                    default -> new double[] {1, 2, 15, 14, 5.8};
+                };
+        double x0 = bounds[0], z0 = bounds[1], x1 = bounds[2], z1 = bounds[3], height = bounds[4];
+        return switch (state.get(FACING)) {
+            case EAST -> Block.createCuboidShape(16 - z1, 0, x0, 16 - z0, height, x1);
+            case SOUTH -> Block.createCuboidShape(16 - x1, 0, 16 - z1, 16 - x0, height, 16 - z0);
+            case WEST -> Block.createCuboidShape(z0, 0, 16 - x1, z1, height, 16 - x0);
+            default -> Block.createCuboidShape(x0, 0, z0, x1, height, z1);
+        };
     }
 
-    /** The arcade cabinet is two and a half blocks tall, so it needs free space above it. */
+    /** The arcade cabinets are three blocks tall, so both blocks above must be free. */
     @Override
     protected boolean canPlaceAt(BlockState state, WorldView world, BlockPos pos) {
-        return !definition.id().getPath().equals("mame_console")
+        return !definition.isArcade()
                 || world.getBlockState(pos.up()).isReplaceable()
                         && world.getBlockState(pos.up(2)).isReplaceable();
     }

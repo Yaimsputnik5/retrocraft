@@ -11,3 +11,4 @@ run/
 /cache/
 __pycache__
 *.pyc
+tmp

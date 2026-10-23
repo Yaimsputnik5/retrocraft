@@ -1,5 +1,7 @@
 package com.sammwy.retrocraft.client;
 
+import java.util.Map;
+
 import org.joml.Matrix4f;
 
 import com.sammwy.retrocraft.server.block.*;
@@ -22,17 +24,14 @@ import net.minecraft.util.math.random.Random;
  * cabinet, the live CRT picture.
  */
 public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedConsoleBlockEntity> {
-    // Cabinet CRT glass in model units (front = north, symmetric in x): x 1.5..14.5, y 16..26,
-    // marquee face at z 2.5.
-    private static final float CRT_X0 = 1.5f,
-            CRT_X1 = 14.5f,
-            CRT_Y0 = 16,
-            CRT_Y1 = 26,
-            CRT_Z = 2.5f;
-
     /** Roof of the cabinet (model units above 32 cannot live in the block's own JSON model). */
-    public static final Identifier TOP_MODEL =
-            Identifier.of("retrocraft", "block/mame_console_top");
+    public static final Map<String, Identifier> TOP_MODELS =
+            Map.of(
+                    "mame_console", Identifier.of("retrocraft", "block/mame_console_top"),
+                    "mame_tetris_console",
+                            Identifier.of("retrocraft", "block/mame_tetris_console_top"),
+                    "mame_space_invaders_console",
+                            Identifier.of("retrocraft", "block/mame_space_invaders_console_top"));
 
     private final ItemRenderer items;
 
@@ -59,23 +58,30 @@ public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedCo
                     default -> 0;
                 };
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(rotation));
-        if (id.equals("mame_console")) {
+        if (console.definition().isArcade()) {
             roof(console, matrices, vertices, overlay);
             crt(console, matrices, vertices);
         } else if (!console.cartridge().isEmpty()
-                && (id.equals("nes_console")
-                        || id.equals("snes_console")
+                && (id.equals("snes_console")
                         || id.equals("n64_console")
                         || id.equals("genesis_console")
                         || id.equals("megadrive_console"))) {
-            if (id.equals("nes_console")) {
-                matrices.translate(0, .33, -.37);
-                matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(90));
-                matrices.scale(.4f, .4f, .4f);
+            // Model units, matching the actual slot on each casing. Media models face south;
+            // turn the label toward the console's north-facing controller ports. The NES-001
+            // encloses its cartridge behind the front-loading door, so it has no exposed media.
+            float scale;
+            if (id.equals("snes_console")) {
+                matrices.translate(0, 8.1 / 16, 1.5 / 16);
+                scale = .54f;
+            } else if (id.equals("n64_console")) {
+                matrices.translate(0, 7.45 / 16, 1.5 / 16);
+                scale = .55f;
             } else {
-                matrices.translate(0, id.equals("n64_console") ? .48 : .44, -.10);
-                matrices.scale(.62f, .62f, .62f);
+                matrices.translate(-1.0 / 16, 7.05 / 16, .9 / 16);
+                scale = .59f;
             }
+            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180));
+            matrices.scale(scale, scale, scale);
             items.renderItem(
                     console.cartridge(),
                     ModelTransformationMode.FIXED,
@@ -95,8 +101,9 @@ public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedCo
             VertexConsumerProvider vertices,
             int overlay) {
         var client = MinecraftClient.getInstance();
-        BakedModel model =
-                client.getBakedModelManager().getModel(TOP_MODEL); // Fabric interface injection
+        Identifier top = TOP_MODELS.get(console.definition().id().getPath());
+        if (top == null) return;
+        BakedModel model = client.getBakedModelManager().getModel(top);
         if (model == null || console.getWorld() == null) return;
         BlockState state = console.getCachedState();
         matrices.push();
@@ -121,15 +128,21 @@ public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedCo
             DockedConsoleBlockEntity console,
             MatrixStack matrices,
             VertexConsumerProvider vertices) {
+        // Tilt around the same lower glass edge as the baked model, keeping live video flush.
+        matrices.push();
+        matrices.translate(0, ArcadeCabinet.SCREEN_Y0 / 16, ArcadeCabinet.SCREEN_Z / 16 - .5);
+        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(ArcadeCabinet.SCREEN_TILT));
+        matrices.translate(0, -ArcadeCabinet.SCREEN_Y0 / 16, .5 - ArcadeCabinet.SCREEN_Z / 16);
         drawScreen(
                 ScreenTextures.get(console.instance()),
                 matrices,
                 vertices,
-                CRT_X0,
-                CRT_X1,
-                CRT_Y0,
-                CRT_Y1,
-                CRT_Z);
+                ArcadeCabinet.SCREEN_X0,
+                ArcadeCabinet.SCREEN_X1,
+                ArcadeCabinet.SCREEN_Y0,
+                ArcadeCabinet.SCREEN_Y1,
+                ArcadeCabinet.SCREEN_Z);
+        matrices.pop();
     }
 
     /**

@@ -96,7 +96,17 @@ public final class Retrocraft implements ModInitializer {
                 ConsoleType.DOCKED,
                 megadrive);
         registerSystem("n64", "Nintendo 64", ConsoleType.DOCKED);
-        registerSystem("mame", "Arcade Machine", ConsoleType.DOCKED);
+        var arcade = registerSystem("mame", "Pac-Man Arcade Machine", ConsoleType.ARCADE);
+        ConsoleRegistry.registerConsole(
+                Identifier.of("retrocraft", "mame_tetris_console"),
+                "Tetris Arcade Machine",
+                ConsoleType.ARCADE,
+                arcade);
+        ConsoleRegistry.registerConsole(
+                Identifier.of("retrocraft", "mame_space_invaders_console"),
+                "Space Invaders Arcade Machine",
+                ConsoleType.ARCADE,
+                arcade);
         ConsoleRegistry.registerTelevisions();
         CREATIVE_GROUP =
                 Registry.register(

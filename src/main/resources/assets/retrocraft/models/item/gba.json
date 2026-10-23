@@ -1,33 +1,27 @@
 {
-  "credit": "Original Retrocraft pixel artwork and models",
+  "credit": "Original Retrocraft pixel artwork; tools/generate_models.py",
   "textures": {
-    "atlas": "retrocraft:block/console/gba",
-    "particle": "retrocraft:block/console/gba",
-    "indicator": "retrocraft:block/console/power_off"
+    "atlas": "retrocraft:block/console/media_gba",
+    "particle": "#atlas"
   },
-  "gui_light": "front",
+  "gui_light": "side",
   "display": {
     "gui": {
       "rotation": [
-        12,
-        -28,
-        0
-      ],
-      "translation": [
-        0,
-        0,
+        8,
+        -18,
         0
       ],
       "scale": [
-        0.9,
-        0.9,
-        0.9
+        1,
+        1,
+        1
       ]
     },
     "ground": {
       "translation": [
         0,
-        2,
+        3,
         0
       ],
       "scale": [
@@ -37,219 +31,492 @@
       ]
     },
     "fixed": {
-      "rotation": [
-        0,
-        180,
-        0
-      ],
       "scale": [
-        0.8,
-        0.8,
-        0.8
+        1,
+        1,
+        1
       ]
     },
     "thirdperson_righthand": {
       "rotation": [
+        -10,
         0,
-        90,
         0
       ],
       "translation": [
         0,
-        2,
+        3,
         1
       ],
       "scale": [
-        0.55,
-        0.55,
-        0.55
+        0.65,
+        0.65,
+        0.65
       ]
     },
     "thirdperson_lefthand": {
       "rotation": [
+        -10,
         0,
-        -90,
         0
       ],
       "translation": [
         0,
-        2,
+        3,
         1
       ],
       "scale": [
-        0.55,
-        0.55,
-        0.55
+        0.65,
+        0.65,
+        0.65
       ]
     },
     "firstperson_righthand": {
       "rotation": [
         0,
-        -20,
+        -15,
         0
       ],
       "translation": [
-        1,
+        0,
         2,
         0
       ],
       "scale": [
-        0.7,
-        0.7,
-        0.7
+        0.85,
+        0.85,
+        0.85
       ]
     },
     "firstperson_lefthand": {
       "rotation": [
         0,
-        20,
+        15,
         0
       ],
       "translation": [
-        1,
+        0,
         2,
         0
       ],
       "scale": [
-        0.7,
-        0.7,
-        0.7
+        0.85,
+        0.85,
+        0.85
       ]
     }
   },
   "elements": [
     {
+      "name": "short AGB shell",
       "from": [
-        2,
-        5,
-        7.4
+        2.5,
+        5.1,
+        7.1
       ],
       "to": [
-        14,
-        10.8,
-        8.6
+        13.5,
+        10.7,
+        8.9
       ],
       "faces": {
         "north": {
           "texture": "#atlas",
           "uv": [
-            0.0,
-            0.0,
-            3.0,
-            1.5
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         },
         "south": {
           "texture": "#atlas",
           "uv": [
-            3.0,
-            0.0,
-            6.0,
-            1.5
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         },
         "east": {
           "texture": "#atlas",
           "uv": [
-            6.0,
-            0.0,
-            6.25,
-            1.5
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         },
         "west": {
           "texture": "#atlas",
           "uv": [
-            6.25,
-            0.0,
-            6.5,
-            1.5
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         },
         "up": {
           "texture": "#atlas",
           "uv": [
-            0.0,
-            1.5,
-            3.0,
-            1.75
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         },
         "down": {
           "texture": "#atlas",
           "uv": [
-            3.0,
-            1.5,
-            6.0,
-            1.75
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         }
       }
     },
     {
+      "name": "wide top grip",
       "from": [
         2,
-        10.8,
-        7.2
+        10.7,
+        7.05
       ],
       "to": [
         14,
-        11.6,
-        8.8
+        11.3,
+        8.95
       ],
       "faces": {
         "north": {
           "texture": "#atlas",
           "uv": [
-            6.0,
-            1.5,
-            9.0,
-            1.75
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         },
         "south": {
           "texture": "#atlas",
           "uv": [
-            9.0,
-            1.5,
-            12.0,
-            1.75
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         },
         "east": {
           "texture": "#atlas",
           "uv": [
-            12.0,
-            1.5,
-            12.375,
-            1.75
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         },
         "west": {
           "texture": "#atlas",
           "uv": [
-            12.0,
-            1.5,
-            12.375,
-            1.75
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         },
         "up": {
           "texture": "#atlas",
           "uv": [
-            0.0,
-            1.75,
-            3.0,
-            2.125
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         },
         "down": {
           "texture": "#atlas",
           "uv": [
-            3.0,
-            1.75,
-            6.0,
-            2.125
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        }
+      }
+    },
+    {
+      "name": "connector edge",
+      "from": [
+        3,
+        4.8,
+        7.25
+      ],
+      "to": [
+        13,
+        5.1,
+        8.65
+      ],
+      "faces": {
+        "north": {
+          "texture": "#atlas",
+          "uv": [
+            0.4375,
+            0.0625,
+            0.6875,
+            0.3125
+          ]
+        },
+        "south": {
+          "texture": "#atlas",
+          "uv": [
+            0.4375,
+            0.0625,
+            0.6875,
+            0.3125
+          ]
+        },
+        "east": {
+          "texture": "#atlas",
+          "uv": [
+            0.4375,
+            0.0625,
+            0.6875,
+            0.3125
+          ]
+        },
+        "west": {
+          "texture": "#atlas",
+          "uv": [
+            0.4375,
+            0.0625,
+            0.6875,
+            0.3125
+          ]
+        },
+        "up": {
+          "texture": "#atlas",
+          "uv": [
+            0.4375,
+            0.0625,
+            0.6875,
+            0.3125
+          ]
+        },
+        "down": {
+          "texture": "#atlas",
+          "uv": [
+            0.4375,
+            0.0625,
+            0.6875,
+            0.3125
+          ]
+        }
+      }
+    },
+    {
+      "name": "embossed advance mark",
+      "from": [
+        2.8,
+        9.6,
+        8.92
+      ],
+      "to": [
+        13.2,
+        10.6,
+        8.96
+      ],
+      "faces": {
+        "north": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "south": {
+          "texture": "#atlas",
+          "uv": [
+            0.8125,
+            0.0625,
+            4.875,
+            0.5
+          ]
+        },
+        "east": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "west": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "up": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "down": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        }
+      }
+    },
+    {
+      "name": "game label",
+      "from": [
+        4,
+        5.8,
+        8.94
+      ],
+      "to": [
+        12,
+        9.3,
+        8.98
+      ],
+      "faces": {
+        "north": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "south": {
+          "texture": "#atlas",
+          "uv": [
+            5.0,
+            0.0625,
+            7.0,
+            0.9375
+          ]
+        },
+        "east": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "west": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "up": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "down": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        }
+      }
+    },
+    {
+      "name": "rear molding",
+      "from": [
+        5.4,
+        6,
+        7.06
+      ],
+      "to": [
+        10.6,
+        8,
+        7.1
+      ],
+      "faces": {
+        "north": {
+          "texture": "#atlas",
+          "uv": [
+            7.125,
+            0.0625,
+            8.4375,
+            0.5625
+          ]
+        },
+        "south": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "east": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "west": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "up": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
+          ]
+        },
+        "down": {
+          "texture": "#atlas",
+          "uv": [
+            0.0625,
+            0.0625,
+            0.3125,
+            0.3125
           ]
         }
       }

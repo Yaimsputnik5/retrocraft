@@ -164,7 +164,7 @@ public final class PlayerHud {
                 face.add(new Cell(by.get(1 << 8), 1, 1));
                 rows = 2;
             }
-            case "mame_console" -> {
+            case "mame_console", "mame_tetris_console", "mame_space_invaders_console" -> {
                 face.add(new Cell(by.get(1 << 0), 0, 0));
                 face.add(new Cell(by.get(1 << 1), 1, 0));
                 face.add(new Cell(by.get(1 << 8), 2, 0));

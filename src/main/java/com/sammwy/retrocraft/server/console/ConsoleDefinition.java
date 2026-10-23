@@ -14,6 +14,10 @@ public record ConsoleDefinition(
 
     /** Docked consoles without their own screen show their picture on a bound television block. */
     public boolean usesTelevision() {
-        return type == ConsoleType.DOCKED && !id.getPath().equals("mame_console");
+        return type == ConsoleType.DOCKED;
+    }
+
+    public boolean isArcade() {
+        return type == ConsoleType.ARCADE;
     }
 }

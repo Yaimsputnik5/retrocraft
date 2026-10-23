@@ -85,7 +85,11 @@ public final class RetrocraftClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(
                 HybridPackets.Demand.ID, (packet, context) -> EMULATION.demand(packet));
         HandledScreens.register(Retrocraft.CONSOLE_SCREEN, ConsoleInventoryScreen::new);
-        ModelLoadingPlugin.register(plugin -> plugin.addModels(DockedConsoleRenderer.TOP_MODEL));
+        ModelLoadingPlugin.register(
+                plugin ->
+                        DockedConsoleRenderer.TOP_MODELS
+                                .values()
+                                .forEach(id -> plugin.addModels(id)));
         ClientPlayNetworking.registerGlobalReceiver(
                 Packets.Ui.ID,
                 (packet, context) -> {

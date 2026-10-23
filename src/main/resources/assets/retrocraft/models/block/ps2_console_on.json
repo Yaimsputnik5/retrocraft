@@ -1,6 +1,7 @@
 {
   "parent": "retrocraft:block/ps2_console",
   "textures": {
-    "indicator": "retrocraft:block/console/ps2_led_on"
+    "indicator": "retrocraft:block/console/led_green_on",
+    "eject": "retrocraft:block/console/led_blue_on"
   }
 }

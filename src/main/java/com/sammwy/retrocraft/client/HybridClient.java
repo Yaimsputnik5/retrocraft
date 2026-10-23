@@ -65,7 +65,7 @@ public final class HybridClient {
 
         Local(HybridPackets.Lease offer) {
             this.offer = offer;
-            relayVideo = offer.docked();
+            relayVideo = offer.worldScreen();
         }
 
         synchronized void output(WorkerProcess.Output output, int sampleRate) {
@@ -593,8 +593,9 @@ public final class HybridClient {
         if (uploadThumbnails && now >= nextThumbAt) {
             nextThumbAt = now + TimeUnit.SECONDS.toNanos(thumbnailSeconds);
             for (Local local : locals.values())
-                if (local.phase == Phase.ACTIVE && !local.offer.docked() && local.frame != null)
-                    uploadThumbnail(local);
+                if (local.phase == Phase.ACTIVE
+                        && !local.offer.worldScreen()
+                        && local.frame != null) uploadThumbnail(local);
         }
         for (Local local : List.copyOf(locals.values())) {
             if (local.phase == Phase.ACTIVE

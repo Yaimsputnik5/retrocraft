@@ -1,6 +1,6 @@
 {
   "parent": "retrocraft:block/snes_console",
   "textures": {
-    "indicator": "retrocraft:block/console/power_on"
+    "indicator": "retrocraft:block/console/led_red_on"
   }
 }

@@ -101,7 +101,7 @@ public final class HybridPackets {
             String gameId,
             String title,
             String romName,
-            boolean docked,
+            boolean worldScreen,
             long sequence)
             implements CustomPayload {
         public static final Id<Lease> ID = new Id<>(Identifier.of("retrocraft", "ownership"));
@@ -128,7 +128,7 @@ public final class HybridPackets {
                         b.writeString(p.gameId, 64);
                         b.writeString(p.title, 200);
                         b.writeString(p.romName, 140);
-                        b.writeBoolean(p.docked);
+                        b.writeBoolean(p.worldScreen);
                         b.writeVarLong(p.sequence);
                     }
                 };

@@ -4,6 +4,14 @@
   "version": "1.0.0",
   "name": "Retrocraft Game Tests",
   "environment": "server",
-  "entrypoints": { "fabric-gametest": ["com.sammwy.retrocraft.server.screen.ConsoleInventoryTest"] },
-  "depends": { "retrocraft": "*", "fabric-gametest-api-v1": "*" }
+  "entrypoints": {
+    "fabric-gametest": [
+      "com.sammwy.retrocraft.server.screen.ConsoleInventoryTest",
+      "com.sammwy.retrocraft.server.screen.ArcadeVariantsTest"
+    ]
+  },
+  "depends": {
+    "retrocraft": "*",
+    "fabric-gametest-api-v1": "*"
+  }
 }

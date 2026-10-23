@@ -1065,7 +1065,7 @@ public final class InstanceManager implements AutoCloseable {
     }
 
     private static int maxSlots(Session session) {
-        return session.host.definition().type() == ConsoleType.DOCKED ? WorkerProtocol.PORTS : 1;
+        return session.host.definition().type().isPlaced() ? WorkerProtocol.PORTS : 1;
     }
 
     private static int slotOf(Session session, UUID player) {
@@ -1129,7 +1129,7 @@ public final class InstanceManager implements AutoCloseable {
      */
     private static boolean inWorld(Session session) {
         var definition = session.host.definition();
-        return definition.type() == ConsoleType.DOCKED
+        return definition.type().isPlaced()
                 && (!definition.usesTelevision()
                         || session.host instanceof DockedConsoleBlockEntity console
                                 && console.tv() != null);
@@ -2473,8 +2473,10 @@ public final class InstanceManager implements AutoCloseable {
                                                             session.data.gameId(),
                                                             session.game.name(),
                                                             session.game.filename(),
-                                                            session.host.definition().type()
-                                                                    == ConsoleType.DOCKED,
+                                                            session.host
+                                                                    .definition()
+                                                                    .type()
+                                                                    .isPlaced(),
                                                             0));
                                             var queue =
                                                     outbound.computeIfAbsent(

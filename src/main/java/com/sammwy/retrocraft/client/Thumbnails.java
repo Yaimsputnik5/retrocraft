@@ -26,10 +26,10 @@ public final class Thumbnails {
     /** LCD glass on each item model (model units, south face): x0 x1 y0 y1 z. */
     private static final Map<String, float[]> SCREENS =
             Map.of(
-                    "gb_handheld", new float[] {6, 10.6f, 9.4f, 13.6f, 9.4f},
-                    "gbc_handheld", new float[] {5.9f, 10.9f, 9.6f, 13.9f, 9.3f},
-                    "gba_handheld", new float[] {5.1f, 10.9f, 6.6f, 10.6f, 9.2f},
-                    "nes_handheld", new float[] {5.2f, 10.8f, 6, 10.6f, 9.3f});
+                    "gb_handheld", new float[] {5.2f, 10.8f, 9, 14.04f, 9.22f},
+                    "gbc_handheld", new float[] {5.2f, 10.8f, 9.35f, 14.39f, 9.22f},
+                    "gba_handheld", new float[] {4.9f, 11.1f, 6.3f, 10.44f, 9.22f},
+                    "nes_handheld", new float[] {5.15f, 10.85f, 6.2f, 10.55f, 9.22f});
 
     private record Entry(Identifier id, int width, int height, long at, byte[] png) {}
 

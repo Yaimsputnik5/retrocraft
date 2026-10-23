@@ -1,7 +1,7 @@
 {
   "parent": "retrocraft:item/nes_handheld",
   "textures": {
-    "screen": "retrocraft:block/console/lcd_on",
-    "indicator": "retrocraft:block/console/power_on"
+    "screen": "retrocraft:block/console/lcd_color_on",
+    "indicator": "retrocraft:block/console/led_green_on"
   }
 }
