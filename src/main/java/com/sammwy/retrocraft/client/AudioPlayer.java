@@ -36,7 +36,7 @@ final class AudioPlayer implements AutoCloseable {
                     releaseLine();
                     AudioFormat format = new AudioFormat(chunk.rate, 16, 2, true, false);
                     SourceDataLine next = AudioSystem.getSourceDataLine(format);
-                    next.open(format, Math.max(4096, chunk.rate * 4 / 20));
+                    next.open(format, Math.max(4096, (chunk.rate * 4 / 20 + 3) & ~3));
                     if (closed) {
                         next.close();
                         break;

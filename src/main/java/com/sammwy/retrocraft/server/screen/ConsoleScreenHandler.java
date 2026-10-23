@@ -36,7 +36,7 @@ public final class ConsoleScreenHandler extends ScreenHandler {
                 inventory,
                 host.definition(),
                 host,
-                new HostInventory(host),
+                new ConsoleInventory(host),
                 new PropertyDelegate() {
                     public int size() {
                         return 1;
@@ -186,21 +186,5 @@ public final class ConsoleScreenHandler extends ScreenHandler {
         if (original.isEmpty()) slot.setStack(ItemStack.EMPTY);
         else slot.markDirty();
         return copy;
-    }
-
-    private static final class HostInventory extends SimpleInventory {
-        private final ConsoleHost host;
-
-        HostInventory(ConsoleHost host) {
-            super(1);
-            this.host = host;
-            setStack(0, host.cartridge());
-        }
-
-        @Override
-        public void markDirty() {
-            if (host != null) host.cartridge(getStack(0));
-            super.markDirty();
-        }
     }
 }

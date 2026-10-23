@@ -20,6 +20,7 @@ import net.fabricmc.fabric.api.client.model.loading.v1.ModelLoadingPlugin;
 import net.fabricmc.fabric.api.client.networking.v1.*;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.fabric.api.object.builder.v1.client.model.FabricModelPredicateProviderRegistry;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
 import net.minecraft.client.gui.screen.ingame.HandledScreens;
 import net.minecraft.client.option.KeyBinding;
@@ -34,6 +35,7 @@ public final class RetrocraftClient implements ClientModInitializer {
     private final VideoStreams video = new VideoStreams();
     static VideoStreams VIDEO;
     static AudioStreams AUDIO;
+    static KeyBinding SETTINGS_KEY;
     public static HybridClient EMULATION;
     private final List<RomCatalog.Entry> pendingCatalog = new ArrayList<>();
     private int catalogGeneration;
@@ -42,7 +44,7 @@ public final class RetrocraftClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientPreferences.load();
-        KeyBinding settingsKey =
+        SETTINGS_KEY =
                 KeyBindingHelper.registerKeyBinding(
                         new KeyBinding(
                                 "key.retrocraft.settings",
@@ -69,7 +71,11 @@ public final class RetrocraftClient implements ClientModInitializer {
         for (var tv : ConsoleRegistry.televisions())
             BlockEntityRendererFactories.register(tv.entityType(), TvRenderer::new);
         ClientPlayNetworking.registerGlobalReceiver(
-                HybridPackets.Settings.ID, (packet, context) -> EMULATION.settings(packet));
+                HybridPackets.Settings.ID,
+                (packet, context) -> {
+                    ClientPreferences.send();
+                    EMULATION.settings(packet);
+                });
         ClientPlayNetworking.registerGlobalReceiver(
                 HybridPackets.Lease.ID, (packet, context) -> EMULATION.lease(packet));
         ClientPlayNetworking.registerGlobalReceiver(
@@ -172,7 +178,7 @@ public final class RetrocraftClient implements ClientModInitializer {
                 });
         ClientTickEvents.END_CLIENT_TICK.register(
                 client -> {
-                    while (settingsKey.wasPressed()) {
+                    while (SETTINGS_KEY.wasPressed()) {
                         if (!(client.currentScreen instanceof SettingsScreen))
                             client.setScreen(SettingsScreen.modMenu(client.currentScreen));
                     }
@@ -201,6 +207,7 @@ public final class RetrocraftClient implements ClientModInitializer {
         // screens stay smooth.
         WorldRenderEvents.START.register(
                 context -> {
+                    EMULATION.pollInput(MinecraftClient.getInstance());
                     for (UUID id : EMULATION.active()) {
                         var frame = EMULATION.frame(id);
                         if (frame != null) video.local(id, frame);

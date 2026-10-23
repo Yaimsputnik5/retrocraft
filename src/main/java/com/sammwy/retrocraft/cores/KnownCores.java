@@ -120,7 +120,7 @@ public final class KnownCores {
 
     /** Ordered list for the core library UI. */
     public static List<Core> all() {
-        return List.copyOf(CORES.values());
+        return CORES.values().stream().sorted(Comparator.comparing(Core::id)).toList();
     }
 
     /** Cores enabled on a fresh config. */

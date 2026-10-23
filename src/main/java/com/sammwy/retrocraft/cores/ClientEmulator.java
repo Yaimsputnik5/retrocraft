@@ -23,6 +23,7 @@ public final class ClientEmulator implements AutoCloseable {
     private volatile boolean committed, returning, closed;
     private final AtomicBoolean awaitingCheckpoint = new AtomicBoolean();
     private final AtomicBoolean checkpointRequested = new AtomicBoolean();
+    private volatile long checkpointNanos;
     private volatile WorkerProcess process;
     private final Thread thread;
 
@@ -47,6 +48,7 @@ public final class ClientEmulator implements AutoCloseable {
             int checkpointSeconds,
             IntUnaryOperator input,
             Listener listener) {
+        checkpointInterval(checkpointSeconds);
         thread =
                 Thread.ofVirtual()
                         .name("retrocraft-client-emulator")
@@ -65,8 +67,7 @@ public final class ClientEmulator implements AutoCloseable {
                                         while (!committed && !returning && !closed)
                                             LockSupport.parkNanos(10_000_000L);
                                         long next = System.nanoTime(),
-                                                nextSave =
-                                                        next + checkpointSeconds * 1_000_000_000L;
+                                                nextSave = next + checkpointNanos;
                                         long period = Math.round(1_000_000_000d / worker.fps());
                                         int[] masks = new int[WorkerProtocol.PORTS];
                                         while (committed && !returning && !closed) {
@@ -84,7 +85,7 @@ public final class ClientEmulator implements AutoCloseable {
                                                 byte[] bytes = Files.readAllBytes(snapshot);
                                                 SaveStates.validate(bytes);
                                                 listener.checkpoint(bytes, false);
-                                                nextSave = now + checkpointSeconds * 1_000_000_000L;
+                                                nextSave = now + checkpointNanos;
                                             }
                                             next += period;
                                             if (next < now - period * 4) next = now;
@@ -103,6 +104,14 @@ public final class ClientEmulator implements AutoCloseable {
                                     }
                                 });
         thread.start();
+    }
+
+    public void checkpointInterval(int seconds) {
+        if (seconds < 1 || seconds > 30)
+            throw new IllegalArgumentException("Invalid checkpoint interval");
+        long interval = seconds * 1_000_000_000L;
+        if (checkpointNanos != 0 && checkpointNanos != interval) checkpointRequested.set(true);
+        checkpointNanos = interval;
     }
 
     public void commit() {

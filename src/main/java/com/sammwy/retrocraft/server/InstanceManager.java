@@ -95,6 +95,8 @@ public final class InstanceManager implements AutoCloseable {
     private int coreGeneration;
     private final ConcurrentLinkedQueue<Runnable> callbacks = new ConcurrentLinkedQueue<>();
     private final Map<UUID, Session> sessions = new HashMap<>();
+    private final Set<ItemEntity> droppedItems = new HashSet<>();
+    private boolean itemsIndexed;
 
     private static final class PendingStart {
         volatile UUID created;
@@ -355,8 +357,8 @@ public final class InstanceManager implements AutoCloseable {
         if (stopping) return;
         if (actor != null) scanActor = actor;
         if (scanning) {
+            pendingOnlyNew = pendingScan ? pendingOnlyNew && onlyNew : onlyNew;
             pendingScan = true;
-            pendingOnlyNew = onlyNew;
             return;
         }
         startScan(null, onlyNew);
@@ -1314,13 +1316,24 @@ public final class InstanceManager implements AutoCloseable {
                     discover(new HandheldHost(player, stack));
             }
         }
-        for (var world : server.getWorlds())
-            for (var entity : world.iterateEntities()) {
-                if (entity instanceof ItemEntity item
-                        && item.getStack().getItem() instanceof HandheldConsoleItem
-                        && HandheldConsoleItem.instance(item.getStack()) != null)
-                    discover(new HandheldHost(item));
-            }
+        if (!itemsIndexed) {
+            itemsIndexed = true;
+            for (var world : server.getWorlds())
+                for (var entity : world.iterateEntities()) entityLoaded(entity);
+        }
+        droppedItems.removeIf(Entity::isRemoved);
+        for (ItemEntity item : droppedItems)
+            if (item.getStack().getItem() instanceof HandheldConsoleItem
+                    && HandheldConsoleItem.instance(item.getStack()) != null)
+                discover(new HandheldHost(item));
+    }
+
+    public void entityLoaded(Entity entity) {
+        if (entity instanceof ItemEntity item) droppedItems.add(item);
+    }
+
+    public void entityUnloaded(Entity entity) {
+        if (entity instanceof ItemEntity item) droppedItems.remove(item);
     }
 
     private static void publishInputs(Session session, long now) {
@@ -1334,6 +1347,15 @@ public final class InstanceManager implements AutoCloseable {
     }
 
     private void updateSubscriptions(Session session, long now) {
+        for (int port = 0; port < session.pads.length; port++) {
+            InputSource input = session.pads[port];
+            if (input != null
+                    && input.buttons != 0
+                    && now - input.lastSeen >= TimeUnit.SECONDS.toNanos(2)) {
+                input.buttons = 0;
+                broadcastPad(session, port, 0);
+            }
+        }
         publishInputs(session, now);
         boolean valid = session.host.valid() && session.data.id().equals(session.host.instance());
         if (valid) session.invalidSince = 0;
@@ -1766,6 +1788,7 @@ public final class InstanceManager implements AutoCloseable {
 
     private WorkerProcess openServerProcess(Session session, Path core, Path rom, Path state)
             throws IOException {
+        store.recover(session.data.id());
         Path log = store.directory(session.data.id()).resolve("worker.log");
         // The pool layout is POOL/platform/<coreId>/<binary> — the parent dir name is the trusted
         // id.
@@ -1890,7 +1913,16 @@ public final class InstanceManager implements AutoCloseable {
                                 session.pads[slot].player,
                                 owned && session.pads[slot].player.equals(owner)));
         forHudWatchers(
-                session, player -> send(player, new Packets.Players(session.data.id(), entries)));
+                session,
+                player -> {
+                    send(player, new Packets.Players(session.data.id(), entries));
+                    for (int port = 0; port < session.pads.length; port++)
+                        if (session.pads[port] != null)
+                            send(
+                                    player,
+                                    new Packets.Pad(
+                                            session.data.id(), port, session.pads[port].buttons));
+                });
     }
 
     private void broadcastPad(Session session, int slot, int mask) {
@@ -2230,6 +2262,8 @@ public final class InstanceManager implements AutoCloseable {
 
     private void coordinateOwnership(Session session, long now) {
         if (session.destroy || session.failure != null) return;
+        if (!clientMayEmulate() && session.ownership.mode() == Ownership.Mode.CLIENT)
+            returnOwnership(session);
         if (session.ownership.serverMayRun()
                 && session.pads[0] != null
                 && clientMayEmulate()
@@ -2813,6 +2847,7 @@ public final class InstanceManager implements AutoCloseable {
         for (Session session : sessions.values())
             if (!session.destroy && (session.thread == null || !session.thread.isAlive()))
                 persistSave(session);
+        droppedItems.clear();
         sessions.clear();
         videoWatching.clear();
         inputSessions.clear();

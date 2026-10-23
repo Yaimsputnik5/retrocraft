@@ -115,7 +115,7 @@ public final class ConsoleScreen extends Screen {
             close();
             return true;
         }
-        if (key == GLFW.GLFW_KEY_F8) {
+        if (RetrocraftClient.SETTINGS_KEY.matchesKey(key, scanCode)) {
             client.setScreen(SettingsScreen.modMenu(null));
             return true;
         }

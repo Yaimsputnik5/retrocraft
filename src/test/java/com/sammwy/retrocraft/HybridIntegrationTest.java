@@ -108,4 +108,57 @@ class HybridIntegrationTest {
             assertArrayEquals(expectedNext, resumed.advance(0).frame().rgb());
         }
     }
+
+    @Test
+    void changingCheckpointIntervalAppliesToAnActiveEmulator() throws Exception {
+        String configured = System.getProperty("retrocraft.testCore");
+        assumeTrue(configured != null);
+        Path rom = Files.write(root.resolve("homebrew.nes"), HomebrewRom.bytes());
+        CountDownLatch prepared = new CountDownLatch(1),
+                frame = new CountDownLatch(1),
+                checkpoint = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        try (ClientEmulator client =
+                new ClientEmulator(
+                        Path.of(System.getProperty("retrocraft.workerJar")),
+                        Path.of(configured),
+                        rom,
+                        root.resolve("live/snapshot.bin"),
+                        30,
+                        port -> 0,
+                        new ClientEmulator.Listener() {
+                            public void prepared() {
+                                prepared.countDown();
+                            }
+
+                            public void output(WorkerProcess.Output output, int rate) {
+                                frame.countDown();
+                            }
+
+                            public void checkpoint(byte[] bytes, boolean last) {
+                                try {
+                                    SaveStates.validate(bytes);
+                                } catch (Exception ex) {
+                                    failure.set(ex);
+                                }
+                                checkpoint.countDown();
+                            }
+
+                            public void failed(Throwable ex) {
+                                failure.set(ex);
+                                prepared.countDown();
+                                checkpoint.countDown();
+                            }
+                        })) {
+            assertTrue(prepared.await(10, TimeUnit.SECONDS));
+            assertNull(failure.get());
+            client.commit();
+            assertTrue(frame.await(3, TimeUnit.SECONDS));
+            client.checkpointInterval(1);
+            assertTrue(
+                    checkpoint.await(3, TimeUnit.SECONDS),
+                    "Updated interval must not wait for the original 30-second deadline");
+            assertNull(failure.get());
+        }
+    }
 }

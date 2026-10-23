@@ -128,6 +128,25 @@ public final class HybridClient {
         return local != null && local.phase == Phase.ACTIVE ? local.frame : null;
     }
 
+    /** Sample local buttons at render cadence so local play does not wait for a 20 Hz game tick. */
+    void pollInput(MinecraftClient client) {
+        for (Local local : locals.values()) {
+            if (local.phase != Phase.ACTIVE) continue;
+            int mine =
+                    client.player == null
+                            ? -1
+                            : PlayerHud.slotOf(local.offer.instance(), client.player.getUuid());
+            boolean visible =
+                    client.currentScreen instanceof ConsoleScreen screen
+                            && screen.instance.equals(local.offer.instance());
+            int buttons = visible ? InputControls.buttons(client) : 0;
+            for (int port = 0; port < local.ports.length(); port++)
+                local.ports.set(
+                        port,
+                        port == mine ? buttons : PlayerHud.mask(local.offer.instance(), port));
+        }
+    }
+
     int thumbnailSeconds() {
         return thumbnailSeconds;
     }
@@ -144,6 +163,8 @@ public final class HybridClient {
         uploadThumbnails = packet.thumbnailUpload();
         emulationMode = packet.emulationMode();
         checkpointSeconds = packet.checkpointSeconds();
+        for (Local local : locals.values())
+            if (local.emulator != null) local.emulator.checkpointInterval(checkpointSeconds);
         streamFps = Math.min(20, packet.streamFps());
         if (packet.generation() == settingsGeneration) {
             // Re-acknowledge soft updates: the server may have invalidated readiness without

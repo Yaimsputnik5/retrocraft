@@ -6,6 +6,7 @@ import java.security.*;
 import java.util.*;
 
 import com.google.gson.*;
+import com.sammwy.retrocraft.cores.transfer.BlobTransfer;
 
 public final class InstanceStore {
     public record Metadata(
@@ -35,6 +36,19 @@ public final class InstanceStore {
 
     public Path backup(UUID id) {
         return directory(id).resolve("previous-snapshot.bin");
+    }
+
+    /**
+     * Complete a checkpoint rotation interrupted between preserving the old state and promoting the
+     * new one.
+     */
+    public void recover(UUID id) throws IOException {
+        if (Files.exists(snapshot(id)) || !Files.isRegularFile(backup(id))) return;
+        if (Files.size(backup(id)) > BlobTransfer.MAX_SNAPSHOT)
+            throw new IOException("Backup snapshot too large");
+        byte[] bytes = Files.readAllBytes(backup(id));
+        SaveStates.validate(bytes);
+        SaveStates.writeAtomic(snapshot(id), bytes);
     }
 
     public void promote(UUID id, Path staged) throws IOException {

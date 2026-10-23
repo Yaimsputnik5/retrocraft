@@ -88,3 +88,11 @@ spotless {
         importOrder('java', 'javax', 'org', 'com', 'net', '')
     }
 }
+
+fabricApi {
+    configureTests {
+        createSourceSet = true
+        modId = 'retrocraft-test'
+        enableClientGameTests = false
+    }
+}

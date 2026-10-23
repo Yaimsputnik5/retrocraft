@@ -168,6 +168,14 @@ public final class Retrocraft implements ModInitializer {
                                         }
                                     });
                 });
+        ServerEntityEvents.ENTITY_LOAD.register(
+                (entity, world) -> {
+                    if (instances != null) instances.entityLoaded(entity);
+                });
+        ServerEntityEvents.ENTITY_UNLOAD.register(
+                (entity, world) -> {
+                    if (instances != null) instances.entityUnloaded(entity);
+                });
         ServerTickEvents.END_SERVER_TICK.register(
                 server -> {
                     if (instances != null) instances.tick();

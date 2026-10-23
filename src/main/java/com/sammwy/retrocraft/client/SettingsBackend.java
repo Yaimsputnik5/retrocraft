@@ -7,6 +7,7 @@ import java.util.*;
 import com.google.gson.Gson;
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.cores.transfer.BlobTransfer;
+import com.sammwy.retrocraft.roms.RomArchives;
 import com.sammwy.retrocraft.roms.RomLibrary;
 import com.sammwy.retrocraft.server.config.ConfigKey;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
@@ -68,6 +69,7 @@ interface SettingsBackend {
         private List<SettingsPackets.GuiOpen.Entry> schema;
         private ApplyCallback pendingApply;
         private long applyDeadline;
+        private volatile boolean closed;
 
         Remote(SettingsPackets.GuiOpen grant) {
             schema = grant.entries();
@@ -151,48 +153,7 @@ interface SettingsBackend {
 
         @Override
         public void upload(Path file, String dir, UploadCallback callback) {
-            Thread.ofVirtual()
-                    .name("retrocraft-rom-read")
-                    .start(
-                            () -> {
-                                try {
-                                    long size = Files.size(file);
-                                    if (size < 1 || size > BlobTransfer.MAX_ROM)
-                                        throw new IOException("File outside the ROM size limit");
-                                    byte[] bytes = Files.readAllBytes(file);
-                                    String name = file.getFileName().toString();
-                                    MinecraftClient.getInstance()
-                                            .execute(
-                                                    () ->
-                                                            SettingsClient.upload(
-                                                                    dir,
-                                                                    name,
-                                                                    bytes,
-                                                                    new SettingsClient.Callback() {
-                                                                        @Override
-                                                                        public void progress(
-                                                                                float fraction) {
-                                                                            callback.progress(
-                                                                                    fraction);
-                                                                        }
-
-                                                                        @Override
-                                                                        public void done(
-                                                                                boolean ok,
-                                                                                String message) {
-                                                                            callback.done(
-                                                                                    ok, message);
-                                                                        }
-                                                                    }));
-                                } catch (IOException | RuntimeException ex) {
-                                    String message =
-                                            ex.getMessage() == null
-                                                    ? "Could not read the file"
-                                                    : ex.getMessage();
-                                    MinecraftClient.getInstance()
-                                            .execute(() -> callback.done(false, message));
-                                }
-                            });
+            readUpload(file, SettingsPackets.AREA_ROMS, dir, callback);
         }
 
         @Override
@@ -237,41 +198,55 @@ interface SettingsBackend {
 
         @Override
         public void coreUpload(Path file, String coreId, UploadCallback callback) {
+            readUpload(file, SettingsPackets.AREA_BIOS, coreId, callback);
+        }
+
+        private void readUpload(Path file, int area, String directory, UploadCallback callback) {
+            if (closed) {
+                callback.done(false, "Settings screen closed");
+                return;
+            }
             Thread.ofVirtual()
-                    .name("retrocraft-bios-read")
+                    .name("retrocraft-upload-read")
                     .start(
                             () -> {
                                 try {
                                     long size = Files.size(file);
                                     if (size < 1 || size > BlobTransfer.MAX_ROM)
-                                        throw new IOException(
-                                                "File outside the BIOS upload size limit");
-                                    byte[] bytes = Files.readAllBytes(file);
-                                    String name = file.getFileName().toString();
+                                        throw new IOException("File outside the upload size limit");
+                                    byte[] bytes;
+                                    try (var in = Files.newInputStream(file)) {
+                                        bytes = RomArchives.bounded(in, BlobTransfer.MAX_ROM);
+                                    }
+                                    String hash = BlobTransfer.hash(bytes);
                                     MinecraftClient.getInstance()
                                             .execute(
-                                                    () ->
-                                                            SettingsClient.upload(
-                                                                    SettingsPackets.AREA_BIOS,
-                                                                    coreId,
-                                                                    name,
-                                                                    bytes,
-                                                                    new SettingsClient.Callback() {
-                                                                        @Override
-                                                                        public void progress(
-                                                                                float fraction) {
-                                                                            callback.progress(
-                                                                                    fraction);
-                                                                        }
+                                                    () -> {
+                                                        if (closed) {
+                                                            callback.done(
+                                                                    false,
+                                                                    "Settings screen closed");
+                                                            return;
+                                                        }
+                                                        SettingsClient.upload(
+                                                                area,
+                                                                directory,
+                                                                file.getFileName().toString(),
+                                                                bytes,
+                                                                hash,
+                                                                new SettingsClient.Callback() {
+                                                                    public void progress(
+                                                                            float fraction) {
+                                                                        callback.progress(fraction);
+                                                                    }
 
-                                                                        @Override
-                                                                        public void done(
-                                                                                boolean ok,
-                                                                                String message) {
-                                                                            callback.done(
-                                                                                    ok, message);
-                                                                        }
-                                                                    }));
+                                                                    public void done(
+                                                                            boolean ok,
+                                                                            String message) {
+                                                                        callback.done(ok, message);
+                                                                    }
+                                                                });
+                                                    });
                                 } catch (IOException | RuntimeException ex) {
                                     String message =
                                             ex.getMessage() == null
@@ -285,6 +260,7 @@ interface SettingsBackend {
 
         @Override
         public void close() {
+            closed = true;
             SettingsClient.abortUpload();
         }
     }
@@ -363,40 +339,78 @@ interface SettingsBackend {
 
         @Override
         public void list(String path, ListCallback callback) {
-            try {
-                var listing = library.list(path);
-                callback.result(
-                        true,
-                        listing.entries().stream()
-                                .map(
-                                        e ->
-                                                new SettingsPackets.RomList.Entry(
-                                                        e.name(), e.directory(), e.size()))
-                                .toList(),
-                        listing.truncated(),
-                        null);
-            } catch (IOException | RuntimeException ex) {
-                callback.result(false, List.of(), false, ex.getMessage());
-            }
+            listAsync(library, path, callback);
+        }
+
+        private static void listAsync(RomLibrary source, String path, ListCallback callback) {
+            Thread.ofVirtual()
+                    .name("retrocraft-local-list")
+                    .start(
+                            () -> {
+                                try {
+                                    var listing = source.list(path);
+                                    var entries =
+                                            listing.entries().stream()
+                                                    .map(
+                                                            e ->
+                                                                    new SettingsPackets.RomList
+                                                                            .Entry(
+                                                                            e.name(),
+                                                                            e.directory(),
+                                                                            e.size()))
+                                                    .toList();
+                                    MinecraftClient.getInstance()
+                                            .execute(
+                                                    () ->
+                                                            callback.result(
+                                                                    true,
+                                                                    entries,
+                                                                    listing.truncated(),
+                                                                    null));
+                                } catch (IOException | RuntimeException ex) {
+                                    MinecraftClient.getInstance()
+                                            .execute(
+                                                    () ->
+                                                            callback.result(
+                                                                    false,
+                                                                    List.of(),
+                                                                    false,
+                                                                    ex.getMessage()));
+                                }
+                            });
         }
 
         @Override
         public void action(int action, String path, String target, EventCallback callback) {
-            try {
-                switch (action) {
-                    case SettingsPackets.DELETE -> library.delete(path);
-                    case SettingsPackets.RENAME -> library.rename(path, target);
-                    case SettingsPackets.MOVE -> library.move(path, target);
-                    case SettingsPackets.MKDIR -> library.mkdir(path);
-                    case SettingsPackets.RESCAN, SettingsPackets.RESCAN_NEW -> {}
-                    default -> throw new IOException("Unknown action");
-                }
-                rescanLive();
-                callback.result(true, "");
-            } catch (IOException | RuntimeException ex) {
-                callback.result(
-                        false, ex.getMessage() == null ? "Operation failed" : ex.getMessage());
-            }
+            Thread.ofVirtual()
+                    .name("retrocraft-local-action")
+                    .start(
+                            () -> {
+                                try {
+                                    switch (action) {
+                                        case SettingsPackets.DELETE -> library.delete(path);
+                                        case SettingsPackets.RENAME -> library.rename(path, target);
+                                        case SettingsPackets.MOVE -> library.move(path, target);
+                                        case SettingsPackets.MKDIR -> library.mkdir(path);
+                                        case SettingsPackets.RESCAN,
+                                                SettingsPackets.RESCAN_NEW -> {}
+                                        default -> throw new IOException("Unknown action");
+                                    }
+                                    MinecraftClient.getInstance()
+                                            .execute(
+                                                    () -> {
+                                                        rescanLive();
+                                                        callback.result(true, "");
+                                                    });
+                                } catch (IOException | RuntimeException ex) {
+                                    String message =
+                                            ex.getMessage() == null
+                                                    ? "Operation failed"
+                                                    : ex.getMessage();
+                                    MinecraftClient.getInstance()
+                                            .execute(() -> callback.result(false, message));
+                                }
+                            });
         }
 
         @Override
@@ -431,32 +445,28 @@ interface SettingsBackend {
 
         @Override
         public void biosList(String coreId, ListCallback callback) {
-            try {
-                var listing = biosLibrary.list(coreId);
-                callback.result(
-                        true,
-                        listing.entries().stream()
-                                .map(
-                                        e ->
-                                                new SettingsPackets.RomList.Entry(
-                                                        e.name(), e.directory(), e.size()))
-                                .toList(),
-                        listing.truncated(),
-                        null);
-            } catch (IOException | RuntimeException ex) {
-                callback.result(false, List.of(), false, ex.getMessage());
-            }
+            listAsync(biosLibrary, coreId, callback);
         }
 
         @Override
         public void biosDelete(String coreId, String name, EventCallback callback) {
-            try {
-                biosLibrary.delete(coreId + "/" + name);
-                callback.result(true, "");
-            } catch (IOException | RuntimeException ex) {
-                callback.result(
-                        false, ex.getMessage() == null ? "Operation failed" : ex.getMessage());
-            }
+            Thread.ofVirtual()
+                    .name("retrocraft-local-bios-delete")
+                    .start(
+                            () -> {
+                                try {
+                                    biosLibrary.delete(coreId + "/" + name);
+                                    MinecraftClient.getInstance()
+                                            .execute(() -> callback.result(true, ""));
+                                } catch (IOException | RuntimeException ex) {
+                                    String message =
+                                            ex.getMessage() == null
+                                                    ? "Operation failed"
+                                                    : ex.getMessage();
+                                    MinecraftClient.getInstance()
+                                            .execute(() -> callback.result(false, message));
+                                }
+                            });
         }
 
         @Override
@@ -467,11 +477,15 @@ interface SettingsBackend {
                     .start(
                             () -> {
                                 try {
+                                    byte[] bytes;
+                                    try (var in = Files.newInputStream(file)) {
+                                        bytes = RomArchives.bounded(in, BlobTransfer.MAX_ROM);
+                                    }
                                     int landed =
                                             biosLibrary.install(
                                                     coreId,
                                                     file.getFileName().toString(),
-                                                    Files.readAllBytes(file),
+                                                    bytes,
                                                     true);
                                     MinecraftClient.getInstance()
                                             .execute(

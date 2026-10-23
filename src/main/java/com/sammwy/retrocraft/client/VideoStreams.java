@@ -117,7 +117,10 @@ final class VideoStreams {
 
     void preferencesChanged() {
         for (UUID id : List.copyOf(streams.keySet())) if (!visible(id)) stop(id);
-        if (!ClientPreferences.get().renderWorldScreens) ScreenTextures.clear();
+        if (!ClientPreferences.get().renderWorldScreens) {
+            ScreenTextures.clear();
+            for (Stream stream : streams.values()) stream.uploaded = null;
+        }
     }
 
     void tick() {

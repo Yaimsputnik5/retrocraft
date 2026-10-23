@@ -10,6 +10,7 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.sammwy.retrocraft.cores.WorkerProcess;
+import com.sammwy.retrocraft.roms.SaveStates;
 
 class WorkerIntegrationTest {
     @TempDir Path root;
@@ -226,6 +227,28 @@ class WorkerIntegrationTest {
                         root.resolve("arcade-savable/second.log"))) {
             assertTrue(restored.supportsSnapshots());
             restored.advance(new int[4], false, false);
+        }
+    }
+
+    @Test
+    void batteryOnlySavesKeepRunningWithoutCreatingSnapshots() throws Exception {
+        String configured = System.getProperty("retrocraft.testCore");
+        assumeTrue(configured != null);
+        Path rom = Files.write(root.resolve("homebrew.nes"), HomebrewRom.bytes());
+        Path state = root.resolve("battery/snapshot.bin");
+        try (WorkerProcess worker =
+                new WorkerProcess(
+                        Path.of(System.getProperty("retrocraft.workerJar")),
+                        Path.of(configured),
+                        rom,
+                        state,
+                        root.resolve("battery.log"))) {
+            for (int i = 0; i < 20; i++) worker.advance(0);
+            worker.saveBattery();
+            assertFalse(Files.exists(state));
+            assertNotNull(worker.advance(0).frame());
+            worker.save();
+            SaveStates.validate(Files.readAllBytes(state));
         }
     }
 }

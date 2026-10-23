@@ -169,29 +169,31 @@ public final class SettingsScreen extends Screen {
         contentW = px + pw - 12 - contentX;
         contentH = py + ph - FOOTER - 6 - contentY;
         int footerY = py + ph - FOOTER + 4;
+        int buttonWidth = Math.min(60, Math.max(32, (contentW - 8) / 3));
+        int buttonRight = px + pw - 12;
         apply =
                 addDrawableChild(
                         new Flat(
-                                        px + pw - 76 - 128,
+                                        buttonRight - buttonWidth * 3 - 8,
                                         footerY,
-                                        60,
+                                        buttonWidth,
                                         16,
                                         Text.translatable("settings.retrocraft.apply"),
                                         this::applyDraft)
                                 .accent(true));
         addDrawableChild(
                 new Flat(
-                        px + pw - 76 - 64,
+                        buttonRight - buttonWidth * 2 - 4,
                         footerY,
-                        56,
+                        buttonWidth,
                         16,
                         Text.translatable("settings.retrocraft.reset"),
                         this::resetDraft));
         addDrawableChild(
                 new Flat(
-                        px + pw - 72,
+                        buttonRight - buttonWidth,
                         footerY,
-                        60,
+                        buttonWidth,
                         16,
                         Text.translatable("settings.retrocraft.done"),
                         this::close));
@@ -557,7 +559,7 @@ public final class SettingsScreen extends Screen {
                                 .orElse("?");
         context.drawCenteredTextWithShadow(
                 tr,
-                version + (backend != null ? "  ·  " + backend.scope().getString() : ""),
+                version + "  ·  " + (category == CLIENT ? "Client" : "Server"),
                 px + SIDEBAR / 2 + 1,
                 py + 36,
                 MUTED);

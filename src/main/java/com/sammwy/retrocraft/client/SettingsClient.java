@@ -163,6 +163,11 @@ public final class SettingsClient {
     }
 
     public static void upload(int area, String dir, String name, byte[] bytes, Callback callback) {
+        upload(area, dir, name, bytes, BlobTransfer.hash(bytes), callback);
+    }
+
+    static void upload(
+            int area, String dir, String name, byte[] bytes, String hash, Callback callback) {
         abortUpload();
         upload = new Upload(++nextUpload, area, bytes, callback);
         ClientPlayNetworking.send(
@@ -174,7 +179,7 @@ public final class SettingsClient {
                         name,
                         bytes.length,
                         0,
-                        BlobTransfer.hash(bytes),
+                        hash,
                         new byte[0]));
     }
 
