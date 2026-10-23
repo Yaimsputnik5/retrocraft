@@ -70,6 +70,15 @@ final class CorePane {
         this.host = host;
     }
 
+    void focus(String coreId) {
+        expanded.add(coreId);
+        scroll = 0;
+        for (var core : BIOS_CORES) {
+            if (core.id().equals(coreId)) break;
+            scroll += ROW;
+        }
+    }
+
     void init(int x, int y, int w, int h) {
         this.x = x;
         this.y = y;

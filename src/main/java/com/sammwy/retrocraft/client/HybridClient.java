@@ -55,11 +55,12 @@ public final class HybridClient {
         final AtomicIntegerArray ports = new AtomicIntegerArray(4);
 
         volatile int rate;
+        Downloads.Transfer romDownload;
         volatile float volume = 1;
         Path rom, snapshot;
         boolean starting, forceKey = true;
         boolean relayAudio = true, relayVideo;
-        float gain = 1;
+        volatile float gain = 1;
         long audioSequence, checkpointSequence, lastHeartbeat, nextVideoKey, nextStream;
 
         Local(HybridPackets.Lease offer) {
@@ -70,6 +71,7 @@ public final class HybridClient {
         synchronized void output(WorkerProcess.Output output, int sampleRate) {
             if (output.frame() != null) frame = output.frame();
             rate = sampleRate;
+            audio.offer(sampleRate, output.audio(), volume * gain);
             if (pcm.size() + output.audio().length > Math.min(262_144, sampleRate)) pcm.reset();
             pcm.writeBytes(output.audio());
         }
@@ -82,6 +84,7 @@ public final class HybridClient {
 
         void close() {
             phase = Phase.CLOSED;
+            if (romDownload != null) romDownload.cancel();
             if (emulator != null) emulator.close();
             audio.close();
             states.clear();
@@ -182,6 +185,7 @@ public final class HybridClient {
         settingsGeneration = packet.generation();
         int generation = settingsGeneration;
         UUID token = connection;
+        Downloads downloads = DownloadHud.DOWNLOADS;
         Map<String, CoreManager.Prepared> previous = Map.copyOf(prepared);
         long started = System.nanoTime();
         ClientPlayNetworking.send(
@@ -214,7 +218,10 @@ public final class HybridClient {
                                                                                                 cached
                                                                                                         .path())
                                                                         ? cached
-                                                                        : manager.prepare(id));
+                                                                        : manager.prepare(
+                                                                                id,
+                                                                                DownloadHud
+                                                                                        .DOWNLOADS));
                                                     } catch (Exception ex) {
                                                         Retrocraft.LOG.warn(
                                                                 "Client could not prepare core {}",
@@ -308,6 +315,10 @@ public final class HybridClient {
                                                 if (!current(offered, token)
                                                         || offered.phase != Phase.RECEIVING) return;
                                                 offered.rom = cached;
+                                                if (cached == null)
+                                                    offered.romDownload =
+                                                            DownloadHud.DOWNLOADS.begin(
+                                                                    "ROM", packet.romName(), -1);
                                                 signal(
                                                         packet,
                                                         cached == null
@@ -381,6 +392,11 @@ public final class HybridClient {
                                                     next.kind(),
                                                     ignored -> new BlobTransfer.Receiver());
                                     byte[] bytes = receiver.accept(next, System.nanoTime());
+                                    if (next.kind() == BlobTransfer.Kind.ROM
+                                            && local.romDownload != null)
+                                        local.romDownload.update(
+                                                (long) next.offset() + next.bytes().length,
+                                                next.total());
                                     if (bytes == null) continue;
                                     if (next.kind() == BlobTransfer.Kind.ROM
                                             && !BlobTransfer.hash(bytes)
@@ -431,6 +447,10 @@ public final class HybridClient {
                                             if (!current(local, token)) return;
                                             if (chunk.kind() == BlobTransfer.Kind.ROM) {
                                                 local.rom = result;
+                                                if (local.romDownload != null) {
+                                                    local.romDownload.complete();
+                                                    local.romDownload = null;
+                                                }
                                                 signal(
                                                         local.offer,
                                                         HybridPackets.Action.ROM_READY,
@@ -529,6 +549,10 @@ public final class HybridClient {
     private void fail(Local local, UUID token, Throwable failure) {
         if (!current(local, token)) return;
         Retrocraft.LOG.error("Client emulation failed; returning to server checkpoint", failure);
+        if (local.romDownload != null) {
+            local.romDownload.fail();
+            local.romDownload = null;
+        }
         signal(local.offer, HybridPackets.Action.FAILED, 0);
         local.close();
         locals.remove(local.offer.instance());
@@ -607,8 +631,6 @@ public final class HybridClient {
                 {
                     byte[] pcm = local.takeAudio();
                     if (pcm.length > 0) {
-                        if (local.gain > 0)
-                            local.audio.offer(local.rate, pcm, local.volume * local.gain);
                         if (local.relayAudio
                                 && local.media.size() < 2
                                 && local.media.stream()

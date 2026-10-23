@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.*;
 
+import com.sammwy.retrocraft.cores.transfer.Downloads;
 import com.sammwy.retrocraft.roms.InstanceStore;
 import com.sammwy.retrocraft.roms.SaveStates;
 
@@ -44,6 +45,10 @@ public final class CoreManager {
     }
 
     public Prepared prepare(String id) throws IOException {
+        return prepare(id, new Downloads());
+    }
+
+    public Prepared prepare(String id, Downloads downloads) throws IOException {
         String filename = KnownCores.filename(id, platform);
         Path directory =
                 root.resolve(KnownCores.POOL)
@@ -65,7 +70,7 @@ public final class CoreManager {
                 if (!InstanceStore.sha256(core).equals(properties.getProperty("sha256")))
                     throw new IOException("Cached core checksum mismatch: " + id);
             } else {
-                download(id, core);
+                download(id, core, downloads);
                 Properties properties = new Properties();
                 properties.setProperty("sha256", InstanceStore.sha256(core));
                 properties.setProperty("source", KnownCores.uri(id, platform).toString());
@@ -88,13 +93,14 @@ public final class CoreManager {
         }
     }
 
-    private void download(String id, Path target) throws IOException {
+    private void download(String id, Path target, Downloads downloads) throws IOException {
         HttpRequest request =
                 HttpRequest.newBuilder(KnownCores.uri(id, platform))
                         .timeout(Duration.ofMinutes(2))
                         .GET()
                         .build();
         Path temporary = Files.createTempFile(target.getParent(), "download-", ".tmp");
+        var progress = downloads.begin("Core", id, -1);
         try (HttpClient client =
                 HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(20))
@@ -124,9 +130,23 @@ public final class CoreManager {
                                 "Official core download returned HTTP " + response.statusCode());
                     // The ZIP is small for this pool; bounding before extraction also limits zip
                     // bombs.
-                    byte[] archive = body.readNBytes(64 * 1024 * 1024 + 1);
-                    if (archive.length > 64 * 1024 * 1024)
+                    long total = response.headers().firstValueAsLong("Content-Length").orElse(-1);
+                    if (total > 64 * 1024 * 1024)
                         throw new IOException("Core download exceeds limit");
+                    var buffer = new ByteArrayOutputStream();
+                    byte[] block = new byte[32 * 1024];
+                    progress.update(0, total);
+                    int read;
+                    while ((read = body.read(block)) != -1) {
+                        if ((long) buffer.size() + read > 64 * 1024 * 1024)
+                            throw new IOException("Core download exceeds limit");
+                        buffer.write(block, 0, read);
+                        progress.update(buffer.size(), total);
+                    }
+                    if (total >= 0 && buffer.size() != total)
+                        throw new IOException("Incomplete core download");
+                    byte[] archive = buffer.toByteArray();
+                    progress.update(archive.length, archive.length);
                     boolean found = false;
                     try (ZipInputStream zip =
                             new ZipInputStream(new ByteArrayInputStream(archive))) {
@@ -149,6 +169,10 @@ public final class CoreManager {
                 }
             }
             Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            progress.complete();
+        } catch (IOException | RuntimeException ex) {
+            progress.fail();
+            throw ex;
         } finally {
             Files.deleteIfExists(temporary);
         }

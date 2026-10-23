@@ -56,6 +56,27 @@ public final class SettingsPackets {
         }
     }
 
+    public record BiosRequired(String coreId, boolean administrator) implements CustomPayload {
+        public static final Id<BiosRequired> ID =
+                new Id<>(Identifier.of("retrocraft", "bios_required"));
+        public static final PacketCodec<RegistryByteBuf, BiosRequired> CODEC =
+                new PacketCodec<>() {
+                    public BiosRequired decode(RegistryByteBuf b) {
+                        return new BiosRequired(b.readString(64), b.readBoolean());
+                    }
+
+                    public void encode(RegistryByteBuf b, BiosRequired p) {
+                        b.writeString(p.coreId, 64);
+                        b.writeBoolean(p.administrator);
+                    }
+                };
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
     /**
      * DoOpenSettingsGUI (S2C): the grant plus the whole typed config schema with current values.
      */
@@ -543,6 +564,7 @@ public final class SettingsPackets {
         PayloadTypeRegistry.playC2S().register(BiosRequest.ID, BiosRequest.CODEC);
         PayloadTypeRegistry.playC2S().register(BiosReady.ID, BiosReady.CODEC);
         PayloadTypeRegistry.playS2C().register(GuiOpen.ID, GuiOpen.CODEC);
+        PayloadTypeRegistry.playS2C().register(BiosRequired.ID, BiosRequired.CODEC);
         PayloadTypeRegistry.playS2C().register(ConfigSaved.ID, ConfigSaved.CODEC);
         PayloadTypeRegistry.playS2C().register(RomList.ID, RomList.CODEC);
         PayloadTypeRegistry.playS2C().register(RomEvent.ID, RomEvent.CODEC);

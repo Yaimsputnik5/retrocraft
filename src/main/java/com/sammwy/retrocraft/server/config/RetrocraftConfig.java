@@ -8,6 +8,7 @@ import java.util.*;
 import com.google.gson.*;
 import com.google.gson.annotations.SerializedName;
 import com.sammwy.retrocraft.cores.KnownCores;
+import com.sammwy.retrocraft.roms.BiosFiles;
 import com.sammwy.retrocraft.roms.SaveStates;
 
 import net.fabricmc.loader.api.FabricLoader;
@@ -109,7 +110,7 @@ public final class RetrocraftConfig {
     }
 
     public static Path biosDir(String coreId) {
-        return root().resolve("bios").resolve(coreId);
+        return root().resolve("bios").resolve(BiosFiles.directory(coreId));
     }
 
     public static Path systemDir(String coreId) {

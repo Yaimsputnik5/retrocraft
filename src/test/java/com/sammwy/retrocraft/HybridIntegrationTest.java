@@ -97,7 +97,8 @@ class HybridIntegrationTest {
             client.commit();
             assertTrue(saved.await(10, TimeUnit.SECONDS));
             assertNull(failure.get());
-            assertEquals(12, actual.size());
+            if (crash) assertTrue(actual.size() >= 12);
+            else assertEquals(12, actual.size());
             for (int i = 0; i < expected.size(); i++)
                 assertArrayEquals(expected.get(i), actual.get(i));
             SaveStates.validate(checkpoint.get());
@@ -106,6 +107,79 @@ class HybridIntegrationTest {
         try (WorkerProcess resumed =
                 new WorkerProcess(jar, core, rom, state, root.resolve("resumed.log"))) {
             assertArrayEquals(expectedNext, resumed.advance(0).frame().rgb());
+        }
+    }
+
+    @Test
+    void slowCheckpointUploadDoesNotStopFramesAndFinalCheckpointStaysOrdered() throws Exception {
+        String configured = System.getProperty("retrocraft.testCore");
+        assumeTrue(configured != null);
+        Path rom = Files.write(root.resolve("async.nes"), HomebrewRom.bytes());
+        CountDownLatch prepared = new CountDownLatch(1),
+                processing = new CountDownLatch(1),
+                release = new CountDownLatch(1),
+                finalSave = new CountDownLatch(1);
+        AtomicInteger frames = new AtomicInteger();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        List<Boolean> checkpoints = Collections.synchronizedList(new ArrayList<>());
+        try (ClientEmulator client =
+                new ClientEmulator(
+                        Path.of(System.getProperty("retrocraft.workerJar")),
+                        Path.of(configured),
+                        rom,
+                        root.resolve("async/snapshot.bin"),
+                        30,
+                        port -> 0,
+                        new ClientEmulator.Listener() {
+                            public void prepared() {
+                                prepared.countDown();
+                            }
+
+                            public void output(WorkerProcess.Output output, int rate) {
+                                frames.incrementAndGet();
+                            }
+
+                            public void checkpoint(byte[] bytes, boolean last) {
+                                try {
+                                    SaveStates.validate(bytes);
+                                    checkpoints.add(last);
+                                    if (!last) {
+                                        processing.countDown();
+                                        if (!release.await(5, TimeUnit.SECONDS))
+                                            throw new AssertionError(
+                                                    "Checkpoint was never released");
+                                    } else finalSave.countDown();
+                                } catch (Throwable ex) {
+                                    failed(ex);
+                                }
+                            }
+
+                            public void failed(Throwable ex) {
+                                failure.set(ex);
+                                processing.countDown();
+                                finalSave.countDown();
+                            }
+                        })) {
+            try {
+                assertTrue(prepared.await(10, TimeUnit.SECONDS));
+                client.commit();
+                client.requestCheckpoint();
+                assertTrue(processing.await(5, TimeUnit.SECONDS));
+                assertNull(failure.get());
+                int before = frames.get();
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+                while (frames.get() < before + 10 && System.nanoTime() < deadline) Thread.sleep(10);
+                assertTrue(
+                        frames.get() >= before + 10,
+                        "Emulation must continue while checkpoint processing is blocked");
+                client.returnToServer();
+                release.countDown();
+                assertTrue(finalSave.await(5, TimeUnit.SECONDS));
+                assertNull(failure.get());
+                assertEquals(List.of(false, true), checkpoints);
+            } finally {
+                release.countDown();
+            }
         }
     }
 

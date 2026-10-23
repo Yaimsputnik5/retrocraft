@@ -5,6 +5,7 @@ import java.util.*;
 import org.lwjgl.glfw.GLFW;
 
 import com.sammwy.retrocraft.Retrocraft;
+import com.sammwy.retrocraft.cores.transfer.Downloads;
 import com.sammwy.retrocraft.roms.RomCatalog;
 import com.sammwy.retrocraft.server.block.DockedConsoleBlock;
 import com.sammwy.retrocraft.server.console.*;
@@ -44,6 +45,7 @@ public final class RetrocraftClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientPreferences.load();
+        DownloadHud.register();
         SETTINGS_KEY =
                 KeyBindingHelper.registerKeyBinding(
                         new KeyBinding(
@@ -127,6 +129,17 @@ public final class RetrocraftClient implements ClientModInitializer {
                 Packets.Players.ID, (packet, context) -> PlayerHud.roster(packet));
         ClientPlayNetworking.registerGlobalReceiver(
                 Packets.Pad.ID, (packet, context) -> PlayerHud.pad(packet));
+        ClientPlayNetworking.registerGlobalReceiver(
+                SettingsPackets.BiosRequired.ID,
+                (packet, context) ->
+                        context.client()
+                                .execute(
+                                        () ->
+                                                context.client()
+                                                        .setScreen(
+                                                                new BiosRequiredScreen(
+                                                                        packet.coreId(),
+                                                                        packet.administrator()))));
         ClientPlayNetworking.registerGlobalReceiver(
                 SettingsPackets.GuiOpen.ID,
                 (packet, context) ->
@@ -223,6 +236,7 @@ public final class RetrocraftClient implements ClientModInitializer {
                     Thumbnails.close();
                     PlayerHud.clear();
                     SettingsClient.disconnect();
+                    DownloadHud.DOWNLOADS = new Downloads();
                     RomCatalog.clientEntries(List.of());
                     pendingCatalog.clear();
                     catalogDirty = true;

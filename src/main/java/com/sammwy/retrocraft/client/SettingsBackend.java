@@ -7,6 +7,7 @@ import java.util.*;
 import com.google.gson.Gson;
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.cores.transfer.BlobTransfer;
+import com.sammwy.retrocraft.roms.BiosFiles;
 import com.sammwy.retrocraft.roms.RomArchives;
 import com.sammwy.retrocraft.roms.RomLibrary;
 import com.sammwy.retrocraft.server.config.ConfigKey;
@@ -174,7 +175,11 @@ interface SettingsBackend {
                             });
             ClientPlayNetworking.send(
                     new SettingsPackets.RomAction(
-                            id, SettingsPackets.LIST, SettingsPackets.AREA_BIOS, coreId, ""));
+                            id,
+                            SettingsPackets.LIST,
+                            SettingsPackets.AREA_BIOS,
+                            BiosFiles.directory(coreId),
+                            ""));
         }
 
         @Override
@@ -192,13 +197,13 @@ interface SettingsBackend {
                             id,
                             SettingsPackets.DELETE,
                             SettingsPackets.AREA_BIOS,
-                            coreId + "/" + name,
+                            BiosFiles.directory(coreId) + "/" + name,
                             ""));
         }
 
         @Override
         public void coreUpload(Path file, String coreId, UploadCallback callback) {
-            readUpload(file, SettingsPackets.AREA_BIOS, coreId, callback);
+            readUpload(file, SettingsPackets.AREA_BIOS, BiosFiles.directory(coreId), callback);
         }
 
         private void readUpload(Path file, int area, String directory, UploadCallback callback) {
@@ -278,6 +283,7 @@ interface SettingsBackend {
             config = RetrocraftConfig.load();
             library = new RomLibrary(RetrocraftConfig.root().resolve("roms"));
             biosLibrary = new RomLibrary(RetrocraftConfig.root().resolve("bios"));
+            BiosFiles.migrateLegacy(biosLibrary.root());
             schema = SettingsPackets.GuiOpen.schema(config);
         }
 
@@ -445,7 +451,7 @@ interface SettingsBackend {
 
         @Override
         public void biosList(String coreId, ListCallback callback) {
-            listAsync(biosLibrary, coreId, callback);
+            listAsync(biosLibrary, BiosFiles.directory(coreId), callback);
         }
 
         @Override
@@ -455,7 +461,7 @@ interface SettingsBackend {
                     .start(
                             () -> {
                                 try {
-                                    biosLibrary.delete(coreId + "/" + name);
+                                    biosLibrary.delete(BiosFiles.directory(coreId) + "/" + name);
                                     MinecraftClient.getInstance()
                                             .execute(() -> callback.result(true, ""));
                                 } catch (IOException | RuntimeException ex) {
@@ -483,7 +489,7 @@ interface SettingsBackend {
                                     }
                                     int landed =
                                             biosLibrary.install(
-                                                    coreId,
+                                                    BiosFiles.directory(coreId),
                                                     file.getFileName().toString(),
                                                     bytes,
                                                     true);

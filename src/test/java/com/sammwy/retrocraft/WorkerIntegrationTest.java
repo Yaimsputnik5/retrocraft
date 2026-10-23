@@ -120,6 +120,31 @@ class WorkerIntegrationTest {
     }
 
     @Test
+    void capturedStateCanResumeWithoutWritingTheWorkersSnapshotFile() throws Exception {
+        String configured = System.getProperty("retrocraft.testCore");
+        assumeTrue(configured != null);
+        Path rom = Files.write(root.resolve("capture.nes"), HomebrewRom.bytes());
+        Path state = root.resolve("capture/snapshot.bin");
+        byte[] snapshot, next;
+        Path jar = Path.of(System.getProperty("retrocraft.workerJar"));
+        try (WorkerProcess worker =
+                new WorkerProcess(
+                        jar, Path.of(configured), rom, state, root.resolve("capture.log"))) {
+            for (int i = 0; i < 60; i++) worker.advance(0);
+            snapshot = worker.capture();
+            SaveStates.validate(snapshot);
+            assertFalse(Files.exists(state), "Capturing must not block on snapshot file IO");
+            next = worker.advance(0).frame().rgb();
+        }
+        SaveStates.writeAtomic(state, snapshot);
+        try (WorkerProcess worker =
+                new WorkerProcess(
+                        jar, Path.of(configured), rom, state, root.resolve("capture-resume.log"))) {
+            assertArrayEquals(next, worker.advance(0).frame().rgb());
+        }
+    }
+
+    @Test
     void n64StateRestoresAcrossWorkerRestarts() throws Exception {
         String configuredCore = System.getProperty("retrocraft.testN64Core");
         String configuredRom = System.getProperty("retrocraft.testN64Rom");

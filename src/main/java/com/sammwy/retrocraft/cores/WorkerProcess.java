@@ -216,6 +216,22 @@ public final class WorkerProcess implements AutoCloseable {
         }
     }
 
+    /** Capture only; disk writes and compression can proceed while the next frame runs. */
+    public byte[] capture() throws IOException {
+        try {
+            out.writeByte(WorkerProtocol.CAPTURE);
+            out.flush();
+            int length = in.readInt();
+            if (length < 12 || length > WorkerProtocol.MAX_STATE * 2 + 12)
+                throw new IOException("Invalid worker snapshot size");
+            byte[] bytes = new byte[length];
+            in.readFully(bytes);
+            return bytes;
+        } catch (EOFException ex) {
+            throw workerExited("capturing a snapshot", ex);
+        }
+    }
+
     public void save() throws IOException {
         try {
             out.writeByte(WorkerProtocol.SAVE);

@@ -113,6 +113,13 @@ public final class SettingsScreen extends Screen {
         return new SettingsScreen(parent, null, State.CONNECTING);
     }
 
+    static SettingsScreen bios(String coreId) {
+        var screen = modMenu(null);
+        screen.category = ConfigKey.Category.CORES.ordinal();
+        screen.corePane.focus(coreId);
+        return screen;
+    }
+
     private static SettingsScreen local(Screen parent) {
         try {
             return new SettingsScreen(parent, new SettingsBackend.Local(), State.READY);

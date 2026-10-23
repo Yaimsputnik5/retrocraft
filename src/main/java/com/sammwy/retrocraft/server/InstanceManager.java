@@ -79,6 +79,9 @@ public final class InstanceManager implements AutoCloseable {
     private List<RomCatalog.Entry> publishedCatalog = List.of();
     private final RomLibrary romLibrary, biosLibrary;
     private final Map<UUID, Upload> romUploads = new HashMap<>();
+    private final Downloads downloads = new Downloads();
+    private long nextDownloadNotice;
+    private final Set<UUID> downloadNotified = new HashSet<>();
     private final ThreadPoolExecutor libraryIo =
             new ThreadPoolExecutor(
                     1,
@@ -457,7 +460,7 @@ public final class InstanceManager implements AutoCloseable {
                         .start(
                                 () -> {
                                     try {
-                                        var prepared = cores.prepare(id);
+                                        var prepared = cores.prepare(id, downloads);
                                         callbacks.add(
                                                 () -> {
                                                     preparingCores.remove(id);
@@ -601,10 +604,13 @@ public final class InstanceManager implements AutoCloseable {
                     () -> {
                         try {
                             RomLibrary target = library(bios);
+                            String path = bios ? BiosFiles.canonical(packet.path()) : packet.path();
+                            String destination =
+                                    bios ? BiosFiles.canonical(packet.target()) : packet.target();
                             SettingsPackets.RomList listing = null;
                             switch (packet.action()) {
                                 case SettingsPackets.LIST -> {
-                                    var result = target.list(packet.path());
+                                    var result = target.list(path);
                                     listing =
                                             new SettingsPackets.RomList(
                                                     packet.request(),
@@ -620,12 +626,10 @@ public final class InstanceManager implements AutoCloseable {
                                                                                     e.size()))
                                                             .toList());
                                 }
-                                case SettingsPackets.DELETE -> target.delete(packet.path());
-                                case SettingsPackets.RENAME ->
-                                        target.rename(packet.path(), packet.target());
-                                case SettingsPackets.MOVE ->
-                                        target.move(packet.path(), packet.target());
-                                case SettingsPackets.MKDIR -> target.mkdir(packet.path());
+                                case SettingsPackets.DELETE -> target.delete(path);
+                                case SettingsPackets.RENAME -> target.rename(path, packet.target());
+                                case SettingsPackets.MOVE -> target.move(path, destination);
+                                case SettingsPackets.MKDIR -> target.mkdir(path);
                                 default -> throw new IOException("Unknown action");
                             }
                             SettingsPackets.RomList response = listing;
@@ -678,6 +682,7 @@ public final class InstanceManager implements AutoCloseable {
     private static final class Upload {
         final int id;
         final int area;
+        Downloads.Transfer progress;
         final String dir, name, sha256;
         final long total;
         final ByteArrayOutputStream data;
@@ -705,7 +710,8 @@ public final class InstanceManager implements AutoCloseable {
             case SettingsPackets.BEGIN -> beginUpload(player, packet);
             case SettingsPackets.CHUNK -> uploadChunk(player, packet);
             case SettingsPackets.ABORT -> {
-                romUploads.remove(player.getUuid());
+                Upload cancelled = romUploads.remove(player.getUuid());
+                if (cancelled != null && cancelled.progress != null) cancelled.progress.cancel();
                 send(
                         player,
                         new SettingsPackets.RomEvent(
@@ -728,17 +734,28 @@ public final class InstanceManager implements AutoCloseable {
             if (!packet.sha256().matches("[0-9a-f]{64}")) throw new IOException("Invalid checksum");
             library(packet.area() == SettingsPackets.AREA_BIOS)
                     .destination(
-                            packet.dir(),
+                            packet.area() == SettingsPackets.AREA_BIOS
+                                    ? BiosFiles.canonical(packet.dir())
+                                    : packet.dir(),
                             packet.name()); // names, folder and collisions checked up front
+            Upload previous = romUploads.remove(player.getUuid());
+            if (previous != null && previous.progress != null) previous.progress.cancel();
             romUploads.put(
                     player.getUuid(),
                     new Upload(
                             packet.id(),
                             packet.area(),
-                            packet.dir(),
+                            packet.area() == SettingsPackets.AREA_BIOS
+                                    ? BiosFiles.canonical(packet.dir())
+                                    : packet.dir(),
                             packet.name(),
                             packet.total(),
                             packet.sha256()));
+            romUploads.get(player.getUuid()).progress =
+                    downloads.begin(
+                            packet.area() == SettingsPackets.AREA_BIOS ? "BIOS" : "ROM",
+                            packet.name(),
+                            packet.total());
             send(
                     player,
                     new SettingsPackets.RomEvent(
@@ -764,6 +781,7 @@ public final class InstanceManager implements AutoCloseable {
                     || upload.data.size() + packet.data().length > upload.total)
                 throw new IOException("Chunk outside transfer bounds");
             upload.data.writeBytes(packet.data());
+            upload.progress.update(upload.data.size(), upload.total);
             upload.lastActivity = System.nanoTime();
             if (upload.data.size() < upload.total) return;
             romUploads.remove(player.getUuid());
@@ -779,6 +797,7 @@ public final class InstanceManager implements AutoCloseable {
                             RomLibrary target = library(bios);
                             int landed;
                             landed = target.install(upload.dir, upload.name, bytes, bios);
+                            upload.progress.complete();
                             Retrocraft.LOG.info(
                                     "{} uploaded {} {}", actor, bios ? "BIOS" : "ROM", upload.name);
                             callbacks.add(
@@ -798,6 +817,7 @@ public final class InstanceManager implements AutoCloseable {
                                         else rescan(actor);
                                     });
                         } catch (IOException | RuntimeException ex) {
+                            upload.progress.fail();
                             callbacks.add(
                                     () -> {
                                         var current = server.getPlayerManager().getPlayer(playerId);
@@ -815,6 +835,7 @@ public final class InstanceManager implements AutoCloseable {
                         }
                     });
         } catch (IOException | RuntimeException ex) {
+            upload.progress.fail();
             romUploads.remove(player.getUuid());
             send(
                     player,
@@ -1140,7 +1161,10 @@ public final class InstanceManager implements AutoCloseable {
         biosReadyClients.remove(player);
         clientGenerations.remove(player);
         outbound.remove(player);
-        romUploads.remove(player);
+        Upload cancelledUpload = romUploads.remove(player);
+        if (cancelledUpload != null && cancelledUpload.progress != null)
+            cancelledUpload.progress.cancel();
+        downloadNotified.remove(player);
         biosManifestSent.remove(player);
         biosPending.remove(player);
         biosOutgoing.remove(player);
@@ -1228,12 +1252,65 @@ public final class InstanceManager implements AutoCloseable {
         }
     }
 
+    private void notifyDownloads() {
+        long now = System.nanoTime();
+        if (now < nextDownloadNotice) return;
+        nextDownloadNotice = now + 250_000_000L;
+        var entries = downloads.entries();
+        for (var player : server.getPlayerManager().getPlayerList()) {
+            if (!operator(player)) continue;
+            if (entries.isEmpty()) {
+                if (downloadNotified.remove(player.getUuid()))
+                    player.sendMessage(Text.empty(), true);
+                continue;
+            }
+            int index = (int) ((now / 2_000_000_000L) % entries.size());
+            var entry = entries.get(index);
+            int percent = entry.percent();
+            int filled = percent < 0 ? (int) ((now / 250_000_000L) % 10) : percent / 10;
+            String bar = "▰".repeat(filled) + "▱".repeat(10 - filled);
+            String status =
+                    switch (entry.state()) {
+                        case DOWNLOADING -> "Downloading ";
+                        case COMPLETE -> "Downloaded ";
+                        case FAILED -> "Download failed: ";
+                    };
+            String name =
+                    entry.name().length() > 36 ? entry.name().substring(0, 33) + "…" : entry.name();
+            String text =
+                    "Retrocraft · "
+                            + status
+                            + entry.kind()
+                            + " · "
+                            + name
+                            + "  "
+                            + bar
+                            + (percent < 0 ? "" : " " + percent + "%")
+                            + " · "
+                            + entry.size()
+                            + (entries.size() > 1
+                                    ? " [" + (index + 1) + "/" + entries.size() + "]"
+                                    : "");
+            player.sendMessage(
+                    Text.literal(text)
+                            .styled(
+                                    style ->
+                                            style.withColor(
+                                                    entry.state() == Downloads.State.FAILED
+                                                            ? 0xE0655C
+                                                            : 0xC45CF0)),
+                    true);
+            downloadNotified.add(player.getUuid());
+        }
+    }
+
     public void tick() {
         Runnable callback;
         for (int i = 0; i < 256 && (callback = callbacks.poll()) != null; i++)
             if (!stopping) callback.run();
         flushTransfers();
         flushBios();
+        notifyDownloads();
         if (roms == null) return;
         ticks++;
         if (ticks % 20 == 1) discoverItems();
@@ -1245,6 +1322,7 @@ public final class InstanceManager implements AutoCloseable {
             var entry = it.next();
             if (now - entry.getValue().lastActivity <= TimeUnit.SECONDS.toNanos(60)) continue;
             it.remove();
+            entry.getValue().progress.fail();
             var player = server.getPlayerManager().getPlayer(entry.getKey());
             if (player != null)
                 send(
@@ -1706,8 +1784,16 @@ public final class InstanceManager implements AutoCloseable {
                                                         .equals(InstanceStore.sha256(core)))
                                             throw new IOException(
                                                     "ROM/core changed since snapshot");
-                                        try (WorkerProcess process =
-                                                openServerProcess(session, core, rom, state)) {
+                                        try (var saveIo =
+                                                        Executors.newSingleThreadExecutor(
+                                                                Thread.ofVirtual()
+                                                                        .name(
+                                                                                "retrocraft-server-autosave")
+                                                                        .factory());
+                                                WorkerProcess process =
+                                                        openServerProcess(
+                                                                session, core, rom, state)) {
+                                            Future<?> pendingSave = null;
                                             session.process = process;
                                             session.sampleRate = process.sampleRate();
                                             long period =
@@ -1753,10 +1839,37 @@ public final class InstanceManager implements AutoCloseable {
                                                                 video,
                                                                 session.wantsAudio),
                                                         process.sampleRate());
-                                                if (before >= nextSave) {
-                                                    if (process.supportsSnapshots()) process.save();
-                                                    else process.saveBattery();
-                                                    persistSave(session);
+                                                if (before >= nextSave
+                                                        && (pendingSave == null
+                                                                || pendingSave.isDone())) {
+                                                    if (pendingSave != null) pendingSave.get();
+                                                    if (process.supportsSnapshots()) {
+                                                        byte[] snapshot = process.capture();
+                                                        pendingSave =
+                                                                saveIo.submit(
+                                                                        () -> {
+                                                                            SaveStates.validate(
+                                                                                    snapshot);
+                                                                            SaveStates.writeAtomic(
+                                                                                    state,
+                                                                                    snapshot);
+                                                                            byte[] battery =
+                                                                                    GameSaves.sram(
+                                                                                            snapshot);
+                                                                            if (battery != null)
+                                                                                SaveStates
+                                                                                        .writeAtomic(
+                                                                                                state
+                                                                                                        .resolveSibling(
+                                                                                                                "battery.sav"),
+                                                                                                battery);
+                                                                            persistSave(session);
+                                                                            return null;
+                                                                        });
+                                                    } else {
+                                                        process.saveBattery();
+                                                        persistSave(session);
+                                                    }
                                                     nextSave =
                                                             System.nanoTime()
                                                                     + TimeUnit.SECONDS.toNanos(
@@ -1767,6 +1880,7 @@ public final class InstanceManager implements AutoCloseable {
                                                 if (next < now - period * 4) next = now;
                                                 if (next > now) LockSupport.parkNanos(next - now);
                                             }
+                                            if (pendingSave != null) pendingSave.get();
                                             if (!session.destroy && process.supportsSnapshots())
                                                 process.save();
                                         }
@@ -1829,9 +1943,9 @@ public final class InstanceManager implements AutoCloseable {
 
     private static void requireBios(String coreId) throws IOException {
         if (!coreId.equals("pcsx2")) return;
-        Path bios = RetrocraftConfig.biosDir(coreId).resolve("bios");
-        if (!Files.isDirectory(bios))
-            throw new IOException("PS2 BIOS missing: place an uncompressed .bin dump in " + bios);
+        BiosFiles.migrateLegacy(RetrocraftConfig.root().resolve("bios"));
+        Path bios = RetrocraftConfig.biosDir(coreId);
+        if (!Files.isDirectory(bios)) throw new IOException("PS2 BIOS missing");
         try (var files = Files.list(bios)) {
             if (files.noneMatch(
                     path ->
@@ -1840,8 +1954,7 @@ public final class InstanceManager implements AutoCloseable {
                                             .toString()
                                             .toLowerCase(Locale.ROOT)
                                             .endsWith(".bin")))
-                throw new IOException(
-                        "PS2 BIOS missing: place an uncompressed .bin dump in " + bios);
+                throw new IOException("PS2 BIOS missing");
         }
     }
 
@@ -2018,6 +2131,15 @@ public final class InstanceManager implements AutoCloseable {
     }
 
     private static void error(ServerPlayerEntity player, String key) {
+        if (key.equals("bios_missing")) {
+            boolean admin = operator(player);
+            player.sendMessage(
+                    Text.translatable("message.retrocraft.bios_missing" + (admin ? "_admin" : "")),
+                    false);
+            if (ServerPlayNetworking.canSend(player, SettingsPackets.BiosRequired.ID))
+                send(player, new SettingsPackets.BiosRequired("pcsx2", admin));
+            return;
+        }
         player.sendMessage(Text.translatable("message.retrocraft." + key), false);
     }
 
@@ -2061,7 +2183,7 @@ public final class InstanceManager implements AutoCloseable {
                             List<SettingsPackets.BiosManifest.Entry> entries = new ArrayList<>();
                             for (String id : cores) {
                                 if (!KnownCores.get(id).needsBios()) continue;
-                                String directory = id.equals("pcsx2") ? id + "/bios" : id;
+                                String directory = BiosFiles.directory(id);
                                 if (!Files.isDirectory(
                                         RetrocraftConfig.root().resolve("bios").resolve(directory)))
                                     continue;
@@ -2145,10 +2267,8 @@ public final class InstanceManager implements AutoCloseable {
                             try {
                                 Path path =
                                         biosLibrary.read(
-                                                request.coreId()
-                                                        + (request.coreId().equals("pcsx2")
-                                                                ? "/bios/"
-                                                                : "/")
+                                                BiosFiles.directory(request.coreId())
+                                                        + "/"
                                                         + request.name());
                                 if (Files.size(path) < 1 || Files.size(path) > 8L * 1024 * 1024)
                                     throw new IOException("Invalid BIOS size");
@@ -2856,5 +2976,7 @@ public final class InstanceManager implements AutoCloseable {
         readyClients.clear();
         callbacks.clear();
         romUploads.clear();
+        downloads.clear();
+        downloadNotified.clear();
     }
 }

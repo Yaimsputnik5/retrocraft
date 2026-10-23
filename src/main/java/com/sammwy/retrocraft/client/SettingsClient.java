@@ -8,6 +8,7 @@ import java.util.*;
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.cores.KnownCores;
 import com.sammwy.retrocraft.cores.transfer.BlobTransfer;
+import com.sammwy.retrocraft.cores.transfer.Downloads;
 import com.sammwy.retrocraft.roms.BiosCache;
 import com.sammwy.retrocraft.roms.RomLibrary;
 import com.sammwy.retrocraft.roms.SaveStates;
@@ -232,6 +233,7 @@ public final class SettingsClient {
     }
 
     private static final Map<String, BiosFile> biosIncoming = new HashMap<>();
+    private static final Map<String, Downloads.Transfer> biosDownloads = new HashMap<>();
     private static final Set<String> biosRequested = new HashSet<>();
     private static final ArrayDeque<SettingsPackets.BiosRequest> biosMissing = new ArrayDeque<>();
     private static volatile long biosEpoch;
@@ -247,6 +249,8 @@ public final class SettingsClient {
             biosManifestFailed = false;
             biosReadySent = false;
             biosIncoming.clear();
+            biosDownloads.values().forEach(Downloads.Transfer::cancel);
+            biosDownloads.clear();
             biosMissing.clear();
             biosRequested.clear();
         } else if (packet.generation() != biosGeneration) return;
@@ -266,10 +270,6 @@ public final class SettingsClient {
                                         || !entry.sha256().matches("[0-9a-f]{64}")) continue;
                                 Path cached =
                                         RetrocraftConfig.biosDir(entry.coreId())
-                                                .resolve(
-                                                        entry.coreId().equals("pcsx2")
-                                                                ? "bios"
-                                                                : "")
                                                 .resolve(entry.name());
                                 if (BiosCache.matches(cached, entry.size(), entry.sha256()))
                                     continue;
@@ -307,6 +307,9 @@ public final class SettingsClient {
                 && ClientPlayNetworking.canSend(SettingsPackets.BiosRequest.ID)) {
             var request = biosMissing.removeFirst();
             biosRequested.add(request.coreId() + "/" + request.name() + "/" + request.sha256());
+            biosDownloads.put(
+                    request.coreId() + "/" + request.name(),
+                    DownloadHud.DOWNLOADS.begin("BIOS", request.name(), -1));
             ClientPlayNetworking.send(request);
         }
     }
@@ -327,6 +330,8 @@ public final class SettingsClient {
         if (!biosRequested.contains(packet.coreId() + "/" + packet.name() + "/" + packet.sha256()))
             return;
         biosManifestFailed = true;
+        var progress = biosDownloads.remove(packet.coreId() + "/" + packet.name());
+        if (progress != null) progress.fail();
         biosIncoming.remove(packet.coreId() + "/" + packet.name());
         biosRequested.remove(packet.coreId() + "/" + packet.name() + "/" + packet.sha256());
         pumpBios();
@@ -365,9 +370,12 @@ public final class SettingsClient {
                     || packet.offset() != file.data.size()
                     || file.data.size() + packet.data().length > file.total) {
                 biosIncoming.remove(key);
+                failBiosDownload(key);
                 return;
             }
             file.data.writeBytes(packet.data());
+            var progress = biosDownloads.get(key);
+            if (progress != null) progress.update(file.data.size(), file.total);
             if (file.data.size() < file.total) return;
             biosIncoming.remove(key);
             byte[] bytes = file.data.toByteArray();
@@ -382,19 +390,22 @@ public final class SettingsClient {
                                                 .execute(
                                                         () -> {
                                                             if (epoch == biosEpoch)
-                                                                biosManifestFailed = true;
+                                                                failBiosDownload(key);
                                                         });
                                         return;
                                     }
                                     if (epoch != biosEpoch) return;
                                     Path target =
                                             RetrocraftConfig.biosDir(packet.coreId())
-                                                    .resolve(
-                                                            packet.coreId().equals("pcsx2")
-                                                                    ? "bios"
-                                                                    : "")
                                                     .resolve(packet.name());
                                     SaveStates.writeAtomic(target, bytes);
+                                    MinecraftClient.getInstance()
+                                            .execute(
+                                                    () -> {
+                                                        if (epoch != biosEpoch) return;
+                                                        var finished = biosDownloads.remove(key);
+                                                        if (finished != null) finished.complete();
+                                                    });
                                     Retrocraft.LOG.info(
                                             "Received BIOS {} for core {} from server",
                                             packet.name(),
@@ -409,7 +420,7 @@ public final class SettingsClient {
                                             .execute(
                                                     () -> {
                                                         if (epoch == biosEpoch)
-                                                            biosManifestFailed = true;
+                                                            failBiosDownload(key);
                                                     });
                                 } finally {
                                     MinecraftClient.getInstance()
@@ -429,7 +440,16 @@ public final class SettingsClient {
                             });
         } catch (RuntimeException ex) {
             biosIncoming.remove(key);
+            failBiosDownload(key);
         }
+    }
+
+    private static void failBiosDownload(String key) {
+        biosManifestFailed = true;
+        var progress = biosDownloads.remove(key);
+        if (progress != null) progress.fail();
+        biosRequested.removeIf(request -> request.startsWith(key + "/"));
+        pumpBios();
     }
 
     public static void disconnect() {
@@ -438,6 +458,8 @@ public final class SettingsClient {
         upload = null;
         screen = null;
         biosIncoming.clear();
+        biosDownloads.values().forEach(Downloads.Transfer::cancel);
+        biosDownloads.clear();
         biosRequested.clear();
         biosMissing.clear();
         biosChecks = 0;

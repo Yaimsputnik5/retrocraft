@@ -7,6 +7,7 @@ import java.nio.file.*;
 public final class CacheMigration {
     public static synchronized void prepare(Path config, Path cache, boolean client)
             throws IOException {
+        BiosFiles.migrateLegacy(config.resolve("bios"));
         Path legacy = config.resolve("cores/managed"),
                 server = cache.resolve("server/cores"),
                 target = cache.resolve(client ? "client/cores" : "server/cores");

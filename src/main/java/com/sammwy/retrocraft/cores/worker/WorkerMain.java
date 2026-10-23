@@ -2,6 +2,7 @@ package com.sammwy.retrocraft.cores.worker;
 
 import java.io.*;
 import java.net.*;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
@@ -177,7 +178,11 @@ public final class WorkerMain {
                     saveBattery();
                     break;
                 }
-                if (command == WorkerProtocol.SAVE) {
+                if (command == WorkerProtocol.CAPTURE) {
+                    byte[] snapshot = capture();
+                    out.writeInt(snapshot.length);
+                    out.write(snapshot);
+                } else if (command == WorkerProtocol.SAVE) {
                     save();
                     saveBattery();
                     out.writeBoolean(true);
@@ -303,28 +308,33 @@ public final class WorkerMain {
         return frames;
     }
 
-    private void save() throws IOException {
+    private byte[] capture() throws IOException {
         long length = core.retro_serialize_size().longValue();
         if (length <= 0 || length > WorkerProtocol.MAX_STATE)
             throw new IOException("Core does not support bounded snapshots");
-        Path temporary = statePath.resolveSibling(statePath.getFileName() + ".tmp");
-        try (Memory state = new Memory(length);
-                DataOutputStream out =
-                        new DataOutputStream(
-                                new BufferedOutputStream(Files.newOutputStream(temporary)))) {
+        long ramLength = core.retro_get_memory_size(0).longValue();
+        Pointer ram = core.retro_get_memory_data(0);
+        if (ramLength < 0 || ramLength > WorkerProtocol.MAX_STATE)
+            throw new IOException("Invalid SRAM size");
+        if (ram == null) ramLength = 0;
+        byte[] bytes = new byte[(int) (length + ramLength + 12)];
+        ByteBuffer envelope = ByteBuffer.wrap(bytes);
+        envelope.putInt(WorkerProtocol.MAGIC).putInt((int) length);
+        try (Memory state = new Memory(length)) {
             if (core.retro_serialize(state, new Libretro.SizeT(length)) == 0)
                 throw new IOException("retro_serialize failed");
-            out.writeInt(WorkerProtocol.MAGIC);
-            out.writeInt((int) length);
-            out.write(state.getByteArray(0, (int) length));
-            long ramLength = core.retro_get_memory_size(0).longValue();
-            Pointer ram = core.retro_get_memory_data(0);
-            if (ramLength < 0 || ramLength > WorkerProtocol.MAX_STATE)
-                throw new IOException("Invalid SRAM size");
-            if (ram == null) ramLength = 0;
-            out.writeInt((int) ramLength);
-            if (ramLength > 0) out.write(ram.getByteArray(0, (int) ramLength));
+            state.read(0, bytes, 8, (int) length);
         }
+        envelope.position(8 + (int) length);
+        envelope.putInt((int) ramLength);
+        if (ramLength > 0) ram.read(0, bytes, 12 + (int) length, (int) ramLength);
+        return bytes;
+    }
+
+    private void save() throws IOException {
+        byte[] bytes = capture();
+        Path temporary = statePath.resolveSibling(statePath.getFileName() + ".tmp");
+        Files.write(temporary, bytes);
         try {
             Files.move(
                     temporary,
