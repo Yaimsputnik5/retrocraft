@@ -107,13 +107,13 @@ public final class Retrocraft implements ModInitializer {
     }
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<net.minecraft.server.command.ServerCommandSource> commandTree(String name) {
-        var root = CommandManager.literal(name).requires(source -> source.hasPermissionLevel(2));
+        var root = CommandManager.literal(name);
         root.then(CommandManager.literal("gui").executes(context -> {
             if (instances == null) return 0;
             instances.openSettings(context.getSource().getPlayerOrThrow());
             return 1;
         }));
-        root.then(CommandManager.literal("scan").executes(context -> {
+        root.then(CommandManager.literal("scan").requires(source -> source.hasPermissionLevel(2)).executes(context -> {
             if (instances == null) return 0;
             if (instances.reloadLibrary(context.getSource())) return 1;
             context.getSource().sendError(Text.translatable("message.retrocraft.scan_busy")); return 0;
@@ -122,12 +122,12 @@ public final class Retrocraft implements ModInitializer {
             if (instances.reloadLibrary(context.getSource(), true)) return 1;
             context.getSource().sendError(Text.translatable("message.retrocraft.scan_busy")); return 0;
         })));
-        root.then(CommandManager.literal("reload").executes(context -> {
+        root.then(CommandManager.literal("reload").requires(source -> source.hasPermissionLevel(2)).executes(context -> {
             if (instances == null) return 0;
             if (instances.reloadConfig(context.getSource())) { context.getSource().sendFeedback(() -> Text.literal("Retrocraft config reloaded"), true); return 1; }
             context.getSource().sendError(Text.literal("Retrocraft config reload failed; see log")); return 0;
         }));
-        var config = CommandManager.literal("config").executes(context -> {
+        var config = CommandManager.literal("config").requires(source -> source.hasPermissionLevel(2)).executes(context -> {
             if (instances == null) return 0;
             var source = context.getSource();
             ConfigKey.keys().sorted().forEach(key -> source.sendFeedback(() -> Text.literal(key + " = " + ConfigKey.get(instances.config(), key)), false));

@@ -23,7 +23,7 @@ import java.util.*;
 import static com.sammwy.retrocraft.client.SettingsWidgets.*;
 
 /**
- * Operator settings: a sidebar with one category per config group and a ROM library
+ * Personal and operator settings: a sidebar with one category per config group and a ROM library
  * browser. Values are edited into a draft and committed with Apply.
  */
 public final class SettingsScreen extends Screen {
@@ -46,7 +46,9 @@ public final class SettingsScreen extends Screen {
     private List<SettingsPackets.GuiOpen.Entry> schema = List.of();
     private Map<String, SettingsPackets.GuiOpen.Entry> byKey = Map.of();
     private final Map<String, String> draft = new LinkedHashMap<>();
-    private int category = ConfigKey.Category.EMULATION.ordinal();
+    private static final int CLIENT = -1;
+    private int category = CLIENT;
+    private final Map<String, String> clientDraft = new LinkedHashMap<>();
     private float scroll;
     private boolean syncing;
     private final List<Row> rows = new ArrayList<>();
@@ -62,7 +64,7 @@ public final class SettingsScreen extends Screen {
     private SettingsScreen(Screen parent, SettingsBackend backend, State state) {
         super(Text.translatable("settings.retrocraft.title"));
         this.parent = parent; this.backend = backend; this.state = state;
-        if (backend != null) schema(backend.schema());
+        schema(backend != null ? backend.schema() : List.of());
     }
 
     static SettingsScreen remote(Screen parent, SettingsPackets.GuiOpen grant) {
@@ -72,7 +74,7 @@ public final class SettingsScreen extends Screen {
     /** ModMenu's config button: local files when hosting/offline, a server request otherwise. */
     public static SettingsScreen modMenu(Screen parent) {
         var client = MinecraftClient.getInstance();
-        if (client.player == null || client.isIntegratedServerRunning()) return local(parent);
+        if (client.player == null) return local(parent);
         if (!client.player.hasPermissionLevel(2)) return denied(parent, "operator");
         if (!SettingsClient.supported()) return denied(parent, "not_installed");
         return new SettingsScreen(parent, null, State.CONNECTING);
@@ -88,9 +90,11 @@ public final class SettingsScreen extends Screen {
     }
 
     private void schema(List<SettingsPackets.GuiOpen.Entry> entries) {
-        schema = entries;
+        var combined = new ArrayList<>(ClientPreferences.schema());
+        combined.addAll(entries);
+        schema = List.copyOf(combined);
         var map = new HashMap<String, SettingsPackets.GuiOpen.Entry>();
-        for (var entry : entries) map.put(entry.key(), entry);
+        for (var entry : schema) map.put(entry.key(), entry);
         byKey = map;
     }
 
@@ -118,12 +122,12 @@ public final class SettingsScreen extends Screen {
         addDrawableChild(new Flat(px + pw - 72, footerY, 60, 16, Text.translatable("settings.retrocraft.done"), this::close));
         SettingsClient.screen(this);
         if (state == State.CONNECTING) { requestedAt = System.nanoTime(); if (SettingsClient.supported()) SettingsClient.request(); }
-        if (state == State.READY) {
+        {
             buildRows();
             browser.init(contentX, contentY + ROW_H + 6, contentW, contentH - ROW_H - 6);
-            browser.setActive(category == ConfigKey.Category.LIBRARY.ordinal());
+            browser.setActive(state == State.READY && category == ConfigKey.Category.LIBRARY.ordinal());
             corePane.init(contentX, contentY, contentW, contentH);
-            corePane.setActive(category == ConfigKey.Category.CORES.ordinal());
+            corePane.setActive(state == State.READY && category == ConfigKey.Category.CORES.ordinal());
         }
         refreshFooter();
     }
@@ -140,19 +144,19 @@ public final class SettingsScreen extends Screen {
             case SettingsPackets.INT -> {
                 var field = SettingsWidgets.field(textRenderer, 0, 0, 44, value(entry));
                 field.setMaxLength(10);
-                field.setChangedListener(text -> { if (!syncing) { draft.put(entry.key(), text); refreshFooter(); } });
+                field.setChangedListener(text -> { if (!syncing) { (entry.category() == CLIENT ? clientDraft : draft).put(entry.key(), text); refreshFooter(); } });
                 row.parts.add(addSelectableChild(field));
                 row.intField = field;
                 row.parts.add(addSelectableChild(new Glyph(0, 0, GLYPH_MINUS, () -> step(row, -1), Text.translatable("settings.retrocraft.decrease"))));
                 row.parts.add(addSelectableChild(new Glyph(0, 0, GLYPH_PLUS, () -> step(row, 1), Text.translatable("settings.retrocraft.increase"))));
             }
             case SettingsPackets.BOOL -> {
-                var toggle = new Toggle(0, 0, "true".equals(value(entry)), on -> { if (!syncing) { draft.put(entry.key(), on ? "true" : "false"); refreshFooter(); } });
+                var toggle = new Toggle(0, 0, "true".equals(value(entry)), on -> { if (!syncing) { (entry.category() == CLIENT ? clientDraft : draft).put(entry.key(), on ? "true" : "false"); refreshFooter(); } });
                 row.toggle = toggle;
                 row.parts.add(addSelectableChild(toggle));
             }
             case SettingsPackets.ENUM, SettingsPackets.CORE -> {
-                var cycle = new Cycle(0, 0, 150, entry.options(), value(entry), v -> { if (!syncing) { draft.put(entry.key(), v); refreshFooter(); } });
+                var cycle = new Cycle(0, 0, 150, entry.options(), value(entry), v -> { if (!syncing) { (entry.category() == CLIENT ? clientDraft : draft).put(entry.key(), v); refreshFooter(); } });
                 row.cycle = cycle;
                 row.parts.add(addSelectableChild(cycle));
             }
@@ -164,15 +168,30 @@ public final class SettingsScreen extends Screen {
     private void step(Row row, int dir) {
         var entry = row.entry;
         int v = entry.min();
-        try { v = Integer.parseInt(draft.getOrDefault(entry.key(), entry.value())); } catch (NumberFormatException ignored) { }
+        try { v = Integer.parseInt(value(entry)); } catch (NumberFormatException ignored) { }
         v = Math.max(entry.min(), Math.min(entry.max(), v + dir));
         row.intField.setText(Integer.toString(v));
     }
 
-    private String value(SettingsPackets.GuiOpen.Entry entry) { return draft.getOrDefault(entry.key(), entry.value()); }
+    private Map<String, String> activeDraft() { return category == CLIENT ? clientDraft : draft; }
+    private boolean ready() { return category == CLIENT || state == State.READY; }
+    private String value(SettingsPackets.GuiOpen.Entry entry) {
+        var current = byKey.getOrDefault(entry.key(), entry);
+        return (entry.category() == CLIENT ? clientDraft : draft).getOrDefault(entry.key(), current.value());
+    }
     private SettingsPackets.GuiOpen.Entry entry(String key) { return byKey.get(key); }
 
     private void applyDraft() {
+        if (category == CLIENT) {
+            try {
+                ClientPreferences.apply(clientDraft);
+                clientDraft.clear();
+                schema(backend == null ? List.of() : backend.schema());
+                syncRows(); refreshFooter();
+                status(Text.translatable("settings.retrocraft.saved"), GOOD);
+            } catch (java.io.IOException | IllegalArgumentException ex) { status(Text.literal(ex.getMessage()), BAD); }
+            return;
+        }
         var changes = draft.entrySet().stream().map(e -> new SettingsPackets.ConfigApply.Change(e.getKey(), e.getValue())).toList();
         if (changes.isEmpty()) return;
         backend.apply(changes, (ok, message, entries) -> {
@@ -183,8 +202,8 @@ public final class SettingsScreen extends Screen {
         });
     }
     private void resetDraft() {
-        if (draft.isEmpty()) return;
-        draft.clear(); syncRows(); refreshFooter();
+        if (activeDraft().isEmpty()) return;
+        activeDraft().clear(); syncRows(); refreshFooter();
     }
     private void syncRows() {
         syncing = true;
@@ -193,15 +212,15 @@ public final class SettingsScreen extends Screen {
                 if (row.entry == null) continue; // section header
                 var entry = entry(row.entry.key());
                 if (entry == null) continue;
-                if (row.intField != null) row.intField.setText(entry.value());
-                if (row.toggle != null) row.toggle.value("true".equals(entry.value()));
-                if (row.cycle != null) row.cycle.value(entry.value());
+                if (row.intField != null) row.intField.setText(value(entry));
+                if (row.toggle != null) row.toggle.value("true".equals(value(entry)));
+                if (row.cycle != null) row.cycle.value(value(entry));
             }
         } finally { syncing = false; }
     }
 
     private void refreshFooter() {
-        apply.active = state == State.READY && !draft.isEmpty();
+        apply.active = ready() && !activeDraft().isEmpty();
     }
 
     void status(Text text, int color) {
@@ -211,16 +230,20 @@ public final class SettingsScreen extends Screen {
     private void selectCategory(int index) {
         if (index == category) return;
         category = index; scroll = 0;
-        browser.setActive(index == ConfigKey.Category.LIBRARY.ordinal());
-        corePane.setActive(index == ConfigKey.Category.CORES.ordinal());
+        setFocused(null);
+        for (var row : rows) { row.hide(); if (row.intField != null) row.intField.setFocused(false); }
+        refreshFooter();
+        browser.setActive(state == State.READY && index == ConfigKey.Category.LIBRARY.ordinal());
+        corePane.setActive(state == State.READY && index == ConfigKey.Category.CORES.ordinal());
         SettingsWidgets.click(client);
     }
 
     private int categoryAt(double mx, double my) {
-        int y = py + 56;
+        if (mx >= px + 6 && mx < px + SIDEBAR - 6 && my >= py + 68 && my < py + 86) return CLIENT;
+        int y = py + 108;
         for (int i = 0; i < ConfigKey.Category.values().length; i++, y += 20)
             if (mx >= px + 6 && mx < px + SIDEBAR - 6 && my >= y && my < y + 18) return i;
-        return -1;
+        return -2;
     }
 
     @Override public void tick() {
@@ -232,9 +255,10 @@ public final class SettingsScreen extends Screen {
     }
 
     @Override public boolean mouseClicked(double mx, double my, int button) {
-        if (state == State.READY) {
+        {
             int idx = categoryAt(mx, my);
-            if (idx >= 0) { selectCategory(idx); return true; }
+            if (idx >= CLIENT) { selectCategory(idx); return true; }
+            if (!ready()) return super.mouseClicked(mx, my, button);
             if (scrollTrackHit(mx, my)) { scrollDrag = true; dragScroll(my); return true; }
             if (category == ConfigKey.Category.LIBRARY.ordinal() && browser.mouseClicked(mx, my, button)) return true;
             if (category == ConfigKey.Category.CORES.ordinal() && corePane.mouseClicked(mx, my, button)) return true;
@@ -244,8 +268,8 @@ public final class SettingsScreen extends Screen {
 
     @Override public boolean mouseDragged(double mx, double my, int button, double deltaX, double deltaY) {
         if (scrollDrag) { dragScroll(my); return true; }
-        if (state == State.READY && category == ConfigKey.Category.LIBRARY.ordinal() && browser.mouseDragged(mx, my)) return true;
-        if (state == State.READY && category == ConfigKey.Category.CORES.ordinal() && corePane.mouseDragged(mx, my)) return true;
+        if (ready() && category == ConfigKey.Category.LIBRARY.ordinal() && browser.mouseDragged(mx, my)) return true;
+        if (ready() && category == ConfigKey.Category.CORES.ordinal() && corePane.mouseDragged(mx, my)) return true;
         return super.mouseDragged(mx, my, button, deltaX, deltaY);
     }
 
@@ -257,9 +281,9 @@ public final class SettingsScreen extends Screen {
     }
 
     @Override public boolean mouseScrolled(double mx, double my, double horizontal, double vertical) {
-        if (state == State.READY && category == ConfigKey.Category.LIBRARY.ordinal() && browser.mouseScrolled(mx, my, horizontal, vertical)) return true;
-        if (state == State.READY && category == ConfigKey.Category.CORES.ordinal() && corePane.mouseScrolled(mx, my, horizontal, vertical)) return true;
-        if (state == State.READY && mx >= contentX && mx < contentX + contentW && my >= contentY && my < contentY + contentH) {
+        if (ready() && category == ConfigKey.Category.LIBRARY.ordinal() && browser.mouseScrolled(mx, my, horizontal, vertical)) return true;
+        if (ready() && category == ConfigKey.Category.CORES.ordinal() && corePane.mouseScrolled(mx, my, horizontal, vertical)) return true;
+        if (ready() && mx >= contentX && mx < contentX + contentW && my >= contentY && my < contentY + contentH) {
             scroll = Math.max(0, Math.min(scroll - (float) vertical * 14, maxScroll()));
             return true;
         }
@@ -273,18 +297,18 @@ public final class SettingsScreen extends Screen {
     }
 
     @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
-        if (state == State.READY && category == ConfigKey.Category.LIBRARY.ordinal() && browser.keyPressed(key, scanCode, modifiers)) return true;
+        if (ready() && category == ConfigKey.Category.LIBRARY.ordinal() && browser.keyPressed(key, scanCode, modifiers)) return true;
         if (key == GLFW.GLFW_KEY_ESCAPE) { close(); return true; }
         return super.keyPressed(key, scanCode, modifiers);
     }
 
     @Override public boolean charTyped(char chr, int modifiers) {
-        if (state == State.READY && category == ConfigKey.Category.LIBRARY.ordinal() && browser.charTyped(chr, modifiers)) return true;
+        if (ready() && category == ConfigKey.Category.LIBRARY.ordinal() && browser.charTyped(chr, modifiers)) return true;
         return super.charTyped(chr, modifiers);
     }
 
     @Override public void filesDragged(List<Path> files) {
-        if (state == State.READY && category == ConfigKey.Category.LIBRARY.ordinal()) browser.filesDropped(files);
+        if (ready() && category == ConfigKey.Category.LIBRARY.ordinal()) browser.filesDropped(files);
     }
 
     private int rowCategory(Row row) {
@@ -294,6 +318,7 @@ public final class SettingsScreen extends Screen {
 
     @Override public void render(DrawContext context, int mx, int my, float delta) {
         var tr = textRenderer;
+        for (var row : rows) row.hide();
         context.fill(0, 0, width, height, 0xB0080A0E);
         // Panel
         rounded(context, px + 3, py + 5, pw, ph, 0x90000000, 6);
@@ -308,13 +333,13 @@ public final class SettingsScreen extends Screen {
         context.fill(px + 8, py + 48, px + SIDEBAR - 8, py + 49, 0x18FFFFFF);
         renderCategories(context, tr, mx, my);
         // Content header
-        if (state == State.READY) {
-            var cat = ConfigKey.Category.values()[category];
-            context.drawTextWithShadow(tr, Text.translatable("settings.retrocraft.category." + cat.name().toLowerCase(Locale.ROOT)), contentX, py + 12, TEXT);
+        if (ready()) {
+            String categoryName = category == CLIENT ? "client" : ConfigKey.Category.values()[category].name().toLowerCase(Locale.ROOT);
+            context.drawTextWithShadow(tr, Text.translatable("settings.retrocraft.category." + categoryName), contentX, py + 12, TEXT);
             context.fill(contentX, py + 26, px + pw - 12, py + 27, 0x18FFFFFF);
             context.fill(contentX, py + 26, contentX + 34, py + 27, ACCENT);
         }
-        switch (state) {
+        switch (category == CLIENT ? State.READY : state) {
             case CONNECTING -> {
                 int dots = (int) ((System.currentTimeMillis() / 350) % 4);
                 context.drawCenteredTextWithShadow(tr, Text.translatable("settings.retrocraft.connecting").append(".".repeat(dots)), px + SIDEBAR + (pw - SIDEBAR) / 2, py + ph / 2 - 4, MUTED);
@@ -336,16 +361,21 @@ public final class SettingsScreen extends Screen {
         if (status != null) {
             context.fill(px + SIDEBAR + 14, py + ph - FOOTER + 9, px + SIDEBAR + 18, py + ph - FOOTER + 13, statusColor);
             context.drawTextWithShadow(tr, tr.trimToWidth(status.getString(), pw - SIDEBAR - 250), px + SIDEBAR + 24, py + ph - FOOTER + 7, statusColor == BAD ? 0xFFF0A8A2 : MUTED);
-        } else if (state == State.READY && !draft.isEmpty()) {
+        } else if (ready() && !activeDraft().isEmpty()) {
             context.fill(px + SIDEBAR + 14, py + ph - FOOTER + 9, px + SIDEBAR + 18, py + ph - FOOTER + 13, ACCENT);
-            context.drawTextWithShadow(tr, Text.translatable("settings.retrocraft.unsaved", draft.size()), px + SIDEBAR + 24, py + ph - FOOTER + 7, MUTED);
+            context.drawTextWithShadow(tr, Text.translatable("settings.retrocraft.unsaved", activeDraft().size()), px + SIDEBAR + 24, py + ph - FOOTER + 7, MUTED);
         }
         super.render(context, mx, my, delta);
     }
 
     private void renderCategories(DrawContext context, TextRenderer tr, int mx, int my) {
         String[][] icons = {GLYPH_CHIP, GLYPH_WAVES, GLYPH_CLOCK, GLYPH_CORE, GLYPH_FOLDER};
-        int y = py + 56;
+        context.drawTextWithShadow(tr, Text.literal("Client"), px + 12, py + 56, MUTED);
+        boolean clientSelected = category == CLIENT;
+        rounded(context, px + 6, py + 68, SIDEBAR - 12, 18, clientSelected ? 0xFF32284A : CONTROL, 3);
+        context.drawTextWithShadow(tr, Text.translatable("settings.retrocraft.category.client"), px + 24, py + 73, clientSelected ? TEXT : MUTED);
+        context.drawTextWithShadow(tr, Text.literal("Server"), px + 12, py + 96, MUTED);
+        int y = py + 108;
         for (var cat : ConfigKey.Category.values()) {
             boolean selected = cat.ordinal() == category;
             boolean hot = mx >= px + 6 && mx < px + SIDEBAR - 6 && my >= y && my < y + 18;
@@ -366,7 +396,7 @@ public final class SettingsScreen extends Screen {
         for (var row : rows) {
             if (rowCategory(row) != category) { row.hide(); continue; }
             row.y = ry;
-            boolean visible = ry + row.height() > clipY && ry < clipY + clipH;
+            boolean visible = ry >= clipY && ry + row.height() <= clipY + clipH;
             row.layout(contentX + contentW - 6, ry, visible);
             ry += row.height();
         }
@@ -464,8 +494,8 @@ public final class SettingsScreen extends Screen {
                 context.drawItem(new ItemStack(item), contentX + 4, y + 8);
                 context.drawTextWithShadow(tr, tr.trimToWidth(item.getName().getString(), contentW - 170), contentX + 24, y + 8, TEXT);
             } else {
-                context.drawTextWithShadow(tr, tr.trimToWidth(Text.translatable("settings.retrocraft.key." + entry.key()).getString(), contentW - 170), labelX, y + 6, TEXT);
-                context.drawTextWithShadow(tr, tr.trimToWidth(Text.translatable("settings.retrocraft.key." + entry.key() + ".desc").getString(), contentW - 170), labelX, y + 17, 0xFF67707F);
+                context.drawTextWithShadow(tr, tr.trimToWidth(Text.translatable("settings.retrocraft.key." + entry.key()).getString(), Math.max(0, contentW - 100)), labelX, y + 6, TEXT);
+                context.drawTextWithShadow(tr, tr.trimToWidth(Text.translatable("settings.retrocraft.key." + entry.key() + ".desc").getString(), Math.max(0, contentW - 100)), labelX, y + 17, 0xFF67707F);
             }
             boolean invalid = entry.kind() == SettingsPackets.INT && !intValid();
             if (invalid) context.fill(contentX + 2, y + ROW_H - 1, contentX + contentW - 8, y + ROW_H, BAD);

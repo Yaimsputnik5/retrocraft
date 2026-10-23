@@ -105,16 +105,19 @@ final class RomBrowser {
         renameField.visible = false;
         host.addHidden(renameField);
         cancelEdits(); rebuildBreadcrumbs();
-        mode(FILES);
-        setActive(true);
+        mode = FILES;
+        filesTab.accent(true); gamesTab.accent(false);
+        setActive(false);
     }
 
     /** The screen owns one pane per category; outside Library every chrome widget and inline editor is parked. */
     void setActive(boolean value) {
+        boolean wasActive = active;
         active = value;
-        for (var widget : new ClickableWidget[]{up, refresh, newFolder, upload, paste, cancelMove, filesTab, gamesTab})
+        for (var widget : new ClickableWidget[]{up, refresh, newFolder, upload, paste, cancelMove, filesTab, gamesTab, scanNew})
             if (widget != null) widget.visible = value;
         if (!value) cancelEdits();
+        else if (!wasActive) load();
     }
 
     private void mode(int mode) {

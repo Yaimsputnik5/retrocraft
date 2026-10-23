@@ -18,6 +18,10 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.fabric.api.client.networking.v1.*;
 import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
+import org.lwjgl.glfw.GLFW;
 import net.minecraft.client.gui.screen.ingame.HandledScreens;
 import net.minecraft.item.*;
 import java.util.*;
@@ -32,6 +36,9 @@ public final class RetrocraftClient implements ClientModInitializer {
     private boolean catalogDirty;
 
     @Override public void onInitializeClient() {
+        ClientPreferences.load();
+        KeyBinding settingsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.retrocraft.settings", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_F8, "category.retrocraft"));
         EMULATION = new HybridClient(audio); VIDEO = video;
         for (var console : ConsoleRegistry.consoles()) {
             if (console.type() == ConsoleType.HANDHELD)
@@ -80,6 +87,9 @@ public final class RetrocraftClient implements ClientModInitializer {
             if (packet.last()) { RomCatalog.clientEntries(pendingCatalog); pendingCatalog.clear(); catalogDirty = true; }
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            while (settingsKey.wasPressed()) {
+                if (!(client.currentScreen instanceof SettingsScreen)) client.setScreen(SettingsScreen.modMenu(client.currentScreen));
+            }
             EMULATION.tick(client);
             SettingsClient.tick();
             video.tick();
@@ -95,7 +105,7 @@ public final class RetrocraftClient implements ClientModInitializer {
             catalogDirty = false;
         });
         // Locally emulated frames are uploaded per rendered frame, not per tick, so in-world screens stay smooth.
-        WorldRenderEvents.START.register(context -> { for (UUID id : EMULATION.active()) { var frame = EMULATION.frame(id); if (frame != null) video.local(id, frame); } });
+        WorldRenderEvents.START.register(context -> { for (UUID id : EMULATION.active()) { var frame = EMULATION.frame(id); if (frame != null) video.local(id, frame); } video.render(); });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             EMULATION.disconnect(); audio.close(); video.close(); Thumbnails.close(); PlayerHud.clear(); SettingsClient.disconnect(); RomCatalog.clientEntries(List.of()); pendingCatalog.clear(); catalogDirty = true;
             if (client.currentScreen instanceof ConsoleScreen screen) screen.serverClosed();

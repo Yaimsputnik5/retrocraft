@@ -41,7 +41,7 @@ public final class ConsoleScreen extends Screen {
 
     @Override protected void init() {
         if (client != null && !hudHiddenByUs) { hudWasHidden = client.options.hudHidden; client.options.hudHidden = true; hudHiddenByUs = true; }
-        if (inWorld) CameraRig.focus(BlockPos.fromLong(screen));
+        if (inWorld && ClientPreferences.get().cameraFocus && ClientPreferences.get().renderWorldScreens) CameraRig.focus(BlockPos.fromLong(screen));
         // Miniature actions in the top-right corner; Escape closes the screen.
         int x = width - MARGIN;
         if (canManage) {
@@ -67,7 +67,7 @@ public final class ConsoleScreen extends Screen {
         var entry = ScreenTextures.get(instance);
         textureId = entry == null ? null : entry.id();
         if (entry != null) { frameWidth = entry.width(); frameHeight = entry.height(); }
-        if (inWorld) {
+        if (inWorld && ClientPreferences.get().renderWorldScreens) {
             // The cabinet block shows the video; only the key legend and the miniature actions are drawn.
             context.drawItem(consoleStack, MARGIN, 3);
             context.drawTextWithShadow(textRenderer, Text.empty().append(consoleName).append(" · ").append(title), MARGIN + 20, 7, 0xffe6e9f0);

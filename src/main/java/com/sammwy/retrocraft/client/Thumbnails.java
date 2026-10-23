@@ -26,6 +26,7 @@ public final class Thumbnails {
     private static final Map<UUID, NativeImageBackedTexture> textures = new HashMap<>();
 
     static void accept(Packets.Thumbnail packet) {
+        if (!ClientPreferences.get().renderHandheldScreens) return;
         if (packet.png().length == 0) { release(packet.instance()); return; }
         try {
             NativeImage image = NativeImage.read(new ByteArrayInputStream(packet.png()));
@@ -56,6 +57,7 @@ public final class Thumbnails {
 
     /** Overlays the console's picture on the item's LCD glass: live frames when streamed, the thumbnail otherwise. */
     public static void render(ItemStack stack, MatrixStack matrices, VertexConsumerProvider vertices) {
+        if (!ClientPreferences.get().renderHandheldScreens) return;
         if (!(stack.getItem() instanceof HandheldConsoleItem item)) return;
         UUID instance = HandheldConsoleItem.instance(stack);
         float[] rect = instance == null ? null : SCREENS.get(item.definition().id().getPath());

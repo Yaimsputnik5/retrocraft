@@ -56,6 +56,8 @@ final class ScreenTextures {
         for (UUID id : List.copyOf(FROZEN.keySet())) if (now - FROZEN.get(id) > FROZEN_TTL) release(id);
     }
 
+    static void clear() { for (UUID id : List.copyOf(ENTRIES.keySet())) release(id); }
+
     static void release(UUID instance) {
         FROZEN.remove(instance);
         Entry entry = ENTRIES.remove(instance);

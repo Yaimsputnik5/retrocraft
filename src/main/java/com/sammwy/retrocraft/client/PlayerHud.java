@@ -140,6 +140,7 @@ public final class PlayerHud {
     }
 
     static void render(DrawContext context, TextRenderer font, MinecraftClient client, ConsoleTheme theme, int width, int height, UUID instance) {
+        if (!ClientPreferences.get().showPlayerHud) return;
         State state = SESSIONS.get(instance);
         if (state == null || client.getNetworkHandler() == null) return;
         List<Integer> order = new ArrayList<>(4);

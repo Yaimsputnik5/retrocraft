@@ -18,7 +18,7 @@ final class AudioStreams implements AutoCloseable {
         Stream stream = streams.computeIfAbsent(packet.instance(), ignored -> new Stream());
         if (packet.sequence() <= stream.sequence) return;
         stream.lastSeen = System.nanoTime(); stream.sequence = packet.sequence();
-        float volume = packet.gain() * client.options.getSoundVolume(SoundCategory.MASTER) * client.options.getSoundVolume(SoundCategory.RECORDS);
+        float volume = ClientPreferences.get().volume / 100f * packet.gain() * client.options.getSoundVolume(SoundCategory.MASTER) * client.options.getSoundVolume(SoundCategory.RECORDS);
         stream.player.offer(packet.sampleRate(), packet.pcm(), volume);
     }
     void tick() {

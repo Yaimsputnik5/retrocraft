@@ -85,7 +85,7 @@ The arcade machine uses MAME 2003-Plus, so ROM sets have to match that version (
 
 ### Configuration
 
-`config/retrocraft/config.json` is created on first launch. The defaults are sensible; the knobs you're most likely to touch:
+`config/retrocraft/server.json` is created on first launch. Press **F8**, use `/retrocraft gui` or `/rc gui`, or select the Mod Menu config button to access **Client** preferences without OP. Personal volume, video frame limit, world screens, handheld previews, controller HUD and camera focus are saved in `config/retrocraft/client.json`. The **Server** section and all server mutations require operator level 2. The defaults are sensible; the knobs you're most likely to touch:
 
 ```json
 {

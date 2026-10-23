@@ -265,7 +265,7 @@ public final class HybridClient {
             int mine = client.player != null ? PlayerHud.slotOf(local.offer.instance(), client.player.getUuid()) : -1;
             for (int port = 0; port < local.ports.length(); port++)
                 local.ports.set(port, port == mine ? (local.phase == Phase.ACTIVE ? InputControls.buttons(client) : 0) : PlayerHud.mask(local.offer.instance(), port));
-            local.volume = client.options.getSoundVolume(SoundCategory.MASTER) * client.options.getSoundVolume(SoundCategory.RECORDS);
+            local.volume = ClientPreferences.get().volume / 100f * client.options.getSoundVolume(SoundCategory.MASTER) * client.options.getSoundVolume(SoundCategory.RECORDS);
             if (local.phase == Phase.ACTIVE) {
                 if (now - local.lastHeartbeat > 500_000_000L) { signal(local.offer, HybridPackets.Action.HEARTBEAT, 0); local.lastHeartbeat = now; }
                 if (now >= local.nextStream) {

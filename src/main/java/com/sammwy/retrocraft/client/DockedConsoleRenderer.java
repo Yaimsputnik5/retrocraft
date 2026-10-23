@@ -64,7 +64,7 @@ public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedCo
 
     /** Emulator frame fitted inside a glass rectangle (model units, front = north, matrices at the block centre), full bright over a black letterbox. */
     static void drawScreen(ScreenTextures.Entry entry, MatrixStack matrices, VertexConsumerProvider vertices, float x0, float x1, float y0, float y1, float zUnits) {
-        if (entry == null) return;
+        if (entry == null || !ClientPreferences.get().renderWorldScreens) return;
         float gw = (x1 - x0) / 16f, gh = (y1 - y0) / 16f;
         float fit = Math.min(gw / entry.width(), gh / entry.height());
         float w = entry.width() * fit, h = entry.height() * fit;
