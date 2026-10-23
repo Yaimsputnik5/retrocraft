@@ -9,7 +9,9 @@ import net.minecraft.text.Text;
 final class IconButton extends ButtonWidget {
     enum Icon {
         POWER,
-        EJECT
+        EJECT,
+        ZOOM_IN,
+        ZOOM_OUT
     }
 
     private final Icon icon;
@@ -29,15 +31,24 @@ final class IconButton extends ButtonWidget {
         switch (icon) {
             case POWER -> glyph(context, POWER_GLYPH, getX() + 3, getY() + 4, fg);
             case EJECT -> glyph(context, EJECT_GLYPH, getX() + 3, getY() + 4, fg);
+            case ZOOM_IN -> glyph(context, ZOOM_IN_GLYPH, getX() + 3, getY() + 4, fg);
+            case ZOOM_OUT -> glyph(context, ZOOM_OUT_GLYPH, getX() + 3, getY() + 4, fg);
         }
     }
 
     // Power symbol: open ring with the 12-o'clock bar. Eject: up triangle over a tray bar.
+    // Zoom: magnifier lens with a plus/minus inside and a handle out the lower right.
     private static final String[] POWER_GLYPH = {
         "   XX   ", " X XX X ", "X  XX  X", "X      X", "X      X", " X    X ", "  XXXX  "
     };
     private static final String[] EJECT_GLYPH = {
         "   X   ", "  XXX  ", " XXXXX ", "XXXXXXX", "       ", "XXXXXXX"
+    };
+    private static final String[] ZOOM_IN_GLYPH = {
+        " XXX    ", "X X X   ", "XXXXX   ", "X X X   ", " XXX    ", "     X  ", "      X "
+    };
+    private static final String[] ZOOM_OUT_GLYPH = {
+        " XXX    ", "X   X   ", "XXXXX   ", "X   X   ", " XXX    ", "     X  ", "      X "
     };
 
     private static void glyph(DrawContext context, String[] rows, int x, int y, int color) {

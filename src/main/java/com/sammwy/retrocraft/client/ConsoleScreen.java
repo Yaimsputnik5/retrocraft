@@ -26,6 +26,7 @@ public final class ConsoleScreen extends AnimatedScreen {
     private int frameWidth = 256, frameHeight = 240;
     private final ItemStack consoleStack;
     private boolean hudWasHidden, hudHiddenByUs;
+    private IconButton zoomOut, zoomIn;
 
     ConsoleScreen(Packets.Ui packet) {
         super(Text.literal(packet.title()));
@@ -61,12 +62,11 @@ public final class ConsoleScreen extends AnimatedScreen {
             client.options.hudHidden = true;
             hudHiddenByUs = true;
         }
-        if (inWorld
-                && ClientPreferences.get().cameraFocus
-                && ClientPreferences.get().renderWorldScreens)
-            CameraRig.focus(BlockPos.fromLong(screen));
+        boolean focused = focusActive();
+        if (focused) CameraRig.focus(BlockPos.fromLong(screen));
         // Miniature actions in the top-right corner; Escape closes the screen.
         int x = width - MARGIN;
+        zoomOut = zoomIn = null;
         if (canManage) {
             x -= 14;
             addDrawableChild(
@@ -91,6 +91,28 @@ public final class ConsoleScreen extends AnimatedScreen {
                                 Text.translatable("screen.retrocraft.eject")));
             }
         }
+        if (focused) {
+            // Camera zoom group: [-] pct [+], sitting left of the power/eject cluster.
+            x -= 16;
+            zoomIn =
+                    addDrawableChild(
+                            new IconButton(
+                                    x,
+                                    4,
+                                    IconButton.Icon.ZOOM_IN,
+                                    b -> CameraRig.zoomStep(1),
+                                    Text.translatable("screen.retrocraft.zoom_in")));
+            x -= 38;
+            zoomOut =
+                    addDrawableChild(
+                            new IconButton(
+                                    x,
+                                    4,
+                                    IconButton.Icon.ZOOM_OUT,
+                                    b -> CameraRig.zoomStep(-1),
+                                    Text.translatable("screen.retrocraft.zoom_out")));
+            x -= 2;
+        }
         if (!controller) {
             x -= 74;
             addDrawableChild(
@@ -104,6 +126,13 @@ public final class ConsoleScreen extends AnimatedScreen {
                                     ClientPlayNetworking.send(
                                             Packets.Request.of(Packets.CLAIM_INPUT, instance))));
         }
+    }
+
+    /** In-world screen being framed by the camera rig — where zooming applies. */
+    private boolean focusActive() {
+        return inWorld
+                && ClientPreferences.get().cameraFocus
+                && ClientPreferences.get().renderWorldScreens;
     }
 
     @Override
@@ -126,6 +155,16 @@ public final class ConsoleScreen extends AnimatedScreen {
             transitionTo(SettingsScreen.modMenu(null));
             return true;
         }
+        if (focusActive()) {
+            if (key == GLFW.GLFW_KEY_EQUAL || key == GLFW.GLFW_KEY_KP_ADD) {
+                CameraRig.zoomStep(1);
+                return true;
+            }
+            if (key == GLFW.GLFW_KEY_MINUS || key == GLFW.GLFW_KEY_KP_SUBTRACT) {
+                CameraRig.zoomStep(-1);
+                return true;
+            }
+        }
         // Game input must not activate focused GUI buttons (Enter/Space).
         return true;
     }
@@ -146,13 +185,7 @@ public final class ConsoleScreen extends AnimatedScreen {
                     textRenderer,
                     textRenderer.trimToWidth(
                             displayTitle.getString(),
-                            Math.max(
-                                    0,
-                                    width
-                                            - 2 * MARGIN
-                                            - 20
-                                            - (canManage ? 32 : 0)
-                                            - (controller ? 0 : 74))),
+                            Math.max(0, width - 2 * MARGIN - 20 - titleReserve())),
                     MARGIN + 20,
                     7,
                     0xffe6e9f0);
@@ -171,6 +204,7 @@ public final class ConsoleScreen extends AnimatedScreen {
                         height - PlayerHud.reservedHeight(theme) - 10,
                         0xffd8dde6);
             PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
+            zoomLabel(context);
             renderWidgets(context, mouseX, mouseY, delta);
             return;
         }
@@ -179,13 +213,7 @@ public final class ConsoleScreen extends AnimatedScreen {
                 textRenderer,
                 textRenderer.trimToWidth(
                         displayTitle.getString(),
-                        Math.max(
-                                0,
-                                width
-                                        - 2 * MARGIN
-                                        - 20
-                                        - (canManage ? 32 : 0)
-                                        - (controller ? 0 : 74))),
+                        Math.max(0, width - 2 * MARGIN - 20 - titleReserve())),
                 MARGIN + 20,
                 7,
                 0xffe6e9f0);
@@ -223,7 +251,21 @@ public final class ConsoleScreen extends AnimatedScreen {
                     theme.handheld() ? 0xff1f2e1a : 0xffd8dde6);
         }
         PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
+        zoomLabel(context);
         renderWidgets(context, mouseX, mouseY, delta);
+    }
+
+    /** Pixels the top-right button cluster needs, so the title never runs underneath it. */
+    private int titleReserve() {
+        return (canManage ? 32 : 0) + (controller ? 0 : 74) + (focusActive() ? 56 : 0);
+    }
+
+    /** Zoom percentage between the [-] and [+] buttons, matching the header text. */
+    private void zoomLabel(DrawContext context) {
+        if (zoomOut == null || zoomIn == null) return;
+        int cx = (zoomOut.getX() + zoomOut.getWidth() + zoomIn.getX()) / 2;
+        context.drawCenteredTextWithShadow(
+                textRenderer, Math.round(CameraRig.zoom() * 100) + "%", cx, 7, 0xffe6e9f0);
     }
 
     @Override

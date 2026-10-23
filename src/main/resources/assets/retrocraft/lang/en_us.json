@@ -28,6 +28,8 @@
   "screen.retrocraft.cartridge": "Cartridge",
   "screen.retrocraft.power_on": "Power on",
   "screen.retrocraft.eject": "Eject",
+  "screen.retrocraft.zoom_in": "Zoom in (+)",
+  "screen.retrocraft.zoom_out": "Zoom out (-)",
   "screen.retrocraft.take_control": "Take control",
   "message.retrocraft.insert_cartridge": "Insert a compatible cartridge first.",
   "message.retrocraft.no_tv": "No free television nearby. Place a TV within 12 blocks of the console.",

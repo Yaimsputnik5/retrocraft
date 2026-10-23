@@ -11,10 +11,15 @@ import net.minecraft.util.math.*;
  * cabinet glass, looking straight at it, and glides back to the player when the screen closes.
  */
 final class CameraRig {
+    /** Magnification steps for the zoom control; index 2 is the auto-fit default. */
+    private static final float[] ZOOM_STEPS = {.5f, .75f, 1f, 1.5f, 2f, 3f, 4f};
+
     private static BlockPos screen;
     private static boolean active;
     private static float blend;
     private static long last;
+    private static int zoomIndex = 2;
+    private static float eased = 1f;
 
     static void focus(BlockPos pos) {
         screen = pos;
@@ -31,7 +36,19 @@ final class CameraRig {
         blend = 0;
         last = 0;
         screen = null;
+        zoomIndex = 2;
+        eased = 1f;
         MinecraftClient.getInstance().gameRenderer.setRenderHand(true);
+    }
+
+    /** Steps the zoom in ({@code direction > 0}) or out, clamped to {@link #ZOOM_STEPS}. */
+    static void zoomStep(int direction) {
+        zoomIndex = MathHelper.clamp(zoomIndex + direction, 0, ZOOM_STEPS.length - 1);
+    }
+
+    /** Current zoom target as a multiplier of the auto-fit distance (1 = frame the glass). */
+    static float zoom() {
+        return ZOOM_STEPS[zoomIndex];
     }
 
     /**
@@ -43,6 +60,7 @@ final class CameraRig {
         float dt = last == 0 ? 0 : Math.min(.1f, (now - last) / 1_000_000_000f);
         last = now;
         blend = MathHelper.clamp(blend + (active ? dt : -dt) / .45f, 0, 1);
+        eased += (ZOOM_STEPS[zoomIndex] - eased) * Math.min(1, dt * 10);
         MinecraftClient client = MinecraftClient.getInstance();
         Target target = screen == null || client.world == null ? null : target(client);
         if (blend <= 0 || target == null) {
@@ -108,11 +126,12 @@ final class CameraRig {
                                 / client.getWindow().getFramebufferHeight();
         double distance =
                 Math.max(
-                        1,
+                        .25,
                         Math.max(
                                         height / (2 * Math.tan(fov / 2)),
                                         width / (2 * Math.tan(fov / 2) * aspect))
-                                * 1.15);
+                                * 1.15
+                                / eased);
         return new Target(
                 centre.add(normal.multiply(distance)), facing.getOpposite().asRotation(), tilt);
     }
