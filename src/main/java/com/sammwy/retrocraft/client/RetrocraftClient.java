@@ -53,7 +53,7 @@ public final class RetrocraftClient implements ClientModInitializer {
                     else client.setScreen(new ConsoleScreen(packet));
                 }
                 case Packets.ROLE -> { if (client.currentScreen instanceof ConsoleScreen screen && screen.instance.equals(packet.instance())) screen.update(packet); }
-                case Packets.STOP -> { if (client.currentScreen instanceof ConsoleScreen screen && screen.instance.equals(packet.instance())) screen.serverClosed(); }
+                case Packets.STOP -> { if (client.currentScreen instanceof ConsoleScreen screen && screen.instance.equals(packet.instance())) screen.serverClosed(); PlayerHud.drop(packet.instance()); }
                 default -> { }
             }
         });
@@ -61,6 +61,8 @@ public final class RetrocraftClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(Packets.Audio.ID, (packet, context) -> { if (!EMULATION.owns(packet.instance())) audio.accept(context.client(), packet); });
         ClientPlayNetworking.registerGlobalReceiver(Packets.AudioStop.ID, (packet, context) -> audio.stop(packet.instance()));
         ClientPlayNetworking.registerGlobalReceiver(Packets.Thumbnail.ID, (packet, context) -> Thumbnails.accept(packet));
+        ClientPlayNetworking.registerGlobalReceiver(Packets.Players.ID, (packet, context) -> PlayerHud.roster(packet));
+        ClientPlayNetworking.registerGlobalReceiver(Packets.Pad.ID, (packet, context) -> PlayerHud.pad(packet));
         ClientPlayNetworking.registerGlobalReceiver(Packets.Catalog.ID, (packet, context) -> {
             if (packet.first()) { pendingCatalog.clear(); catalogGeneration = packet.generation(); }
             if (packet.generation() != catalogGeneration) return;
@@ -84,7 +86,7 @@ public final class RetrocraftClient implements ClientModInitializer {
         // Locally emulated frames are uploaded per rendered frame, not per tick, so in-world screens stay smooth.
         WorldRenderEvents.START.register(context -> { for (UUID id : EMULATION.active()) { var frame = EMULATION.frame(id); if (frame != null) video.local(id, frame); } });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
-            EMULATION.disconnect(); audio.close(); video.close(); Thumbnails.close(); RomCatalog.clientEntries(List.of()); pendingCatalog.clear(); catalogDirty = true;
+            EMULATION.disconnect(); audio.close(); video.close(); Thumbnails.close(); PlayerHud.clear(); RomCatalog.clientEntries(List.of()); pendingCatalog.clear(); catalogDirty = true;
             if (client.currentScreen instanceof ConsoleScreen screen) screen.serverClosed();
         });
     }

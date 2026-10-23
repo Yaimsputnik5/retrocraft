@@ -1,10 +1,11 @@
 package com.sammwy.retrocraft.cores;
 
+import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 import com.sammwy.retrocraft.roms.SaveStates;
 import java.nio.file.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
-import java.util.function.IntSupplier;
+import java.util.function.IntUnaryOperator;
 
 /** Native execution backend with a prepare/commit barrier, usable without Minecraft classes. */
 public final class ClientEmulator implements AutoCloseable {
@@ -20,7 +21,8 @@ public final class ClientEmulator implements AutoCloseable {
     private volatile WorkerProcess process;
     private final Thread thread;
 
-    public ClientEmulator(Path jar, Path core, Path rom, Path snapshot, int checkpointSeconds, IntSupplier input, Listener listener) {
+    /** {@code input} maps a controller port (0-3) to its current 16-bit RetroPad mask. */
+    public ClientEmulator(Path jar, Path core, Path rom, Path snapshot, int checkpointSeconds, IntUnaryOperator input, Listener listener) {
         thread = Thread.ofVirtual().name("retrocraft-client-emulator").unstarted(() -> {
             try (WorkerProcess worker = new WorkerProcess(jar, core, rom, snapshot, snapshot.resolveSibling("worker.log"))) {
                 process = worker;
@@ -29,7 +31,9 @@ public final class ClientEmulator implements AutoCloseable {
                 long next = System.nanoTime(), nextSave = next + checkpointSeconds * 1_000_000_000L;
                 long period = Math.round(1_000_000_000d / worker.fps());
                 while (committed && !returning && !closed) {
-                    listener.output(worker.advance(input.getAsInt(), true, true), worker.sampleRate());
+                    int[] masks = new int[WorkerProtocol.PORTS];
+                    for (int port = 0; port < masks.length; port++) masks[port] = input.applyAsInt(port);
+                    listener.output(worker.advance(masks, true, true), worker.sampleRate());
                     long now = System.nanoTime();
                     if ((now >= nextSave || checkpointRequested.getAndSet(false)) && awaitingCheckpoint.compareAndSet(false, true)) {
                         worker.save(); byte[] bytes = Files.readAllBytes(snapshot); SaveStates.validate(bytes); listener.checkpoint(bytes, false);

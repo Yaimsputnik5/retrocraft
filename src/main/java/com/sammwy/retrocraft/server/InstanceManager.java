@@ -98,7 +98,8 @@ public final class InstanceManager implements AutoCloseable {
         final Map<UUID, AudioWatcher> audioWatchers = new HashMap<>();
         final Media media = new Media();
         final FrameCodec.Encoder encoder = new FrameCodec.Encoder();
-        volatile InputSource inputSource;
+        /** Controller slots; only the first one is usable on handhelds. Slot 0 also holds the emulation lease. */
+        final InputSource[] pads = new InputSource[WorkerProtocol.PORTS];
         volatile boolean wantsVideo, wantsAudio, observed, finished, destroy;
         long invalidSince;
         boolean poweredOff;
@@ -291,25 +292,48 @@ public final class InstanceManager implements AutoCloseable {
         if (existing != null) existing.ambient = false; else session.videoWatchers.put(player.getUuid(), new VideoWatcher());
         videoWatching.put(player.getUuid(), session.data.id());
         session.forceKeyframe = true;
-        claimInput(player, session.data.id());
+        joinInput(player, session.data.id());
         send(player, status(session, player, Packets.PLAY));
+        notifyPlayers(session);
     }
 
-    public boolean claimInput(ServerPlayerEntity player, UUID id) {
+    private static int maxSlots(Session session) { return session.host.definition().type() == ConsoleType.DOCKED ? WorkerProtocol.PORTS : 1; }
+    private static int slotOf(Session session, UUID player) {
+        for (int slot = 0; slot < session.pads.length; slot++) if (session.pads[slot] != null && session.pads[slot].player.equals(player)) return slot;
+        return -1;
+    }
+
+    /** Right-clicking a powered docked console grabs the next free controller slot; handhelds stay single-player. */
+    public boolean joinInput(ServerPlayerEntity player, UUID id) {
         Session session = sessions.get(id);
         if (session == null || session.destroy || !session.host.canAccess(player)) return false;
-        if (session.inputSource != null && !session.inputSource.player.equals(player.getUuid())) { error(player, "input_busy"); return false; }
+        if (slotOf(session, player.getUuid()) >= 0) { inputSessions.put(player.getUuid(), id); return true; }
+        int slot = -1;
+        for (int i = 0; i < maxSlots(session); i++) if (session.pads[i] == null) { slot = i; break; }
+        if (slot < 0) { error(player, "input_busy"); return false; }
         releaseInput(player.getUuid());
-        session.inputSource = new InputSource(player.getUuid());
+        session.pads[slot] = new InputSource(player.getUuid());
         inputSessions.put(player.getUuid(), id);
         session.failedOffload = null;
         notifyRoles(session);
+        notifyPlayers(session);
         return true;
     }
-    public boolean isInputSource(UUID player, UUID instance) { return instance != null && instance.equals(inputSessions.get(player)); }
+    public boolean isInputSource(UUID player, UUID instance) {
+        if (instance == null || !instance.equals(inputSessions.get(player))) return false;
+        Session session = sessions.get(instance);
+        return session != null && slotOf(session, player) >= 0;
+    }
     public void releaseInput(UUID player) {
         Session session = sessions.get(inputSessions.remove(player));
-        if (session != null && session.inputSource != null && session.inputSource.player.equals(player)) { returnOwnership(session); session.inputSource = null; notifyRoles(session); }
+        if (session == null) return;
+        int slot = slotOf(session, player);
+        if (slot < 0) return;
+        session.pads[slot] = null;
+        if (slot == 0) returnOwnership(session);
+        broadcastPad(session, slot, 0);
+        notifyRoles(session);
+        notifyPlayers(session);
     }
     /** The picture is drawn on a block: the arcade cabinet's own CRT or the television bound to a docked console. */
     private static boolean inWorld(Session session) {
@@ -355,9 +379,11 @@ public final class InstanceManager implements AutoCloseable {
                     video.lastSeen = now;
                     video.lastAcknowledged = Math.max(video.lastAcknowledged, Math.min(video.lastSent, packet.acknowledgedSequence()));
                 }
-                InputSource input = session.inputSource;
-                if (input != null && input.player.equals(playerId) && session.host.canAccess(player)) {
-                    input.buttons = packet.buttons() & 0xffff;
+                int slot = slotOf(session, playerId);
+                InputSource input = slot >= 0 ? session.pads[slot] : null;
+                if (input != null && session.host.canAccess(player)) {
+                    int mask = packet.buttons() & 0xffff;
+                    if (input.buttons != mask) { input.buttons = mask; broadcastPad(session, slot, mask); }
                     input.lastSeen = now;
                 }
             }
@@ -379,7 +405,7 @@ public final class InstanceManager implements AutoCloseable {
                 if (!player.getInventory().insertStack(cartridge)) player.dropItem(cartridge, false);
                 ConsoleMenus.inventory(player, host);
             }
-            case Packets.CLAIM_INPUT -> claimInput(player, id);
+            case Packets.CLAIM_INPUT -> joinInput(player, id);
             default -> { }
         }
     }
@@ -464,8 +490,9 @@ public final class InstanceManager implements AutoCloseable {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(id);
             if (player != null) send(player, new Packets.AudioStop(session.data.id()));
         }
-        InputSource input = session.inputSource;
-        if (input != null) {
+        for (int slot = 0; slot < session.pads.length; slot++) {
+            InputSource input = session.pads[slot];
+            if (input == null) continue;
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(input.player);
             if (!valid || player == null || !session.host.canAccess(player)
                     || now - input.lastSeen > TimeUnit.SECONDS.toNanos(config.watcherTimeoutSeconds)) releaseInput(input.player);
@@ -592,9 +619,13 @@ public final class InstanceManager implements AutoCloseable {
                     long period = Math.round(1_000_000_000d / process.fps());
                     long next = System.nanoTime(), nextSave = next + TimeUnit.SECONDS.toNanos(config.autosaveIntervalSeconds);
                     while (!stopping && !session.destroy && session.observed && !session.handoffStop && session.ownership.serverMayRun() && serverMayEmulate()) {
-                        InputSource input = session.inputSource;
-                        int buttons = input != null && System.nanoTime() - input.lastSeen < TimeUnit.SECONDS.toNanos(2) ? input.buttons : 0;
-                        session.media.offer(process.advance(buttons, session.wantsVideo || session.thumbDue, session.wantsAudio), process.sampleRate());
+                        int[] masks = new int[WorkerProtocol.PORTS];
+                        long polled = System.nanoTime();
+                        for (int port = 0; port < masks.length; port++) {
+                            InputSource input = session.pads[port];
+                            masks[port] = input != null && polled - input.lastSeen < TimeUnit.SECONDS.toNanos(2) ? input.buttons : 0;
+                        }
+                        session.media.offer(process.advance(masks, session.wantsVideo || session.thumbDue, session.wantsAudio), process.sampleRate());
                         long now = System.nanoTime();
                         if (now >= nextSave) { process.save(); nextSave = now + TimeUnit.SECONDS.toNanos(config.autosaveIntervalSeconds); }
                         next += period;
@@ -647,12 +678,31 @@ public final class InstanceManager implements AutoCloseable {
             detachVideo(id);
         }
         session.videoWatchers.clear();
-        if (session.inputSource != null) releaseInput(session.inputSource.player);
+        for (InputSource pad : session.pads) if (pad != null) releaseInput(pad.player);
         for (UUID id : session.audioWatchers.keySet()) { var player = server.getPlayerManager().getPlayer(id); if (player != null) send(player, new Packets.AudioStop(session.data.id())); }
         session.audioWatchers.clear();
     }
     private void notifyRoles(Session session) {
         for (UUID id : session.videoWatchers.keySet()) { var player = server.getPlayerManager().getPlayer(id); if (player != null) send(player, status(session, player, Packets.ROLE)); }
+    }
+    /** Players with the play screen open; ambient television watchers get no HUD traffic. */
+    private void forHudWatchers(Session session, java.util.function.Consumer<ServerPlayerEntity> action) {
+        for (var entry : session.videoWatchers.entrySet()) {
+            if (entry.getValue().ambient) continue;
+            var player = server.getPlayerManager().getPlayer(entry.getKey());
+            if (player != null) action.accept(player);
+        }
+    }
+    private void notifyPlayers(Session session) {
+        List<Packets.Players.Entry> entries = new ArrayList<>(session.pads.length);
+        UUID owner = session.ownership.owner();
+        boolean owned = session.ownership.mode() == Ownership.Mode.CLIENT;
+        for (int slot = 0; slot < session.pads.length; slot++)
+            if (session.pads[slot] != null) entries.add(new Packets.Players.Entry(slot, session.pads[slot].player, owned && session.pads[slot].player.equals(owner)));
+        forHudWatchers(session, player -> send(player, new Packets.Players(session.data.id(), entries)));
+    }
+    private void broadcastPad(Session session, int slot, int mask) {
+        forHudWatchers(session, player -> send(player, new Packets.Pad(session.data.id(), slot, mask)));
     }
     private Packets.Ui status(Session session, ServerPlayerEntity player, int mode) {
         long screen = 0;
@@ -711,14 +761,15 @@ public final class InstanceManager implements AutoCloseable {
     }
 
     private boolean controlsHere(Session session, ServerPlayerEntity player) {
-        if (player == null || session.inputSource == null || !session.inputSource.player.equals(player.getUuid()) || !session.host.canAccess(player)) return false;
+        InputSource first = session.pads[0];
+        if (player == null || first == null || !first.player.equals(player.getUuid()) || !session.host.canAccess(player)) return false;
         return session.data.id().equals(videoWatching.get(player.getUuid()));
     }
 
     private void coordinateOwnership(Session session, long now) {
         if (session.destroy || session.failure != null) return;
-        if (session.ownership.serverMayRun() && session.inputSource != null && clientMayEmulate()) {
-            var player = server.getPlayerManager().getPlayer(session.inputSource.player);
+        if (session.ownership.serverMayRun() && session.pads[0] != null && clientMayEmulate()) {
+            var player = server.getPlayerManager().getPlayer(session.pads[0].player);
             if (controlsHere(session, player) && readyClients.contains(player.getUuid()) && !player.getUuid().equals(session.failedOffload)) {
                 if (session.thread == null && !Files.exists(store.snapshot(session.data.id()))) {
                     if (activeCount() >= config.maxActiveInstances) return;
@@ -791,6 +842,7 @@ public final class InstanceManager implements AutoCloseable {
                     send(player, HybridPackets.Lease.signal(session.data.id(), packet.epoch(), HybridPackets.Action.COMMIT, 0));
                     sendDemand(session);
                     send(player, new Packets.AudioStop(session.data.id()));
+                    notifyPlayers(session);
                 }
             }
             case HEARTBEAT -> { if (controlsHere(session, player)) session.ownership.heartbeat(player.getUuid(), packet.epoch(), now, TimeUnit.SECONDS.toNanos(config.ownerTimeoutSeconds)); }
@@ -840,6 +892,7 @@ public final class InstanceManager implements AutoCloseable {
             if (failed) session.failedOffload = playerId;
         }
         session.ownership.revoke(); session.incoming.clear(); session.media.clear(); session.encoder.clear(); session.forceKeyframe = true;
+        notifyPlayers(session);
         Retrocraft.LOG.info("Instance {} returned to server at epoch {}{}", session.data.id(), session.ownership.epoch(), failed ? " (fallback checkpoint)" : "");
     }
 

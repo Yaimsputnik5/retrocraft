@@ -33,7 +33,7 @@ class HybridIntegrationTest {
         CountDownLatch prepared = new CountDownLatch(1), frameArrived = new CountDownLatch(1), saved = new CountDownLatch(1);
         AtomicReference<ClientEmulator> runner = new AtomicReference<>(); AtomicReference<Throwable> failure = new AtomicReference<>(); AtomicReference<byte[]> checkpoint = new AtomicReference<>();
         List<byte[]> actual = Collections.synchronizedList(new ArrayList<>());
-        try (ClientEmulator client = new ClientEmulator(jar, core, rom, local, 30, () -> 0, new ClientEmulator.Listener() {
+        try (ClientEmulator client = new ClientEmulator(jar, core, rom, local, 30, port -> 0, new ClientEmulator.Listener() {
             public void prepared() { prepared.countDown(); }
             public void output(WorkerProcess.Output output, int sampleRate) {
                 actual.add(output.frame().rgb()); frameArrived.countDown();

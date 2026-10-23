@@ -14,7 +14,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.UUID;
 
 public final class ConsoleScreen extends Screen {
-    private static final int HEADER = 18, LEGEND = 22, MARGIN = 8;
+    private static final int HEADER = 18, HUD = 52, MARGIN = 8;
     final UUID instance;
     private final ConsoleTheme theme;
     private final Text consoleName;
@@ -45,8 +45,8 @@ public final class ConsoleScreen extends Screen {
         // Miniature actions in the top-right corner; Escape closes the screen.
         int x = width - MARGIN;
         if (canManage) {
-            x -= 54; addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.power_off"), b -> ClientPlayNetworking.send(Packets.Request.of(Packets.POWER_OFF, instance))).dimensions(x, 4, 54, 14).build());
-            x -= 40; addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.eject"), b -> ClientPlayNetworking.send(Packets.Request.of(Packets.EJECT, instance))).dimensions(x, 4, 36, 14).build());
+            x -= 14; addDrawableChild(new IconButton(x, 4, IconButton.Icon.POWER, b -> ClientPlayNetworking.send(Packets.Request.of(Packets.POWER_OFF, instance)), Text.translatable("screen.retrocraft.power_off")));
+            x -= 16; addDrawableChild(new IconButton(x, 4, IconButton.Icon.EJECT, b -> ClientPlayNetworking.send(Packets.Request.of(Packets.EJECT, instance)), Text.translatable("screen.retrocraft.eject")));
         }
         if (!controller) { x -= 74; addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.take_control"), b -> ClientPlayNetworking.send(Packets.Request.of(Packets.CLAIM_INPUT, instance))).dimensions(x, 4, 70, 14).build()); }
     }
@@ -72,8 +72,8 @@ public final class ConsoleScreen extends Screen {
             context.drawItem(consoleStack, MARGIN, 3);
             context.drawTextWithShadow(textRenderer, Text.empty().append(consoleName).append(" · ").append(title), MARGIN + 20, 7, 0xffe6e9f0);
             if (!controller) context.drawTextWithShadow(textRenderer, Text.translatable("screen.retrocraft.spectator"), MARGIN + 20, 17, 0xffa8b0c0);
-            if (textureId == null) context.drawCenteredTextWithShadow(textRenderer, Text.translatable("screen.retrocraft.connecting"), width / 2, height - LEGEND - 14, 0xffd8dde6);
-            drawLegend(context, height - LEGEND);
+            if (textureId == null) context.drawCenteredTextWithShadow(textRenderer, Text.translatable("screen.retrocraft.connecting"), width / 2, height - HUD - 10, 0xffd8dde6);
+            PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
             super.render(context, mouseX, mouseY, delta);
             return;
         }
@@ -84,7 +84,7 @@ public final class ConsoleScreen extends Screen {
 
         // The video takes all the room between the top strip and the key legend, keeping its aspect ratio, inside a slim console bezel.
         Bezel bezel = Bezel.of(theme.bezel());
-        int areaTop = HEADER + MARGIN, areaHeight = height - LEGEND - MARGIN - areaTop;
+        int areaTop = HEADER + MARGIN, areaHeight = height - HUD - MARGIN - areaTop;
         int availW = width - 2 * MARGIN - bezel.left - bezel.right, availH = areaHeight - bezel.top - bezel.bottom;
         float fit = Math.min((float) availW / frameWidth, (float) availH / frameHeight);
         int w = Math.max(1, Math.round(frameWidth * fit)), h = Math.max(1, Math.round(frameHeight * fit));
@@ -95,7 +95,7 @@ public final class ConsoleScreen extends Screen {
             context.fill(x, y, x + w, y + h, theme.screenOff());
             context.drawCenteredTextWithShadow(textRenderer, Text.translatable("screen.retrocraft.connecting"), x + w / 2, y + h / 2 - 4, theme.handheld() ? 0xff1f2e1a : 0xffd8dde6);
         }
-        drawLegend(context, height - LEGEND);
+        PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
         super.render(context, mouseX, mouseY, delta);
     }
 
@@ -181,23 +181,6 @@ public final class ConsoleScreen extends Screen {
         context.fill(x, y, x + 1, y + 1, ConsoleTheme.shade(color, 1.4f));
     }
 
-    /** Centered key legend; caps light up with the accent colour while the controller holds them. */
-    private void drawLegend(DrawContext context, int y) {
-        int pressed = controller && client != null ? InputControls.buttons(client) : 0, total = -8;
-        for (var binding : theme.bindings()) total += textRenderer.getWidth(binding.key()) + 8 + 4 + textRenderer.getWidth(binding.label()) + 8;
-        int x = Math.max(MARGIN, (width - total) / 2);
-        for (var binding : theme.bindings()) {
-            int keyWidth = textRenderer.getWidth(binding.key()) + 8;
-            boolean lit = (pressed & binding.mask()) != 0;
-            context.fill(x, y, x + keyWidth, y + 13, lit ? theme.accent() : 0xcc2a2f3b);
-            context.fill(x, y + 12, x + keyWidth, y + 13, lit ? ConsoleTheme.shade(theme.accent(), .6f) : 0xff10131a);
-            context.fill(x, y, x + keyWidth, y + 1, lit ? ConsoleTheme.shade(theme.accent(), 1.3f) : 0xff4a5160);
-            context.drawText(textRenderer, binding.key(), x + 4, y + 3, lit ? 0xff14161c : 0xffe4e8f0, false);
-            context.drawTextWithShadow(textRenderer, binding.label(), x + keyWidth + 4, y + 3, lit ? 0xffffffff : 0xffc8cfdb);
-            x += keyWidth + 4 + textRenderer.getWidth(binding.label()) + 8;
-        }
-    }
-
     @Override public boolean shouldPause() { return false; }
     @Override public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) { }
     void serverClosed() { subscribed = false; close(); }
@@ -205,6 +188,7 @@ public final class ConsoleScreen extends Screen {
     @Override public void removed() {
         if (hudHiddenByUs && client != null) { client.options.hudHidden = hudWasHidden; hudHiddenByUs = false; }
         CameraRig.release();
+        PlayerHud.drop(instance);
         if (RetrocraftClient.EMULATION != null) RetrocraftClient.EMULATION.release(instance);
         if (subscribed && ClientPlayNetworking.canSend(Packets.Request.ID)) ClientPlayNetworking.send(Packets.Request.of(Packets.CLOSE, instance));
         subscribed = false;

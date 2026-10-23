@@ -44,6 +44,11 @@ record ConsoleTheme(String id, Bezel bezel, int shell, int bezelColor, int accen
 
     boolean handheld() { return bezel != Bezel.TV && bezel != Bezel.ARCADE; }
 
+    /** Eight-way pads (arcade sticks, the N64 stick, Sega's round d-pad) light diagonal cells on the HUD cross. */
+    boolean diagonals() {
+        return bezel == Bezel.ARCADE || id.endsWith("n64_console") || id.endsWith("megadrive_console") || id.endsWith("genesis_console");
+    }
+
     /** Darkened/lightened variant of an ARGB colour, used for panels derived from the shell colour. */
     static int shade(int argb, float factor) {
         int r = Math.min(255, Math.round(((argb >> 16) & 255) * factor)), g = Math.min(255, Math.round(((argb >> 8) & 255) * factor)), b = Math.min(255, Math.round((argb & 255) * factor));

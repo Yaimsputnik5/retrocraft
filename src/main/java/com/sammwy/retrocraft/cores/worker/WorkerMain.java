@@ -14,7 +14,8 @@ public final class WorkerMain {
     private final Path statePath;
     private final Memory directory;
     private final Map<String, Memory> variables = new HashMap<>();
-    private int pixelFormat, input;
+    private int pixelFormat;
+    private final int[] input = new int[WorkerProtocol.PORTS];
     private boolean shutdown;
     private boolean captureVideo = true, captureAudio = true;
     private FrameCodec.Frame frame = new FrameCodec.Frame(256, 240, new byte[256 * 240 * 3]);
@@ -31,13 +32,14 @@ public final class WorkerMain {
     private final Libretro.Log log = (level, format) -> { if (level >= 2) System.err.println("[core] " + format.strip()); };
     private final Pointer logPointer = CallbackReference.getFunctionPointer(log);
     private short inputState(int port, int device, int index, int id) {
-        if (port != 0) return 0;
-        if ((device & 255) == 1 && index == 0) return (short) (id == 256 ? input : id >= 0 && id < 16 ? (input >>> id) & 1 : 0);
+        if (port < 0 || port >= input.length) return 0;
+        int pad = input[port];
+        if ((device & 255) == 1 && index == 0) return (short) (id == 256 ? pad : id >= 0 && id < 16 ? (pad >>> id) & 1 : 0);
         // Digital keyboard directions also drive the left stick; I/J/K/L drive the right stick.
         if ((device & 255) == 5 && id >= 0 && id < 2 && index >= 0 && index < 2) {
             int negative = index == 0 ? (id == 0 ? 6 : 4) : (id == 0 ? 14 : 12);
             int positive = index == 0 ? (id == 0 ? 7 : 5) : (id == 0 ? 15 : 13);
-            return (short) ((((input >>> positive) & 1) - ((input >>> negative) & 1)) * 32767);
+            return (short) ((((pad >>> positive) & 1) - ((pad >>> negative) & 1)) * 32767);
         }
         return 0;
     }
@@ -101,7 +103,7 @@ public final class WorkerMain {
             }
             if (core.retro_load_game(game) == 0) throw new IOException("Core rejected ROM");
             loaded = true;
-            core.retro_set_controller_port_device(0, 1);
+            for (int port = 0; port < input.length; port++) core.retro_set_controller_port_device(port, 1);
             restore();
             Libretro.AvInfo av = new Libretro.AvInfo();
             core.retro_get_system_av_info(av);
@@ -120,7 +122,7 @@ public final class WorkerMain {
                     save();
                     out.writeBoolean(true);
                 } else if (command == WorkerProtocol.RUN) {
-                    input = in.readUnsignedShort();
+                    for (int port = 0; port < input.length; port++) input[port] = in.readUnsignedShort();
                     int flags = in.readUnsignedByte();
                     captureVideo = (flags & 1) != 0;
                     captureAudio = (flags & 2) != 0;

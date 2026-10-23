@@ -17,6 +17,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicIntegerArray;
 
 /** Client networking/UI coordinator; native execution, core cache and save formats are shared. */
 public final class HybridClient {
@@ -31,7 +32,9 @@ public final class HybridClient {
         volatile ClientEmulator emulator;
         volatile Phase phase = Phase.RECEIVING;
         volatile FrameCodec.Frame frame;
-        volatile int input, rate;
+        /** Per-port RetroPad masks; this client owns its roster slot, the rest come from Pad broadcasts. */
+        final AtomicIntegerArray ports = new AtomicIntegerArray(4);
+        volatile int rate;
         volatile float volume = 1;
         Path rom, snapshot;
         boolean starting, forceKey = true;
@@ -177,7 +180,7 @@ public final class HybridClient {
         if (local.starting || local.rom == null || local.snapshot == null || local.phase != Phase.RECEIVING) return;
         local.starting = true;
         CoreManager.Prepared core = prepared.get(local.offer.core());
-        local.emulator = new ClientEmulator(workerJar, core.path(), local.rom, local.snapshot, checkpointSeconds, () -> local.input, new ClientEmulator.Listener() {
+        local.emulator = new ClientEmulator(workerJar, core.path(), local.rom, local.snapshot, checkpointSeconds, local.ports::get, new ClientEmulator.Listener() {
             public void prepared() { callbacks.add(() -> { if (current(local, token) && local.phase == Phase.RECEIVING) { local.phase = Phase.PREPARED; signal(local.offer, HybridPackets.Action.PREPARED, 0); } }); }
             public void output(WorkerProcess.Output output, int rate) { local.output(output, rate); }
             public void checkpoint(byte[] bytes, boolean last) {
@@ -203,7 +206,7 @@ public final class HybridClient {
         Local local = locals.get(instance);
         if (local == null || local.phase == Phase.RETURNING || local.phase == Phase.CLOSED) return;
         if (local.phase != Phase.ACTIVE) { signal(local.offer, HybridPackets.Action.FAILED, 0); local.close(); locals.remove(instance); return; }
-        local.phase = Phase.RETURNING; local.input = 0; local.media.clear(); local.audio.close();
+        local.phase = Phase.RETURNING; for (int p = 0; p < local.ports.length(); p++) local.ports.set(p, 0); local.media.clear(); local.audio.close();
         signal(local.offer, HybridPackets.Action.RETURN_BEGIN, 0); local.emulator.returnToServer();
     }
     private static void signal(HybridPackets.Lease offer, HybridPackets.Action action, long sequence) {
@@ -225,7 +228,9 @@ public final class HybridClient {
                 boolean visible = client.currentScreen instanceof ConsoleScreen screen && screen.instance.equals(local.offer.instance());
                 if (!visible) { release(local.offer.instance()); continue; }
             }
-            local.input = local.phase == Phase.ACTIVE ? InputControls.buttons(client) : 0;
+            int mine = client.player != null ? PlayerHud.slotOf(local.offer.instance(), client.player.getUuid()) : -1;
+            for (int port = 0; port < local.ports.length(); port++)
+                local.ports.set(port, port == mine ? (local.phase == Phase.ACTIVE ? InputControls.buttons(client) : 0) : PlayerHud.mask(local.offer.instance(), port));
             local.volume = client.options.getSoundVolume(SoundCategory.MASTER) * client.options.getSoundVolume(SoundCategory.RECORDS);
             if (local.phase == Phase.ACTIVE) {
                 if (now - local.lastHeartbeat > 500_000_000L) { signal(local.offer, HybridPackets.Action.HEARTBEAT, 0); local.lastHeartbeat = now; }

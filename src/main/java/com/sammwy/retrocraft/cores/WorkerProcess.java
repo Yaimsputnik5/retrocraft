@@ -76,12 +76,17 @@ public final class WorkerProcess implements AutoCloseable {
     public int sampleRate() { return sampleRate; }
 
     public Output advance(int mask) throws IOException {
-        return advance(mask, true, true);
+        return advance(new int[]{mask}, true, true);
     }
 
     public Output advance(int mask, boolean video, boolean sound) throws IOException {
+        return advance(new int[]{mask}, video, sound);
+    }
+
+    /** One 16-bit RetroPad mask per controller port; missing ports read as idle. */
+    public Output advance(int[] masks, boolean video, boolean sound) throws IOException {
         out.writeByte(WorkerProtocol.RUN);
-        out.writeShort(mask);
+        for (int port = 0; port < WorkerProtocol.PORTS; port++) out.writeShort(port < masks.length ? masks[port] : 0);
         out.writeByte((video ? 1 : 0) | (sound ? 2 : 0));
         out.flush();
         int width = in.readUnsignedShort(), height = in.readUnsignedShort();

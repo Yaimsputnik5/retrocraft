@@ -101,6 +101,41 @@ public final class Packets {
         @Override public Id<? extends CustomPayload> getId() { return ID; }
     }
 
+    /**
+     * Full controller roster resync: which player occupies each pad slot (0-3) and who is
+     * currently emulating ({@code host}, false when the server runs the core itself).
+     * Sent on every roster or ownership change; a resend beats incremental enter/leave packets.
+     */
+    public record Players(UUID instance, List<Entry> entries) implements CustomPayload {
+        public record Entry(int slot, UUID player, boolean host) {}
+        public static final Id<Players> ID = new Id<>(Identifier.of("retrocraft", "players"));
+        public static final PacketCodec<RegistryByteBuf, Players> CODEC = new PacketCodec<>() {
+            public Players decode(RegistryByteBuf b) {
+                int count = b.readVarInt();
+                if (count < 0 || count > 4) throw new IllegalArgumentException("Oversized player roster");
+                List<Entry> entries = new ArrayList<>(count);
+                for (int i = 0; i < count; i++) entries.add(new Entry(b.readVarInt(), b.readUuid(), b.readBoolean()));
+                return new Players(b.readUuid(), List.copyOf(entries));
+            }
+            public void encode(RegistryByteBuf b, Players p) {
+                b.writeVarInt(p.entries.size());
+                for (var entry : p.entries) { b.writeVarInt(entry.slot); b.writeUuid(entry.player); b.writeBoolean(entry.host); }
+                b.writeUuid(p.instance);
+            }
+        };
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
+    /** Live 16-bit RetroPad mask of one roster slot, broadcast on change so every HUD animates presses. */
+    public record Pad(UUID instance, int slot, int buttons) implements CustomPayload {
+        public static final Id<Pad> ID = new Id<>(Identifier.of("retrocraft", "pad"));
+        public static final PacketCodec<RegistryByteBuf, Pad> CODEC = new PacketCodec<>() {
+            public Pad decode(RegistryByteBuf b) { return new Pad(b.readUuid(), b.readVarInt(), b.readUnsignedShort()); }
+            public void encode(RegistryByteBuf b, Pad p) { b.writeUuid(p.instance); b.writeVarInt(p.slot); b.writeShort(p.buttons); }
+        };
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
     public static void register() {
         PayloadTypeRegistry.playC2S().register(Request.ID, Request.CODEC);
         PayloadTypeRegistry.playC2S().register(ThumbnailUpload.ID, ThumbnailUpload.CODEC);
@@ -110,6 +145,8 @@ public final class Packets {
         PayloadTypeRegistry.playS2C().register(AudioStop.ID, AudioStop.CODEC);
         PayloadTypeRegistry.playS2C().register(Thumbnail.ID, Thumbnail.CODEC);
         PayloadTypeRegistry.playS2C().register(Catalog.ID, Catalog.CODEC);
+        PayloadTypeRegistry.playS2C().register(Players.ID, Players.CODEC);
+        PayloadTypeRegistry.playS2C().register(Pad.ID, Pad.CODEC);
     }
     private Packets() {}
 }

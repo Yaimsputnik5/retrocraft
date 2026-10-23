@@ -30,7 +30,7 @@
   "block.retrocraft.tv_small": "Portable TV",
   "block.retrocraft.tv_medium": "CRT Television",
   "block.retrocraft.tv_large": "Console Television",
-  "message.retrocraft.input_busy": "This console already has an input source.",
+  "message.retrocraft.input_busy": "All controller slots are taken.",
   "message.retrocraft.reloaded": "Retrocraft catalog updated: %s ROMs. Connected clients synchronized.",
   "console.retrocraft.nes_handheld": "NES Handheld",
   "console.retrocraft.nes_console": "NES Console",
