@@ -1,10 +1,12 @@
 package com.sammwy.retrocraft.server.item;
 
+import com.sammwy.retrocraft.server.block.ArcadeSkin;
 import com.sammwy.retrocraft.server.block.DockedConsoleBlockEntity;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.CustomModelDataComponent;
 import net.minecraft.component.type.NbtComponent;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.BlockItem;
@@ -29,6 +31,9 @@ public final class ArcadeItem extends BlockItem {
         data.putString("GameID", hash);
         data.putString("GameName", name);
         stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(data));
+        stack.set(
+                DataComponentTypes.CUSTOM_MODEL_DATA,
+                new CustomModelDataComponent(ArcadeSkin.of(name).ordinal()));
         stack.set(
                 DataComponentTypes.CUSTOM_NAME,
                 Text.translatable("item.retrocraft.arcade_game", name));

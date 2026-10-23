@@ -1697,7 +1697,7 @@ def generate():
     write_json("models/item/mame_internal_console.json", {
         "parent": "retrocraft:item/mame_console",
         "overrides": [
-            {"predicate": {"retrocraft:arcade_skin": i}, "model": "retrocraft:item/" + name}
+            {"predicate": {"custom_model_data": i}, "model": "retrocraft:item/" + name}
             for i, name in enumerate([
                 "mame_pacman_console", "mame_tetris_console", "mame_space_invaders_console",
                 "mame_donkey_kong_console", "mame_galaga_console", "mame_street_fighter_console",

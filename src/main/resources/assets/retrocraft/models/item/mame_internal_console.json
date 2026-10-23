@@ -3,55 +3,55 @@
   "overrides": [
     {
       "predicate": {
-        "retrocraft:arcade_skin": 1
+        "custom_model_data": 1
       },
       "model": "retrocraft:item/mame_pacman_console"
     },
     {
       "predicate": {
-        "retrocraft:arcade_skin": 2
+        "custom_model_data": 2
       },
       "model": "retrocraft:item/mame_tetris_console"
     },
     {
       "predicate": {
-        "retrocraft:arcade_skin": 3
+        "custom_model_data": 3
       },
       "model": "retrocraft:item/mame_space_invaders_console"
     },
     {
       "predicate": {
-        "retrocraft:arcade_skin": 4
+        "custom_model_data": 4
       },
       "model": "retrocraft:item/mame_donkey_kong_console"
     },
     {
       "predicate": {
-        "retrocraft:arcade_skin": 5
+        "custom_model_data": 5
       },
       "model": "retrocraft:item/mame_galaga_console"
     },
     {
       "predicate": {
-        "retrocraft:arcade_skin": 6
+        "custom_model_data": 6
       },
       "model": "retrocraft:item/mame_street_fighter_console"
     },
     {
       "predicate": {
-        "retrocraft:arcade_skin": 7
+        "custom_model_data": 7
       },
       "model": "retrocraft:item/mame_metal_slug_console"
     },
     {
       "predicate": {
-        "retrocraft:arcade_skin": 8
+        "custom_model_data": 8
       },
       "model": "retrocraft:item/mame_mortal_kombat_console"
     },
     {
       "predicate": {
-        "retrocraft:arcade_skin": 9
+        "custom_model_data": 9
       },
       "model": "retrocraft:item/mame_bubble_bobble_console"
     }

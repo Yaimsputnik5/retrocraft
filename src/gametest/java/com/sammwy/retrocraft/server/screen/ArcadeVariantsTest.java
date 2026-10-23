@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.roms.RomCatalog;
+import com.sammwy.retrocraft.server.block.ArcadeSkin;
 import com.sammwy.retrocraft.server.block.DockedConsoleBlock;
 import com.sammwy.retrocraft.server.block.DockedConsoleBlockEntity;
 import com.sammwy.retrocraft.server.console.ConsoleRegistry;
@@ -17,6 +18,8 @@ import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.CustomModelDataComponent;
 import net.minecraft.entity.EntityType;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemGroup;
@@ -181,6 +184,19 @@ public class ArcadeVariantsTest implements FabricGameTest {
             context.assertTrue(
                     Retrocraft.ARCADES_GROUP.getDisplayStacks().size() == 2,
                     "Arcades tab must create one variant per arcade ROM, even when art is shared");
+            context.assertTrue(
+                    Retrocraft.ARCADES_GROUP.getDisplayStacks().stream()
+                            .allMatch(
+                                    stack ->
+                                            stack.getOrDefault(
+                                                                    DataComponentTypes
+                                                                            .CUSTOM_MODEL_DATA,
+                                                                    CustomModelDataComponent
+                                                                            .DEFAULT)
+                                                            .value()
+                                                    == ArcadeSkin.of(ArcadeItem.gameName(stack))
+                                                            .ordinal()),
+                    "Every variant must bake its skin into custom model data for the item model");
             var board = ConsoleRegistry.cartridge(Identifier.of("retrocraft", "mame"));
             List<Text> tooltip = new ArrayList<>();
             board.appendTooltip(
