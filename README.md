@@ -17,7 +17,7 @@ Retrocraft adds handhelds, home consoles, arcade cabinets and CRT televisions to
 | Game Boy Advance | Game Boy Advance | mgba |
 | Mega Drive / Genesis | Mega Drive, Genesis | genesis_plus_gx |
 | Nintendo 64 | Nintendo 64 | parallel_n64 |
-| Arcade | Arcade Machine | mame2003_plus |
+| Arcade | Arcade Machine | mame2003 |
 
 Plus three televisions to hook your consoles up to: a **Portable TV** (1 block), a **CRT Television** (2×1.5) and a big **Console Television** (3×2).
 
@@ -38,7 +38,7 @@ Stash it in a chest and the game is suspended; take it back out and it resumes.
 
 Home consoles are blocks. Place one, place a TV within 12 blocks, insert a cartridge (right-click the console with it) and power it on. The console grabs the nearest free TV and the game shows up on its screen, with sound coming from the set.
 
-Anyone can walk up and watch. Only one player holds the controller at a time; everyone else spectates, and **Take control** hands it over when the current player lets go. The arcade machine has its own built-in CRT, so it doesn't need a TV.
+Anyone can walk up and watch. Docked consoles provide up to four controller slots; **Take control** claims the next free slot. The first slot holds the hybrid emulation lease, while each player drives their own pad. Handhelds stay single-player. The arcade machine has its own built-in CRT, so it does not need a TV.
 
 Break the console or eject the cartridge and the TV is free again. Unloading the chunk suspends the game; it comes back when someone's around to watch.
 
@@ -57,7 +57,7 @@ Break the console or eject the cartridge and the TV is free again. Unloading the
 
 ## How it works (short version)
 
-Emulation is **hybrid**. While you're actively playing, the core runs locally on your client for zero-latency input; when you close the HUD or walk away, the save state is handed back to the server, which keeps running the game for anyone still watching or listening. Periodic checkpoints mean a crash or disconnect loses at most a couple of seconds.
+Emulation is **hybrid**. While you're actively playing, the core runs locally on your client so local input avoids a network round trip; when you close the HUD or walk away, the save state is handed back to the server, which keeps running the game for anyone still watching or listening. Periodic checkpoints let the server recover the latest completed save after a crash or disconnect. The interval and transfer time determine how much progress can be recovered.
 
 Each emulator core runs in its own isolated process, so one misbehaving game can't take the others down with it.
 
@@ -81,7 +81,7 @@ Added more ROMs later? Run `/retrocraft scan` (op level 2) and the catalog is re
 
 ### Arcade notes
 
-The arcade machine uses MAME 2003-Plus, so ROM sets have to match that version (0.78). Sets must be complete, self-contained ZIPs including their BIOS where needed.
+The default arcade core is MAME 2003, so ROM sets must match its 0.78 database. Sets must be complete, self-contained ZIPs including their BIOS where needed.
 
 ### Configuration
 
@@ -96,16 +96,22 @@ The arcade machine uses MAME 2003-Plus, so ROM sets have to match that version (
 }
 ```
 
-You can also remap which core handles each system under the `cores` key.
+The `cores` key stores the mappings to the trusted, compatible core pool. Personal options can suppress ambient audio, video and thumbnails at the server, so disabling them also avoids the corresponding network traffic. Video textures obey the personal frame limit; server streams run at up to Minecraft's 20 ticks per second. Audio is delivered independently of the video frame rate.
 
 ## Development
 
 ```sh
+./gradlew spotlessApply
 ./gradlew build
-RETROCRAFT_TEST_CORE=/path/to/fceumm_libretro.so RETROCRAFT_TEST_DOWNLOAD=true ./gradlew test
+./gradlew runGameTest
+RETROCRAFT_TEST_CORE=/path/to/fceumm_libretro.so ./gradlew test
 ```
 
-The native tests run a small homebrew NES ROM through a real core and are skipped unless `RETROCRAFT_TEST_CORE` is set. Textures and models are generated from `tools/generate_assets.py` (Python + Pillow); the generated PNG/JSON files are committed, so Python isn't needed to build or run the mod.
+`build` runs formatting checks, JUnit tests and a headless Fabric GameTest for concurrent cartridge access. `runGameTest` runs the Minecraft regression by itself. Test code and the test mod are excluded from the release jar.
+
+Native NES tests use an original homebrew ROM and require `RETROCRAFT_TEST_CORE`. N64 tests additionally accept `RETROCRAFT_TEST_N64_CORE` and `RETROCRAFT_TEST_N64_ROM`. Download tests require `RETROCRAFT_TEST_DOWNLOAD=true`; MAME tests require their corresponding `RETROCRAFT_TEST_MAME_*` variables. Optional native tests are skipped when their inputs are absent. Committed textures and models require no asset-generation tools to build.
+
+See [the optimization review](docs/OPTIMIZATION_REVIEW.md) for design constraints, regression coverage and the latest validation scope.
 
 Consoles and cartridges are registered through `ConsoleRegistry`, so adding a new system is a matter of registering a cartridge with a ROM discovery strategy and one or more consoles that accept it.
 
