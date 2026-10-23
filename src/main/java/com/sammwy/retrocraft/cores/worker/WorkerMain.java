@@ -14,9 +14,11 @@ public final class WorkerMain {
     private final Path statePath;
     private final Memory directory;
     private final Map<String, Memory> variables = new HashMap<>();
+    private double aspectRatio, forceAspect;
     private int pixelFormat;
     private final int[] input = new int[WorkerProtocol.PORTS];
     private boolean shutdown;
+    private boolean hardwareRequested;
     private boolean captureVideo = true, captureAudio = true;
     private FrameCodec.Frame frame = new FrameCodec.Frame(256, 240, new byte[256 * 240 * 3]);
     private final ByteArrayOutputStream audio = new ByteArrayOutputStream();
@@ -108,9 +110,18 @@ public final class WorkerMain {
             if (core.retro_load_game(game) == 0) throw new IOException("Core rejected ROM");
             loaded = true;
             for (int port = 0; port < input.length; port++) core.retro_set_controller_port_device(port, 1);
+            if (forceAspect > 0) {
+                captureVideo = false; captureAudio = false;
+                core.retro_run();
+                captureVideo = true; captureAudio = true;
+            }
+            if (!Files.exists(statePath)) restoreBattery();
             restore();
             Libretro.AvInfo av = new Libretro.AvInfo();
             core.retro_get_system_av_info(av);
+            // Cores can report raw output ratios (~2.66 for the N64 VI), not display intent — clamp to sane.
+            aspectRatio = av.geometry.aspectRatio > 0.5 && av.geometry.aspectRatio <= 2.0 ? av.geometry.aspectRatio : 0;
+            if (forceAspect > 0) aspectRatio = forceAspect;
             if (!Double.isFinite(av.timing.fps) || av.timing.fps < 40 || av.timing.fps > 120
                     || !Double.isFinite(av.timing.sampleRate) || av.timing.sampleRate < 8000 || av.timing.sampleRate > 192000)
                 throw new IOException("Invalid core AV timing");
@@ -121,7 +132,7 @@ public final class WorkerMain {
             while (true) {
                 int command;
                 try { command = in.readUnsignedByte(); } catch (EOFException ex) { break; }
-                if (command == WorkerProtocol.QUIT) break;
+                if (command == WorkerProtocol.QUIT) { saveBattery(); break; }
                 if (command == WorkerProtocol.SAVE) {
                     save();
                     out.writeBoolean(true);
@@ -154,6 +165,11 @@ public final class WorkerMain {
             case 3 -> data.setByte(0, (byte) 1); // duplicate frame support
             case 7 -> shutdown = true;
             case 9 -> data.setPointer(0, systemDir);   // GET_SYSTEM_DIRECTORY: BIOS/firmware tree
+            case 14 -> {
+                if (!hardwareRequested) System.err.println("Hardware rendering requested but not supported by the worker");
+                hardwareRequested = true;
+                return 0;
+            }
             case 31 -> data.setPointer(0, directory);  // GET_SAVE_DIRECTORY
             case 10 -> {
                 int format = data.getInt(0);
@@ -177,10 +193,14 @@ public final class WorkerMain {
                     int separator = definition.indexOf(';');
                     if (separator >= 0) {
                         String name = key.getString(0), choices = definition.substring(separator + 1).trim();
+                        if (name.startsWith("parallel-n64-")) forceAspect = 4.0 / 3.0; // the VI always outputs 4:3 display
                         String selected = switch (name) {
                             case "parallel-n64-gfxplugin" -> "angrylion";
                             case "parallel-n64-rspplugin" -> "cxd4";
                             case "parallel-n64-angrylion-multithread" -> "2";
+                            case "parallel-n64-aspectratiohint" -> "normal";
+                            case "parallel-n64-screensize" -> "640x480";
+                            case "pcsx2_renderer" -> "Software (SW)";
                             default -> choices.split("\\|", 2)[0];
                         };
                         if (!Arrays.asList(choices.split("\\|")).contains(selected)) selected = choices.split("\\|", 2)[0];
@@ -201,12 +221,14 @@ public final class WorkerMain {
     private void video(Pointer pixels, int width, int height, Libretro.SizeT pitch) {
         if (!captureVideo) return;
         if (pixels == null) return; // libretro frame duplication
+        if (Pointer.nativeValue(pixels) == -1L) throw new IllegalStateException("Hardware frame requires a graphics context");
         if (width < 1 || height < 1 || width > 4096 || height > 4096)
             throw new IllegalStateException("Unsupported video geometry");
         int bpp = pixelFormat == 1 ? 4 : 2;
         if (pitch.longValue() < (long) width * bpp || pitch.longValue() > 32768) throw new IllegalStateException("Invalid video pitch");
         double scale = Math.min(1, Math.min((double) FrameCodec.MAX_WIDTH / width, (double) FrameCodec.MAX_HEIGHT / height));
-        int outputWidth = Math.max(1, (int) Math.floor(width * scale)), outputHeight = Math.max(1, (int) Math.floor(height * scale));
+        int[] size = displaySize(Math.max(1, (int) Math.floor(width * scale)), Math.max(1, (int) Math.floor(height * scale)), aspectRatio);
+        int outputWidth = size[0], outputHeight = size[1];
         byte[] rgb = new byte[outputWidth * outputHeight * 3];
         for (int y = 0; y < outputHeight; y++) {
             for (int x = 0; x < outputWidth; x++) {
@@ -225,6 +247,16 @@ public final class WorkerMain {
             }
         }
         frame = new FrameCodec.Frame(outputWidth, outputHeight, rgb);
+    }
+
+    // Cores report the intended display aspect in av_info; resample the whole frame so
+    // surfaces never stretch it (e.g. N64 VI output vs its real 4:3 signal).
+    static int[] displaySize(int width, int height, double aspectRatio) {
+        if (aspectRatio > 0 && Math.abs((double) width / height / aspectRatio - 1) > 0.02) {
+            if ((double) width / height > aspectRatio) width = Math.max(1, (int) Math.round(height * aspectRatio));
+            else height = Math.max(1, (int) Math.round(width / aspectRatio));
+        }
+        return new int[]{width, height};
     }
 
     private void sample(short left, short right) {
@@ -262,6 +294,31 @@ public final class WorkerMain {
         }
         try { Files.move(temporary, statePath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
         catch (AtomicMoveNotSupportedException ex) { Files.move(temporary, statePath, StandardCopyOption.REPLACE_EXISTING); }
+    }
+
+    private void restoreBattery() throws IOException {
+        Path battery = statePath.resolveSibling("battery.sav");
+        if (!Files.isRegularFile(battery)) return;
+        long length = Files.size(battery);
+        Pointer ram = core.retro_get_memory_data(0);
+        if (ram == null || length != core.retro_get_memory_size(0).longValue() || length > WorkerProtocol.MAX_STATE)
+            throw new IOException("Battery save geometry changed");
+        byte[] bytes = Files.readAllBytes(battery);
+        ram.write(0, bytes, 0, bytes.length);
+    }
+
+    private void saveBattery() throws IOException {
+        long length = core.retro_get_memory_size(0).longValue();
+        Pointer ram = core.retro_get_memory_data(0);
+        if (ram == null || length == 0) return;
+        if (length < 0 || length > WorkerProtocol.MAX_STATE) throw new IOException("Invalid SRAM size");
+        Path target = statePath.resolveSibling("battery.sav");
+        Path temporary = target.resolveSibling("battery.sav.tmp");
+        try {
+            Files.write(temporary, ram.getByteArray(0, (int) length));
+            try { Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
+            catch (AtomicMoveNotSupportedException ex) { Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING); }
+        } finally { Files.deleteIfExists(temporary); }
     }
 
     private void restore() throws IOException {

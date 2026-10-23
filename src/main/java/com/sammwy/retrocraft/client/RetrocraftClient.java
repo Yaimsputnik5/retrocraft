@@ -67,8 +67,11 @@ public final class RetrocraftClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.GuiOpen.ID, (packet, context) -> context.client().execute(() -> SettingsClient.guiOpen(context.client(), packet)));
         ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.ConfigSaved.ID, (packet, context) -> context.client().execute(() -> SettingsClient.configSaved(packet)));
         ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.RomList.ID, (packet, context) -> context.client().execute(() -> SettingsClient.romList(packet)));
-        ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.CoreList.ID, (packet, context) -> context.client().execute(() -> SettingsClient.coreList(packet)));
+
         ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.BiosChunk.ID, (packet, context) -> context.client().execute(() -> SettingsClient.biosChunk(packet)));
+        ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.BiosManifest.ID, (packet, context) -> context.client().execute(() -> SettingsClient.biosManifest(packet)));
+        ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.BiosUnavailable.ID, (packet, context) -> context.client().execute(() -> SettingsClient.biosUnavailable(packet)));
+        ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.ScanEvent.ID, (packet, context) -> context.client().execute(() -> SettingsClient.scanEvent(packet)));
         ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.RomEvent.ID, (packet, context) -> context.client().execute(() -> SettingsClient.romEvent(packet)));
         ClientPlayNetworking.registerGlobalReceiver(Packets.Catalog.ID, (packet, context) -> {
             if (packet.first()) { pendingCatalog.clear(); catalogGeneration = packet.generation(); }

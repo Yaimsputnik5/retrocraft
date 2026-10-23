@@ -4,6 +4,8 @@ import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.cores.transfer.BlobTransfer;
 import com.sammwy.retrocraft.roms.RomLibrary;
 import com.sammwy.retrocraft.roms.SaveStates;
+import com.sammwy.retrocraft.roms.BiosCache;
+import com.sammwy.retrocraft.cores.KnownCores;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
 import com.sammwy.retrocraft.server.net.SettingsPackets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -24,11 +26,9 @@ public final class SettingsClient {
     interface Response {
         default void list(SettingsPackets.RomList packet) { }
         default void event(SettingsPackets.RomEvent packet) { }
-        default void core(SettingsPackets.CoreList packet) { }
     }
     private static final class Pending {
         final Response response; final long deadline = System.nanoTime() + 20_000_000_000L;
-        boolean sticky;
         Pending(Response response) { this.response = response; }
     }
 
@@ -37,12 +37,6 @@ public final class SettingsClient {
     static int submit(Response response) {
         int id = ++nextRequest;
         pending.put(id, new Pending(response));
-        return id;
-    }
-    /** Mutations that yield several CoreList pushes before the final RomEvent. */
-    static int submitSticky(Response response) {
-        int id = submit(response);
-        pending.get(id).sticky = true;
         return id;
     }
     static void complete(int request) { pending.remove(request); }
@@ -59,17 +53,13 @@ public final class SettingsClient {
         var response = pending.remove(packet.request());
         if (response != null) response.response.list(packet);
     }
-    public static void coreList(SettingsPackets.CoreList packet) {
-        var response = pending.get(packet.request());
-        if (response != null) { if (!response.sticky) pending.remove(packet.request()); response.response.core(packet); }
-    }
     public static void romEvent(SettingsPackets.RomEvent packet) {
         if (packet.action() == SettingsPackets.UPLOAD_ACCEPT || packet.action() == SettingsPackets.UPLOAD_DONE || packet.action() == SettingsPackets.UPLOAD_FAIL) {
             uploadEvent(packet);
             return;
         }
-        var response = pending.get(packet.request());
-        if (response != null) { if (!response.sticky) pending.remove(packet.request()); response.response.event(packet); }
+        var response = pending.remove(packet.request());
+        if (response != null) response.response.event(packet);
     }
 
     /** Stale action responses are reported as a timeout so the UI never hangs on a spinner. */
@@ -129,9 +119,80 @@ public final class SettingsClient {
         BiosFile(long total, String sha256) { this.total = total; this.sha256 = sha256; }
     }
     private static final Map<String, BiosFile> biosIncoming = new HashMap<>();
+    private static final Set<String> biosRequested = new HashSet<>();
+    private static final ArrayDeque<SettingsPackets.BiosRequest> biosMissing = new ArrayDeque<>();
+    private static volatile long biosEpoch;
+    private static int biosGeneration, biosChecks;
+    private static boolean biosManifestFinished, biosManifestFailed, biosReadySent;
+
+    public static void biosManifest(SettingsPackets.BiosManifest packet) {
+        if (packet.first()) {
+            biosEpoch++; biosChecks = 0; biosGeneration = packet.generation();
+            biosManifestFinished = false; biosManifestFailed = false; biosReadySent = false;
+            biosIncoming.clear(); biosMissing.clear(); biosRequested.clear();
+        } else if (packet.generation() != biosGeneration) return;
+        biosChecks++;
+        if (packet.last()) biosManifestFinished = true;
+        long epoch = biosEpoch;
+        Thread.ofVirtual().name("retrocraft-bios-cache-check").start(() -> {
+            List<SettingsPackets.BiosRequest> requests = new ArrayList<>();
+            for (var entry : packet.entries()) {
+                if (!KnownCores.ids().contains(entry.coreId()) || !RomLibrary.safeName(entry.name())
+                        || entry.size() < 1 || entry.size() > 8L * 1024 * 1024 || !entry.sha256().matches("[0-9a-f]{64}")) continue;
+                Path cached = RetrocraftConfig.biosDir(entry.coreId())
+                        .resolve(entry.coreId().equals("pcsx2") ? "bios" : "").resolve(entry.name());
+                if (BiosCache.matches(cached, entry.size(), entry.sha256())) continue;
+                requests.add(new SettingsPackets.BiosRequest(entry.coreId(), entry.name(), entry.sha256()));
+            }
+            MinecraftClient.getInstance().execute(() -> {
+                if (epoch != biosEpoch) return;
+                biosChecks--;
+                for (var request : requests) {
+                    String key = request.coreId() + "/" + request.name() + "/" + request.sha256();
+                    if (!biosRequested.contains(key) && biosMissing.stream().noneMatch(p -> p.equals(request))) biosMissing.add(request);
+                }
+                pumpBios();
+                finishBios();
+            });
+        });
+    }
+
+    private static void pumpBios() {
+        while (biosRequested.size() < 2 && !biosMissing.isEmpty() && ClientPlayNetworking.canSend(SettingsPackets.BiosRequest.ID)) {
+            var request = biosMissing.removeFirst();
+            biosRequested.add(request.coreId() + "/" + request.name() + "/" + request.sha256());
+            ClientPlayNetworking.send(request);
+        }
+    }
+
+    private static void finishBios() {
+        if (!biosManifestFinished || biosManifestFailed || biosReadySent || biosChecks != 0
+                || !biosMissing.isEmpty() || !biosRequested.isEmpty() || !ClientPlayNetworking.canSend(SettingsPackets.BiosReady.ID)) return;
+        biosReadySent = true;
+        ClientPlayNetworking.send(new SettingsPackets.BiosReady(biosGeneration));
+    }
+
+    public static void biosUnavailable(SettingsPackets.BiosUnavailable packet) {
+        if (!biosRequested.contains(packet.coreId() + "/" + packet.name() + "/" + packet.sha256())) return;
+        biosManifestFailed = true;
+        biosIncoming.remove(packet.coreId() + "/" + packet.name());
+        biosRequested.remove(packet.coreId() + "/" + packet.name() + "/" + packet.sha256());
+        pumpBios();
+    }
+
+    private static String scanActor = "";
+    private static boolean scanning;
+    public static boolean scanning() { return scanning; }
+    public static String scanActor() { return scanActor; }
+    public static void scanEvent(SettingsPackets.ScanEvent packet) {
+        scanning = packet.scanning();
+        if (!packet.actor().isBlank()) scanActor = packet.actor();
+        if (!scanning && screen != null) screen.scanFinished();
+    }
 
     public static void biosChunk(SettingsPackets.BiosChunk packet) {
         String key = packet.coreId() + "/" + packet.name();
+        if (!biosRequested.contains(key + "/" + packet.sha256())) return;
         try {
             if (!RomLibrary.safeName(packet.name())
                     || packet.total() < 1 || packet.total() > 8L * 1024 * 1024 || packet.offset() < 0) return;
@@ -142,16 +203,33 @@ public final class SettingsClient {
             if (file.data.size() < file.total) return;
             biosIncoming.remove(key);
             byte[] bytes = file.data.toByteArray();
-            if (!BlobTransfer.hash(bytes).equals(file.sha256)) return;
-            Path target = RetrocraftConfig.biosDir(packet.coreId()).resolve(packet.name());
-            Files.createDirectories(target.getParent());
-            SaveStates.writeAtomic(target, bytes);
-            Retrocraft.LOG.info("Received BIOS {} for core {} from server", packet.name(), packet.coreId());
-        } catch (java.io.IOException | RuntimeException ex) { biosIncoming.remove(key); }
+            long epoch = biosEpoch;
+            Thread.ofVirtual().name("retrocraft-bios-write").start(() -> {
+                try {
+                    if (!BlobTransfer.hash(bytes).equals(file.sha256)) {
+                        MinecraftClient.getInstance().execute(() -> { if (epoch == biosEpoch) biosManifestFailed = true; });
+                        return;
+                    }
+                    if (epoch != biosEpoch) return;
+                    Path target = RetrocraftConfig.biosDir(packet.coreId())
+                            .resolve(packet.coreId().equals("pcsx2") ? "bios" : "").resolve(packet.name());
+                    SaveStates.writeAtomic(target, bytes);
+                    Retrocraft.LOG.info("Received BIOS {} for core {} from server", packet.name(), packet.coreId());
+                } catch (java.io.IOException ex) { Retrocraft.LOG.warn("Cannot cache BIOS {} for {}", packet.name(), packet.coreId(), ex); }
+                finally { MinecraftClient.getInstance().execute(() -> {
+                    if (epoch != biosEpoch) return;
+                    biosRequested.remove(packet.coreId() + "/" + packet.name() + "/" + packet.sha256());
+                    pumpBios();
+                    finishBios();
+                }); }
+            });
+        } catch (RuntimeException ex) { biosIncoming.remove(key); }
     }
 
     public static void disconnect() {
-        pending.clear(); upload = null; screen = null; biosIncoming.clear();
+        biosEpoch++; pending.clear(); upload = null; screen = null; biosIncoming.clear(); biosRequested.clear(); biosMissing.clear();
+        biosChecks = 0; biosManifestFinished = false; biosManifestFailed = false; biosReadySent = false;
+        scanning = false; scanActor = "";
     }
     private SettingsClient() { }
 }

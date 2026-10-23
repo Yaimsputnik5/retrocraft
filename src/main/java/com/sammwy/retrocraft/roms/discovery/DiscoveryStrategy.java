@@ -40,6 +40,26 @@ public final class DiscoveryStrategy {
                 (name, bytes) -> magic.test(name, bytes) || other.magic.test(name, bytes));
         result.names = name -> names.test(name) || other.names.test(name); return result;
     }
+    /** The candidate only matches when some ancestor directory contains one of the given tokens (case-insensitive). */
+    public DiscoveryStrategy inDir(String... tokens) { return inDir(tokens, new String[0]); }
+    /** Same, but segments containing an excluded token never count (e.g. "playstation" must skip "playstation 2"). */
+    public DiscoveryStrategy inDir(String[] include, String[] exclude) {
+        Set<String> dirs = new LinkedHashSet<>(), blocked = new LinkedHashSet<>();
+        for (String token : include) dirs.add(token.toLowerCase(Locale.ROOT));
+        for (String token : exclude) blocked.add(token.toLowerCase(Locale.ROOT));
+        return require((name, bytes) -> {
+            String path = name.replace('\\', '/').toLowerCase(Locale.ROOT);
+            int last = path.lastIndexOf('/');
+            if (last < 0) return false;
+            for (String segment : path.substring(0, last).split("/")) {
+                boolean denied = false;
+                for (String token : blocked) if (segment.contains(token)) { denied = true; break; }
+                if (denied) continue;
+                for (String token : dirs) if (segment.contains(token)) return true;
+            }
+            return false;
+        });
+    }
     public DiscoveryStrategy require(BiPredicate<String, byte[]> predicate) {
         DiscoveryStrategy result = new DiscoveryStrategy(suffix, (name, bytes) -> predicate.test(name, bytes) && extensions.test(name, bytes),
                 (name, bytes) -> predicate.test(name, bytes) && magic.test(name, bytes));

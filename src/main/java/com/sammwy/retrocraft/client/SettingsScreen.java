@@ -102,6 +102,7 @@ public final class SettingsScreen extends Screen {
         state = State.READY;
         clearAndInit();
     }
+    void scanFinished() { browser.reload(); }
     void configSaved(SettingsPackets.ConfigSaved packet) {
         if (backend instanceof SettingsBackend.Remote remote) remote.saved(packet);
     }
@@ -130,10 +131,6 @@ public final class SettingsScreen extends Screen {
     private void buildRows() {
         rows.clear();
         for (var entry : schema) if (entry.kind() != SettingsPackets.CORE) rows.add(row(entry));
-        // Core mappings render last inside Emulation, under their own section header.
-        var cores = new ArrayList<Row>();
-        for (var entry : schema) if (entry.kind() == SettingsPackets.CORE) cores.add(row(entry));
-        if (!cores.isEmpty()) { rows.add(new Row(null)); rows.addAll(cores); }
         scroll = 0;
     }
 
@@ -291,7 +288,7 @@ public final class SettingsScreen extends Screen {
     }
 
     private int rowCategory(Row row) {
-        if (row.entry == null) return ConfigKey.Category.EMULATION.ordinal(); // the "Emulator cores" header
+        if (row.entry == null) return ConfigKey.Category.EMULATION.ordinal();
         return row.entry.category();
     }
 

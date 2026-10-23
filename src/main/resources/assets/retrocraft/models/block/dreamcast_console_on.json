@@ -1,0 +1,6 @@
+{
+  "parent": "retrocraft:block/dreamcast_console",
+  "textures": {
+    "indicator": "retrocraft:block/console/dreamcast_led_on"
+  }
+}

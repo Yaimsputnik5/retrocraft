@@ -15,7 +15,7 @@ import java.util.*;
 /** Admin settings channel: operator GUI grant, a typed config schema and ROM library management. */
 public final class SettingsPackets {
     /** {@link RomAction} verbs. */
-    public static final int LIST = 0, DELETE = 1, RENAME = 2, MOVE = 3, MKDIR = 4, RESCAN = 5;
+    public static final int LIST = 0, DELETE = 1, RENAME = 2, MOVE = 3, MKDIR = 4, RESCAN = 5, RESCAN_NEW = 6;
     /** {@link RomUpload} phases. */
     public static final int BEGIN = 0, CHUNK = 1, ABORT = 2;
     /** {@link RomEvent} actions: ACTION mirrors the failed/finished {@link RomAction}; the rest report upload progress. */
@@ -49,12 +49,6 @@ public final class SettingsPackets {
             List<Entry> out = new ArrayList<>();
             for (ConfigKey key : ConfigKey.values())
                 out.add(new Entry(key.name(), key.get(config), key.kind().ordinal(), key.category().ordinal(), key.min(), key.max(), key.options()));
-            for (var cartridge : ConsoleRegistry.cartridges()) {
-                String id = Registries.ITEM.getId(cartridge).toString();
-                String value;
-                try { value = config.coreId(id); } catch (RuntimeException ex) { continue; }
-                out.add(new Entry("cores." + id, value, CORE, ConfigKey.Category.EMULATION.ordinal(), 0, 0, KnownCores.compatible(id)));
-            }
             return List.copyOf(out);
         }
     }
@@ -101,52 +95,6 @@ public final class SettingsPackets {
         };
         @Override public Id<? extends CustomPayload> getId() { return ID; }
         public static RomAction of(int request, int action, String path) { return new RomAction(request, action, AREA_ROMS, path, ""); }
-    }
-
-    /** Core library management (C2S): LIST/DOWNLOAD/DELETE/ENABLE/DISABLE a core, or DELETE_BIOS one file. */
-    public static final int CORE_DOWNLOAD = 1, CORE_DELETE = 2, CORE_ENABLE = 3, CORE_DISABLE = 4, BIOS_DELETE = 5;
-    public record CoreAction(int request, int action, String coreId, String target) implements CustomPayload {
-        public static final Id<CoreAction> ID = new Id<>(Identifier.of("retrocraft", "core_action"));
-        public static final PacketCodec<RegistryByteBuf, CoreAction> CODEC = new PacketCodec<>() {
-            public CoreAction decode(RegistryByteBuf b) { return new CoreAction(b.readVarInt(), b.readVarInt(), b.readString(MAX_NAME), b.readString(MAX_NAME)); }
-            public void encode(RegistryByteBuf b, CoreAction p) { b.writeVarInt(p.request); b.writeVarInt(p.action); b.writeString(p.coreId, MAX_NAME); b.writeString(p.target, MAX_NAME); }
-        };
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
-    }
-
-    /** Core library state (S2C, answer to a LIST {@link CoreAction} and pushed after mutations). */
-    public record CoreList(int request, List<Entry> entries) implements CustomPayload {
-        public record Bios(String name, long size) {}
-        public record Entry(String id, String display, boolean needsBios, boolean installed, boolean enabled, boolean downloading, long size, List<Bios> bios) {}
-        public static final Id<CoreList> ID = new Id<>(Identifier.of("retrocraft", "core_list"));
-        public static final PacketCodec<RegistryByteBuf, CoreList> CODEC = new PacketCodec<>() {
-            public CoreList decode(RegistryByteBuf b) {
-                int request = b.readVarInt(), count = b.readVarInt();
-                if (count < 0 || count > 64) throw new IllegalArgumentException("Oversized core list");
-                List<Entry> entries = new ArrayList<>(count);
-                for (int i = 0; i < count; i++) {
-                    String id = b.readString(MAX_NAME), display = b.readString(MAX_NAME);
-                    boolean needsBios = b.readBoolean(), installed = b.readBoolean(), enabled = b.readBoolean(), downloading = b.readBoolean();
-                    long size = b.readVarLong();
-                    int biosCount = b.readVarInt();
-                    if (biosCount < 0 || biosCount > 64) throw new IllegalArgumentException("Oversized BIOS list");
-                    List<Bios> bios = new ArrayList<>(biosCount);
-                    for (int j = 0; j < biosCount; j++) bios.add(new Bios(b.readString(MAX_NAME), b.readVarLong()));
-                    entries.add(new Entry(id, display, needsBios, installed, enabled, downloading, size, List.copyOf(bios)));
-                }
-                return new CoreList(request, List.copyOf(entries));
-            }
-            public void encode(RegistryByteBuf b, CoreList p) {
-                b.writeVarInt(p.request); b.writeVarInt(p.entries.size());
-                for (var e : p.entries) {
-                    b.writeString(e.id, MAX_NAME); b.writeString(e.display, MAX_NAME);
-                    b.writeBoolean(e.needsBios); b.writeBoolean(e.installed); b.writeBoolean(e.enabled); b.writeBoolean(e.downloading);
-                    b.writeVarLong(e.size); b.writeVarInt(e.bios.size());
-                    for (var bios : e.bios) { b.writeString(bios.name, MAX_NAME); b.writeVarLong(bios.size); }
-                }
-            }
-        };
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
     }
 
     /** A directory listing of one roms/ folder (S2C, answer to {@link RomAction#LIST}). */
@@ -196,6 +144,15 @@ public final class SettingsPackets {
         @Override public Id<? extends CustomPayload> getId() { return ID; }
     }
 
+    /** Library rescan lifecycle broadcast so admin UIs can show who triggered it (S2C). */
+    public record ScanEvent(String actor, boolean scanning) implements CustomPayload {
+        public static final Id<ScanEvent> ID = new Id<>(Identifier.of("retrocraft", "scan_event"));
+        public static final PacketCodec<RegistryByteBuf, ScanEvent> CODEC = PacketCodec.of(
+                (value, buf) -> { buf.writeString(value.actor, MAX_NAME); buf.writeBoolean(value.scanning); },
+                buf -> new ScanEvent(buf.readString(MAX_NAME), buf.readBoolean()));
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
     /** One chunk of a BIOS file pushed server→client so client-emulated cores find their firmware (S2C). */
     public record BiosChunk(String coreId, String name, int offset, long total, String sha256, byte[] data) implements CustomPayload {
         public static final Id<BiosChunk> ID = new Id<>(Identifier.of("retrocraft", "bios_chunk"));
@@ -208,6 +165,53 @@ public final class SettingsPackets {
                 b.writeVarLong(p.total); b.writeString(p.sha256, 64); b.writeByteArray(p.data);
             }
         };
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
+    public record BiosManifest(int generation, boolean first, boolean last, List<Entry> entries) implements CustomPayload {
+        public record Entry(String coreId, String name, long size, String sha256) {}
+        public static final Id<BiosManifest> ID = new Id<>(Identifier.of("retrocraft", "bios_manifest"));
+        public static final PacketCodec<RegistryByteBuf, BiosManifest> CODEC = new PacketCodec<>() {
+            public BiosManifest decode(RegistryByteBuf b) {
+                int generation = b.readVarInt();
+                boolean first = b.readBoolean(), last = b.readBoolean();
+                int count = b.readVarInt();
+                if (count < 0 || count > 128) throw new IllegalArgumentException("Oversized BIOS manifest");
+                List<Entry> entries = new ArrayList<>(count);
+                for (int i = 0; i < count; i++) entries.add(new Entry(b.readString(64), b.readString(MAX_NAME), b.readVarLong(), b.readString(64)));
+                return new BiosManifest(generation, first, last, List.copyOf(entries));
+            }
+            public void encode(RegistryByteBuf b, BiosManifest p) {
+                b.writeVarInt(p.generation); b.writeBoolean(p.first); b.writeBoolean(p.last); b.writeVarInt(p.entries.size());
+                for (Entry entry : p.entries) {
+                    b.writeString(entry.coreId, 64); b.writeString(entry.name, MAX_NAME);
+                    b.writeVarLong(entry.size); b.writeString(entry.sha256, 64);
+                }
+            }
+        };
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
+    public record BiosRequest(String coreId, String name, String sha256) implements CustomPayload {
+        public static final Id<BiosRequest> ID = new Id<>(Identifier.of("retrocraft", "bios_request"));
+        public static final PacketCodec<RegistryByteBuf, BiosRequest> CODEC = PacketCodec.of(
+                (p, b) -> { b.writeString(p.coreId, 64); b.writeString(p.name, MAX_NAME); b.writeString(p.sha256, 64); },
+                b -> new BiosRequest(b.readString(64), b.readString(MAX_NAME), b.readString(64)));
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
+    public record BiosUnavailable(String coreId, String name, String sha256) implements CustomPayload {
+        public static final Id<BiosUnavailable> ID = new Id<>(Identifier.of("retrocraft", "bios_unavailable"));
+        public static final PacketCodec<RegistryByteBuf, BiosUnavailable> CODEC = PacketCodec.of(
+                (p, b) -> { b.writeString(p.coreId, 64); b.writeString(p.name, MAX_NAME); b.writeString(p.sha256, 64); },
+                b -> new BiosUnavailable(b.readString(64), b.readString(MAX_NAME), b.readString(64)));
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
+    public record BiosReady(int generation) implements CustomPayload {
+        public static final Id<BiosReady> ID = new Id<>(Identifier.of("retrocraft", "bios_ready"));
+        public static final PacketCodec<RegistryByteBuf, BiosReady> CODEC = PacketCodec.of(
+                (p, b) -> b.writeVarInt(p.generation), b -> new BiosReady(b.readVarInt()));
         @Override public Id<? extends CustomPayload> getId() { return ID; }
     }
 
@@ -241,13 +245,16 @@ public final class SettingsPackets {
         PayloadTypeRegistry.playC2S().register(ConfigApply.ID, ConfigApply.CODEC);
         PayloadTypeRegistry.playC2S().register(RomAction.ID, RomAction.CODEC);
         PayloadTypeRegistry.playC2S().register(RomUpload.ID, RomUpload.CODEC);
-        PayloadTypeRegistry.playC2S().register(CoreAction.ID, CoreAction.CODEC);
+        PayloadTypeRegistry.playC2S().register(BiosRequest.ID, BiosRequest.CODEC);
+        PayloadTypeRegistry.playC2S().register(BiosReady.ID, BiosReady.CODEC);
         PayloadTypeRegistry.playS2C().register(GuiOpen.ID, GuiOpen.CODEC);
         PayloadTypeRegistry.playS2C().register(ConfigSaved.ID, ConfigSaved.CODEC);
         PayloadTypeRegistry.playS2C().register(RomList.ID, RomList.CODEC);
         PayloadTypeRegistry.playS2C().register(RomEvent.ID, RomEvent.CODEC);
-        PayloadTypeRegistry.playS2C().register(CoreList.ID, CoreList.CODEC);
         PayloadTypeRegistry.playS2C().register(BiosChunk.ID, BiosChunk.CODEC);
+        PayloadTypeRegistry.playS2C().register(BiosManifest.ID, BiosManifest.CODEC);
+        PayloadTypeRegistry.playS2C().register(BiosUnavailable.ID, BiosUnavailable.CODEC);
+        PayloadTypeRegistry.playS2C().register(ScanEvent.ID, ScanEvent.CODEC);
     }
     private SettingsPackets() {}
 }

@@ -28,16 +28,14 @@ interface SettingsBackend {
     void list(String path, ListCallback callback);
     void action(int action, String path, String target, EventCallback callback);
     void upload(Path file, String dir, UploadCallback callback);
-    void cores(CoreCallback callback);
-    void coreAction(int action, String coreId, String target, CoreCallback callback);
+    void biosList(String coreId, ListCallback callback);
+    void biosDelete(String coreId, String name, EventCallback callback);
     void coreUpload(Path file, String coreId, UploadCallback callback);
     void close();
 
     interface ApplyCallback { void result(boolean ok, String message, List<SettingsPackets.GuiOpen.Entry> entries); }
     interface ListCallback { void result(boolean ok, List<SettingsPackets.RomList.Entry> entries, boolean truncated, String error); }
     interface EventCallback { void result(boolean ok, String message); }
-    /** {@code entries} is null when the callback only reports an action outcome. */
-    interface CoreCallback { void result(boolean ok, String message, List<SettingsPackets.CoreList.Entry> entries); }
     interface UploadCallback {
         void progress(float fraction);
         default void done(boolean ok, String message) { }
@@ -96,24 +94,19 @@ interface SettingsBackend {
             });
         }
 
-        @Override public void cores(CoreCallback callback) {
+        @Override public void biosList(String coreId, ListCallback callback) {
             int id = SettingsClient.submit(new SettingsClient.Response() {
-                @Override public void core(SettingsPackets.CoreList packet) { callback.result(true, "", packet.entries()); }
-                @Override public void event(SettingsPackets.RomEvent packet) { callback.result(packet.ok(), packet.message(), null); }
+                @Override public void list(SettingsPackets.RomList packet) { callback.result(true, packet.entries(), packet.truncated(), null); }
+                @Override public void event(SettingsPackets.RomEvent packet) { callback.result(false, List.of(), false, packet.message()); }
             });
-            ClientPlayNetworking.send(new SettingsPackets.CoreAction(id, SettingsPackets.LIST, "", ""));
+            ClientPlayNetworking.send(new SettingsPackets.RomAction(id, SettingsPackets.LIST, SettingsPackets.AREA_BIOS, coreId, ""));
         }
 
-        @Override public void coreAction(int action, String coreId, String target, CoreCallback callback) {
-            int[] idRef = new int[1];
-            idRef[0] = SettingsClient.submitSticky(new SettingsClient.Response() {
-                @Override public void core(SettingsPackets.CoreList packet) { callback.result(true, "", packet.entries()); }
-                @Override public void event(SettingsPackets.RomEvent packet) {
-                    SettingsClient.complete(idRef[0]);
-                    callback.result(packet.ok(), packet.message(), null);
-                }
+        @Override public void biosDelete(String coreId, String name, EventCallback callback) {
+            int id = SettingsClient.submit(new SettingsClient.Response() {
+                @Override public void event(SettingsPackets.RomEvent packet) { callback.result(packet.ok(), packet.message()); }
             });
-            ClientPlayNetworking.send(new SettingsPackets.CoreAction(idRef[0], action, coreId, target));
+            ClientPlayNetworking.send(new SettingsPackets.RomAction(id, SettingsPackets.DELETE, SettingsPackets.AREA_BIOS, coreId + "/" + name, ""));
         }
 
         @Override public void coreUpload(Path file, String coreId, UploadCallback callback) {
@@ -140,7 +133,6 @@ interface SettingsBackend {
         private final RomLibrary library, biosLibrary;
         private final RetrocraftConfig config;
         private List<SettingsPackets.GuiOpen.Entry> schema;
-        private CoreManager coreManager;
 
         Local() throws IOException {
             config = RetrocraftConfig.load();
@@ -196,7 +188,7 @@ interface SettingsBackend {
                     case SettingsPackets.RENAME -> library.rename(path, target);
                     case SettingsPackets.MOVE -> library.move(path, target);
                     case SettingsPackets.MKDIR -> library.mkdir(path);
-                    case SettingsPackets.RESCAN -> { }
+                    case SettingsPackets.RESCAN, SettingsPackets.RESCAN_NEW -> { }
                     default -> throw new IOException("Unknown action");
                 }
                 rescanLive();
@@ -218,79 +210,26 @@ interface SettingsBackend {
             });
         }
 
-        @Override public void cores(CoreCallback callback) { callback.result(true, "", coreEntries()); }
-
-        private List<SettingsPackets.CoreList.Entry> coreEntries() {
-            var platform = KnownCores.Platform.current();
-            List<SettingsPackets.CoreList.Entry> entries = new ArrayList<>();
-            for (var core : KnownCores.all()) {
-                Path dir = RetrocraftConfig.clientCache().resolve("cores").resolve(KnownCores.POOL).resolve(platform.key()).resolve(core.id());
-                Path binary = dir.resolve(KnownCores.filename(core.id(), platform));
-                boolean installed = Files.isRegularFile(binary) && Files.isRegularFile(dir.resolve("receipt.properties"));
-                long size = 0;
-                try { if (installed) size = Files.size(binary); } catch (IOException ignored) { }
-                List<SettingsPackets.CoreList.Bios> bios = new ArrayList<>();
-                if (core.needsBios()) {
-                    try {
-                        for (var file : biosLibrary.list(core.id()).entries())
-                            if (!file.directory()) bios.add(new SettingsPackets.CoreList.Bios(file.name(), file.size()));
-                    } catch (IOException ignored) { }
-                }
-                entries.add(new SettingsPackets.CoreList.Entry(core.id(), core.display(), core.needsBios(), installed,
-                        config.coreEnabled(core.id()), false, size, List.copyOf(bios)));
-            }
-            return List.copyOf(entries);
-        }
-
-        private CoreManager coreManager() throws IOException {
-            if (coreManager == null)
-                coreManager = new CoreManager(RetrocraftConfig.clientCache().resolve("cores"),
-                        WorkerRuntime.extract(RetrocraftConfig.clientCache().resolve("runtime")));
-            return coreManager;
-        }
-
-        @Override public void coreAction(int action, String coreId, String target, CoreCallback callback) {
+        @Override public void biosList(String coreId, ListCallback callback) {
             try {
-                KnownCores.get(coreId);
-                switch (action) {
-                    case SettingsPackets.CORE_DOWNLOAD -> {
-                        Thread.ofVirtual().name("retrocraft-core-download-" + coreId).start(() -> {
-                            try {
-                                coreManager().prepare(coreId);
-                                MinecraftClient.getInstance().execute(() -> callback.result(true, "", coreEntries()));
-                            } catch (Exception ex) {
-                                MinecraftClient.getInstance().execute(() -> callback.result(false, ex.getMessage() == null ? "Download failed" : ex.getMessage(), coreEntries()));
-                            }
-                        });
-                        return;
-                    }
-                    case SettingsPackets.CORE_DELETE -> {
-                        Path dir = RetrocraftConfig.clientCache().resolve("cores").resolve(KnownCores.POOL)
-                                .resolve(KnownCores.Platform.current().key()).resolve(coreId).toAbsolutePath().normalize();
-                        if (Files.exists(dir)) try (var walk = Files.walk(dir)) {
-                            for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
-                        }
-                    }
-                    case SettingsPackets.CORE_ENABLE, SettingsPackets.CORE_DISABLE -> {
-                        config.enabledCores = new ArrayList<>(config.enabledCores == null ? List.of() : config.enabledCores);
-                        if (action == SettingsPackets.CORE_ENABLE) { if (!config.enabledCores.contains(coreId)) config.enabledCores.add(coreId); }
-                        else config.enabledCores.remove(coreId);
-                        config.save();
-                    }
-                    case SettingsPackets.BIOS_DELETE -> biosLibrary.delete(coreId + "/" + target);
-                    default -> throw new IOException("Unknown core action");
-                }
-                callback.result(true, "", coreEntries());
-            } catch (IOException | RuntimeException ex) { callback.result(false, ex.getMessage() == null ? "Operation failed" : ex.getMessage(), coreEntries()); }
+                var listing = biosLibrary.list(coreId);
+                callback.result(true, listing.entries().stream().map(e -> new SettingsPackets.RomList.Entry(e.name(), e.directory(), e.size())).toList(), listing.truncated(), null);
+            } catch (IOException | RuntimeException ex) { callback.result(false, List.of(), false, ex.getMessage()); }
+        }
+
+        @Override public void biosDelete(String coreId, String name, EventCallback callback) {
+            try {
+                biosLibrary.delete(coreId + "/" + name);
+                callback.result(true, "");
+            } catch (IOException | RuntimeException ex) { callback.result(false, ex.getMessage() == null ? "Operation failed" : ex.getMessage()); }
         }
 
         @Override public void coreUpload(Path file, String coreId, UploadCallback callback) {
             callback.progress(-1);
             Thread.ofVirtual().name("retrocraft-bios-copy").start(() -> {
                 try {
-                    Path target = biosLibrary.destination(coreId, file.getFileName().toString());
-                    Files.copy(file, target);
-                    MinecraftClient.getInstance().execute(() -> callback.done(true, file.getFileName().toString()));
+                    int landed = biosLibrary.install(coreId, file.getFileName().toString(), Files.readAllBytes(file), true);
+                    MinecraftClient.getInstance().execute(() -> callback.done(true, landed > 1 ? landed + " files" : file.getFileName().toString()));
                 } catch (IOException | RuntimeException ex) {
                     String message = ex.getMessage() == null ? "Could not copy the file" : ex.getMessage();
                     MinecraftClient.getInstance().execute(() -> callback.done(false, message));

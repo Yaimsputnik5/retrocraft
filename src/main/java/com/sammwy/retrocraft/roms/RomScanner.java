@@ -14,7 +14,9 @@ public final class RomScanner {
     public RomScanner(Map<String, DiscoveryStrategy> formats, long maxBytes) {
         this.formats = new LinkedHashMap<>(formats); this.maxBytes = maxBytes;
     }
-    public List<Game> scan(Path library, Consumer<String> warning) throws IOException {
+    public List<Game> scan(Path library, Consumer<String> warning) throws IOException { return scan(library, warning, Set.of()); }
+    /** {@code skip}: relative paths already indexed — their files are not even opened. */
+    public List<Game> scan(Path library, Consumer<String> warning, Set<String> skip) throws IOException {
         Files.createDirectories(library); Path root = library.toRealPath(); var games = new LinkedHashMap<String, Game>();
         try (var files = Files.walk(root)) {
             var candidatesOnDisk = files.filter(Files::isRegularFile).limit(100_001).sorted().toList();
@@ -23,49 +25,44 @@ public final class RomScanner {
                 try {
                     if (!file.toRealPath().startsWith(root)) continue;
                     String relative = root.relativize(file).toString().replace(File.separatorChar, '/');
-                    var found = new ArrayList<Game>(); String name = file.getFileName().toString();
-                    // An arcade set is a unit, including all its chips. Never unpack it into separate games.
-                    String arcade = formats.entrySet().stream().filter(entry -> DiscoveryStrategy.suffix(name).equals("zip") && entry.getValue().matchesExtension(name, new byte[0])).map(Map.Entry::getKey).findFirst().orElse(null);
-                    if (arcade != null) {
-                        if (Files.size(file) > maxBytes) continue;
-                        RomArchives.list(file); // validate archive structure and entry budget
-                        try (InputStream in = Files.newInputStream(file)) { inspect(name, in, new RomSource(relative, null, -1), false, found); }
-                    } else if (RomArchives.supported(name)) {
-                        List<RomArchives.Member> members = RomArchives.list(file); // names first, before selecting payloads
-                        Set<Integer> candidates = new HashSet<>();
-                        for (var member : members) if (member.size() <= maxBytes && formats.values().stream().anyMatch(format -> format.recognizesExtension(member.name()))) candidates.add(member.ordinal());
-                        if (!candidates.isEmpty()) RomArchives.visit(file, (member, in) -> {
-                            if (candidates.contains(member.ordinal())) inspect(member.name(), in, new RomSource(relative, member.name(), member.ordinal()), false, found);
-                        });
-                    } else if (Files.size(file) <= maxBytes) {
-                        try (InputStream in = Files.newInputStream(file)) { inspect(name, in, new RomSource(relative, null, -1), true, found); }
-                    }
-                    for (Game game : found) games.putIfAbsent(game.cartridge + "/" + game.id, game);
+                    if (skip.contains(relative)) continue;
+                    // Extension-only matching on the relative path — inDir gates see parent folders, no archive spelunking or magic reads.
+                    String cartridge = null;
+                    for (var entry : formats.entrySet()) if (entry.getValue().matchesExtension(relative, new byte[0])) { cartridge = entry.getKey(); break; }
+                    if (cartridge == null) continue;
+                    String name = file.getFileName().toString();
+                    int dot = name.lastIndexOf('.');
+                    String title = dot > 0 ? name.substring(0, dot) : name;
+                    String filename = safeFilename(title, DiscoveryStrategy.suffix(name));
+                    if (ArcadeSets.contains(name)) filename = filename.toLowerCase(Locale.ROOT);
+                    String hash = hash(file, Files.size(file));
+                    games.putIfAbsent(cartridge + "/" + hash, new Game(cartridge, hash, title.substring(0, Math.min(title.length(), 200)), filename, new RomSource(relative, null, -1)));
                 } catch (IOException | IllegalArgumentException ex) { warning.accept(file.getFileName() + ": " + ex.getMessage()); }
                 if (games.size() > 100_000) throw new IOException("Too many games in ROM library");
             }
         }
         return List.copyOf(games.values());
     }
-    private void inspect(String name, InputStream input, RomSource source, boolean allowMagic, List<Game> games) throws IOException {
+    private String hash(Path file, long size) throws IOException { return hash(file, size, maxBytes); }
+    /** Content hash: full file when it fits the budget; first 16 MiB + size marker for disc-sized files. */
+    public static String hash(Path file, long size, long maxBytes) throws IOException {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] header = input.readNBytes((int) Math.min(RomFormats.HEADER_BYTES, maxBytes + 1));
-            String cartridge = null; DiscoveryStrategy selected = null;
-            for (var entry : formats.entrySet()) if (entry.getValue().matchesExtension(name, header)) { cartridge = entry.getKey(); selected = entry.getValue(); break; }
-            boolean extension = cartridge != null;
-            if (cartridge == null && allowMagic) for (var entry : formats.entrySet()) if (entry.getValue().matchesMagic(name, header)) { cartridge = entry.getKey(); selected = entry.getValue(); break; }
-            if (cartridge == null || header.length == 0 || header.length > maxBytes) return;
-            long size = header.length; digest.update(header);
-            byte[] buffer = new byte[65536]; int count;
-            while ((count = input.read(buffer)) != -1) { size += count; if (size > maxBytes) throw new IOException("ROM exceeds size limit"); digest.update(buffer, 0, count); }
-            String base = name.substring(name.lastIndexOf('/') + 1); int dot = base.lastIndexOf('.');
-            String title = dot > 0 ? base.substring(0, dot) : base;
-            String suffix = extension ? DiscoveryStrategy.suffix(base) : selected.canonicalExtension();
-            String filename = safeFilename(title, suffix);
-            if (ArcadeSets.contains(name)) filename = filename.toLowerCase(Locale.ROOT);
-            games.add(new Game(cartridge, HexFormat.of().formatHex(digest.digest()), title.substring(0, Math.min(title.length(), 200)), filename, source));
+            long budget = size <= maxBytes ? size : Math.min(size, 16L * 1024 * 1024);
+            try (InputStream in = Files.newInputStream(file)) {
+                byte[] buffer = new byte[65536]; long remaining = budget; int count;
+                while (remaining > 0 && (count = in.read(buffer, 0, (int) Math.min(buffer.length, remaining))) >= 0) {
+                    remaining -= count; digest.update(buffer, 0, count);
+                }
+            }
+            if (size > maxBytes) digest.update(longBytes(size));
+            return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException ex) { throw new AssertionError(ex); }
+    }
+    private static byte[] longBytes(long value) {
+        byte[] out = new byte[8];
+        for (int i = 7; i >= 0; i--) { out[i] = (byte) value; value >>>= 8; }
+        return out;
     }
     public static String safeFilename(String title, String suffix) {
         String clean = title.replaceAll("[^a-zA-Z0-9_-]", "_"); if (clean.isEmpty()) clean = "rom";

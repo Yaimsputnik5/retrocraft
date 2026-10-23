@@ -70,4 +70,6 @@ test {
     systemProperty 'retrocraft.workerJar', tasks.named('workerJar').get().archiveFile.get().asFile.absolutePath
     systemProperty 'retrocraft.testDownload', System.getenv('RETROCRAFT_TEST_DOWNLOAD') ?: 'false'
     if (System.getenv('RETROCRAFT_TEST_CORE')) systemProperty 'retrocraft.testCore', System.getenv('RETROCRAFT_TEST_CORE')
+    if (System.getenv('RETROCRAFT_TEST_N64_CORE')) systemProperty 'retrocraft.testN64Core', System.getenv('RETROCRAFT_TEST_N64_CORE')
+    if (System.getenv('RETROCRAFT_TEST_N64_ROM')) systemProperty 'retrocraft.testN64Rom', System.getenv('RETROCRAFT_TEST_N64_ROM')
 }

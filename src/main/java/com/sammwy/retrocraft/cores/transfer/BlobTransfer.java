@@ -44,7 +44,7 @@ public final class BlobTransfer {
         }
     }
     public static final class Receiver {
-        private Chunk first;
+        private volatile Chunk first;
         private ByteArrayOutputStream bytes;
         private long lastActivity;
         public int reserved() { return first == null ? 0 : first.total; }

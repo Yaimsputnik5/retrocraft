@@ -34,6 +34,16 @@ record ConsoleTheme(String id, Bezel bezel, int shell, int bezelColor, int accen
             case "mame_console" -> new ConsoleTheme(console, Bezel.ARCADE, 0xff2a2831, 0xff0c0c10, 0xfff0b53a, CRT_OFF,
                     List.of(ARROWS, new Binding(B, "Z", "1"), new Binding(Y, "A", "2"), new Binding(A, "X", "3"), new Binding(X, "S", "4"), new Binding(L, "Q", "5"), new Binding(R, "W", "6"),
                             START_KEY, new Binding(SELECT, "R-Shift", "Coin")));
+            case "ps1_console" -> tv(console, 0xffb8b8bc, 0xff4a4a5a, List.of(ARROWS, new Binding(B, "Z", "O"), new Binding(A, "X", "X"), new Binding(Y, "A", "S"), new Binding(X, "S", "T"),
+                    new Binding(L, "Q", "L1"), new Binding(R, "W", "R1"), new Binding(L2, "I", "L2"), START_KEY, new Binding(SELECT, "R-Shift", "Select")));
+            case "ps2_console" -> tv(console, 0xff1a1a2e, 0xff3a5cbe, List.of(ARROWS, new Binding(B, "Z", "O"), new Binding(A, "X", "X"), new Binding(Y, "A", "S"), new Binding(X, "S", "T"),
+                    new Binding(L, "Q", "L1"), new Binding(R, "W", "R1"), new Binding(L2, "I", "L2"), START_KEY, new Binding(SELECT, "R-Shift", "Select")));
+            case "dreamcast_console" -> tv(console, 0xffe8e6e0, 0xfff07f1f, List.of(ARROWS, new Binding(B, "Z", "B"), new Binding(A, "X", "A"), new Binding(Y, "A", "Y"), new Binding(X, "S", "X"),
+                    new Binding(L, "Q", "L"), new Binding(R, "W", "R"), START_KEY));
+            case "wii_console" -> tv(console, 0xffdfe4ea, 0xff4e8ad0, List.of(ARROWS, new Binding(A, "X", "A"), new Binding(B, "Z", "B"), new Binding(X, "S", "1"), new Binding(Y, "A", "2"),
+                    new Binding(L, "Q", "-"), new Binding(R, "W", "+"), START_KEY, new Binding(SELECT, "H", "Home")));
+            case "gamecube_console" -> tv(console, 0xff6e5896, 0xff8d85c4, List.of(ARROWS, new Binding(B, "Z", "B"), new Binding(A, "X", "A"), new Binding(Y, "A", "Y"), new Binding(X, "S", "X"),
+                    new Binding(L, "Q", "L"), new Binding(R, "W", "R"), START_KEY));
             default -> tv(console, 0xffc7c5c0, 0xffc1392b, two);
         };
     }

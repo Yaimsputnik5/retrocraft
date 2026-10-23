@@ -76,4 +76,43 @@ class WorkerIntegrationTest {
             assertEquals(0, neither.audio().length);
         }
     }
+
+    @Test void n64StateRestoresAcrossWorkerRestarts() throws Exception {
+        String configuredCore = System.getProperty("retrocraft.testN64Core");
+        String configuredRom = System.getProperty("retrocraft.testN64Rom");
+        assumeTrue(configuredCore != null && configuredRom != null);
+        Path state = root.resolve("n64/snapshot.bin");
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try (WorkerProcess worker = new WorkerProcess(Path.of(System.getProperty("retrocraft.workerJar")),
+                    Path.of(configuredCore), Path.of(configuredRom), state, root.resolve("n64/worker.log"))) {
+                for (int frame = 0; frame < 90; frame++) worker.advance(0, frame % 3 == 0, false);
+                worker.save();
+                assertTrue(Files.size(state) > 1_000_000);
+            }
+        }
+    }
+
+    @Test void n64CanSaveBeforeTheFirstRequestedFrame() throws Exception {
+        String configuredCore = System.getProperty("retrocraft.testN64Core");
+        String configuredRom = System.getProperty("retrocraft.testN64Rom");
+        assumeTrue(configuredCore != null && configuredRom != null);
+        Path state = root.resolve("n64-before-frame/snapshot.bin");
+        try (WorkerProcess worker = new WorkerProcess(Path.of(System.getProperty("retrocraft.workerJar")),
+                Path.of(configuredCore), Path.of(configuredRom), state, root.resolve("n64-before-frame/worker.log"))) {
+            worker.save();
+            assertTrue(Files.size(state) > 1_000_000);
+        }
+    }
+
+    @Test void n64QuitDoesNotCreateASnapshot() throws Exception {
+        String configuredCore = System.getProperty("retrocraft.testN64Core");
+        String configuredRom = System.getProperty("retrocraft.testN64Rom");
+        assumeTrue(configuredCore != null && configuredRom != null);
+        Path state = root.resolve("n64-power-off/snapshot.bin");
+        try (WorkerProcess ignored = new WorkerProcess(Path.of(System.getProperty("retrocraft.workerJar")),
+                Path.of(configuredCore), Path.of(configuredRom), state, root.resolve("n64-power-off/worker.log"))) {
+            assertFalse(Files.exists(state));
+        }
+        assertFalse(Files.exists(state));
+    }
 }

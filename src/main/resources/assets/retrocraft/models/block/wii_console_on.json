@@ -1,0 +1,6 @@
+{
+  "parent": "retrocraft:block/wii_console",
+  "textures": {
+    "indicator": "retrocraft:block/console/wii_led_on"
+  }
+}

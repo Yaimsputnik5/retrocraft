@@ -32,8 +32,8 @@ public final class KnownCores {
             Map.entry("mgba", new Core("mgba", "mgba", true, "Game Boy Advance", false, true)),
             Map.entry("genesis_plus_gx", new Core("genesis_plus_gx", "genesis_plus_gx", true, "Genesis / Mega Drive", false, true)),
             Map.entry("parallel_n64", new Core("parallel_n64", "parallel_n64", false, "Nintendo 64", false, false)),
-            Map.entry("mame2003_plus", new Core("mame2003_plus", "mame2003_plus", false, "Arcade (MAME 2003-Plus)", true, true)),
-            Map.entry("beetle_psx_hw", new Core("beetle_psx_hw", "beetle_psx_hw", false, "PlayStation", true, false)),
+            Map.entry("mame2003", new Core("mame2003", "mame2003", false, "Arcade (MAME 2003)", true, true)),
+            Map.entry("beetle_psx", new Core("beetle_psx", "beetle_psx", false, "PlayStation", true, false)),
             Map.entry("pcsx2", new Core("pcsx2", "pcsx2", false, "PlayStation 2", true, false)),
             Map.entry("flycast", new Core("flycast", "flycast", false, "Dreamcast", true, false)),
             Map.entry("dolphin", new Core("dolphin", "dolphin", false, "Wii & GameCube", true, false)));
@@ -42,9 +42,11 @@ public final class KnownCores {
     /** Cores enabled on a fresh config. */
     public static List<String> defaults() { return CORES.values().stream().filter(Core::defaultEnabled).map(Core::id).toList(); }
     public static Map<String, String> defaultMappings() {
-        return Map.of("retrocraft:nes", "fceumm", "retrocraft:snes", "snes9x", "retrocraft:gb", "gambatte",
-                "retrocraft:gbc", "gambatte", "retrocraft:gba", "mgba", "retrocraft:megadrive", "genesis_plus_gx",
-                "retrocraft:n64", "parallel_n64", "retrocraft:mame", "mame2003_plus");
+        return Map.ofEntries(Map.entry("retrocraft:nes", "fceumm"), Map.entry("retrocraft:snes", "snes9x"), Map.entry("retrocraft:gb", "gambatte"),
+                Map.entry("retrocraft:gbc", "gambatte"), Map.entry("retrocraft:gba", "mgba"), Map.entry("retrocraft:megadrive", "genesis_plus_gx"),
+                Map.entry("retrocraft:n64", "parallel_n64"), Map.entry("retrocraft:mame", "mame2003"),
+                Map.entry("retrocraft:ps1", "beetle_psx"), Map.entry("retrocraft:ps2", "pcsx2"),
+                Map.entry("retrocraft:dreamcast", "flycast"), Map.entry("retrocraft:wii", "dolphin"), Map.entry("retrocraft:gamecube", "dolphin"));
     }
     /** Cores that can actually run a cartridge. One entry today; a list so alternatives can join later. */
     public static List<String> compatible(String cartridge) {

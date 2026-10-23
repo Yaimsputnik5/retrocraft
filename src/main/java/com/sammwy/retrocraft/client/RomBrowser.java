@@ -44,6 +44,7 @@ final class RomBrowser {
     private static final String[] GLYPH_FILE = {"XXXXXX  ", "X     X ", "X    XXX", "X      X", "X      X", "X      X", "XXXXXXXX"};
     private static final String[] GLYPH_UP = {"   X   ", "  XXX  ", " X X X ", "X  X  X", "   X   ", "   X   ", "   X   "};
     private static final String[] GLYPH_REFRESH = {" XXXXX ", "X     X", "X X   X", "X  X   ", "X   X  ", "X   X X", " XXXXX "};
+    private static final String[] GLYPH_SCAN_NEW = {" XXXXX ", "X     X", "X XX  X", "X XX   ", "X   X  ", "X   X X", " XXXXX "};
     private static final String[] GLYPH_PLUS = {"       ", "   X   ", "   X   ", " XXXXX ", "   X   ", "   X   ", "       "};
     private static final String[] GLYPH_UPLOAD = {"   X   ", "  XXX  ", " X X X ", "X  X  X", "   X   ", "XXXXXXX", "X     X"};
     private static final String[] GLYPH_EDIT = {"     XX", "    X X", "   X X ", "  X X  ", " X X   ", " XX    ", "X      "};
@@ -76,7 +77,7 @@ final class RomBrowser {
     private boolean scrollDrag;
     private List<Breadcrumb> breadcrumbs = List.of();
     // toolbar
-    private SettingsWidgets.Glyph up, refresh, newFolder, upload, paste, cancelMove;
+    private SettingsWidgets.Glyph up, refresh, scanNew, newFolder, upload, paste, cancelMove;
     private SettingsWidgets.Flat filesTab, gamesTab;
     private record Breadcrumb(String label, String path, int x, int w) { }
 
@@ -93,6 +94,7 @@ final class RomBrowser {
         upload = host.add(new Glyph(rx -= 16, y + 2, GLYPH_UPLOAD, this::pickFile, Text.translatable("settings.retrocraft.roms.upload")));
         newFolder = host.add(new Glyph(rx -= 16, y + 2, GLYPH_PLUS, this::beginMkdir, Text.translatable("settings.retrocraft.roms.new_folder")));
         refresh = host.add(new Glyph(rx -= 16, y + 2, GLYPH_REFRESH, this::refresh, Text.translatable("settings.retrocraft.roms.refresh")));
+        scanNew = host.add(new Glyph(rx -= 16, y + 2, GLYPH_SCAN_NEW, this::rescanNew, Text.translatable("settings.retrocraft.roms.scan_new")));
         up = host.add(new Glyph(rx - 16, y + 2, GLYPH_UP, this::up, Text.translatable("settings.retrocraft.roms.up")));
         mkdirField = SettingsWidgets.field(tr, x, y, 10, "");
         mkdirField.setMaxLength(60);
@@ -133,9 +135,15 @@ final class RomBrowser {
         });
     }
 
+    void reload() { if (active) load(); }
     private void refresh() {
         load();
         host.backend().action(SettingsPackets.RESCAN, "", "", (ok, message) ->
+                host.status(Text.translatable(ok ? "settings.retrocraft.roms.rescanned" : "settings.retrocraft.error", message), ok ? GOOD : BAD));
+    }
+    private void rescanNew() {
+        load();
+        host.backend().action(SettingsPackets.RESCAN_NEW, "", "", (ok, message) ->
                 host.status(Text.translatable(ok ? "settings.retrocraft.roms.rescanned" : "settings.retrocraft.error", message), ok ? GOOD : BAD));
     }
 
@@ -411,6 +419,13 @@ final class RomBrowser {
                 context.drawTextWithShadow(tr, crumb.label, crumb.x, y + 5, hot ? ACCENT : (i == breadcrumbs.size() - 1 ? TEXT : MUTED));
                 if (i < breadcrumbs.size() - 1) context.drawTextWithShadow(tr, "›", crumb.x + crumb.w + 4, y + 5, 0xFF5A6172);
             }
+        }
+        if (SettingsClient.scanning()) {
+            int sx = mode != FILES || breadcrumbs.isEmpty() ? x + 116
+                    : breadcrumbs.get(breadcrumbs.size() - 1).x + breadcrumbs.get(breadcrumbs.size() - 1).w + 12;
+            String actor = SettingsClient.scanActor();
+            String text = "⟳ " + Text.translatable("settings.retrocraft.roms.scanning", actor.isBlank() ? "server" : actor).getString();
+            context.drawTextWithShadow(tr, text, Math.min(sx, x + w - 100 - tr.getWidth(text)), y + 5, ACCENT);
         }
         int listY = y + TOOLBAR + 4, listH = y + h - listY;
         context.fill(x, listY - 2, x + w, listY - 1, 0x18FFFFFF);

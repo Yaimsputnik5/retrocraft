@@ -14,13 +14,15 @@ public final class ConsoleMenus {
         if (!host.canAccess(player)) return;
         if (host.instance() != null && Retrocraft.instances() != null) {
             player.closeHandledScreen();
-            Retrocraft.instances().watchVideo(player, host);
+            if (Retrocraft.instances().needsReset(host)) inventory(player, host, true);
+            else Retrocraft.instances().watchVideo(player, host);
             return;
         }
         inventory(player, host);
     }
-    public static void inventory(ServerPlayerEntity player, ConsoleHost host) {
-        if (!host.canAccess(player) || host.instance() != null) return;
+    public static void inventory(ServerPlayerEntity player, ConsoleHost host) { inventory(player, host, false); }
+    private static void inventory(ServerPlayerEntity player, ConsoleHost host, boolean powered) {
+        if (!host.canAccess(player) || !powered && host.instance() != null) return;
         int locked = host instanceof HandheldHost handheld ? handheld.inventorySlot() : -1;
         player.openHandledScreen(new ExtendedScreenHandlerFactory<ConsoleOpenData>() {
             @Override public ConsoleOpenData getScreenOpeningData(ServerPlayerEntity p) { return new ConsoleOpenData(host.definition().id(), locked); }

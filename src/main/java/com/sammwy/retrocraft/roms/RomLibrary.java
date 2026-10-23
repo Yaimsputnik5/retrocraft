@@ -1,5 +1,6 @@
 package com.sammwy.retrocraft.roms;
 
+import com.sammwy.retrocraft.roms.discovery.ArcadeSets;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
@@ -68,6 +69,30 @@ public final class RomLibrary {
 
     /** Resolves an existing library file for reading (uploads use {@link #destination}, which rejects collisions). */
     public Path read(String rel) throws IOException { return resolveExisting(rel); }
+
+    /**
+     * Writes an upload into the library. With {@code unpack} on, archive containers (zip/tar packs)
+     * are unpacked flat — except names that are valid MAME romsets, since those zips are the BIOS itself.
+     * Returns how many files landed.
+     */
+    public int install(String dir, String name, byte[] bytes, boolean unpack) throws IOException {
+        Path target = destination(dir, name);
+        SaveStates.writeAtomic(target, bytes);
+        if (!unpack || !RomArchives.supported(name) || ArcadeSets.contains(name)) return 1;
+        int[] count = {0};
+        try {
+            RomArchives.visit(target, (member, in) -> {
+                String base = member.name().replace('\\', '/');
+                base = base.substring(base.lastIndexOf('/') + 1);
+                if (!safeName(base) || member.size() > 16L * 1024 * 1024 || member.size() < 1) return;
+                try { SaveStates.writeAtomic(resolve(dir + "/" + base), RomArchives.bounded(in, 16L * 1024 * 1024)); count[0]++; }
+                catch (IOException ignored) { }
+            });
+        } catch (IOException | RuntimeException ex) { return 1; } // not a real archive — keep the file
+        if (count[0] == 0) return 1;
+        Files.delete(target);
+        return count[0];
+    }
 
     public void mkdir(String rel) throws IOException {
         Path path = resolve(rel);

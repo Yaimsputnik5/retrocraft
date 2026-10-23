@@ -18,6 +18,18 @@ public final class RomFormats {
         formats.put("megadrive", DiscoveryStrategy.extension("md", "gen", "smd").or(DiscoveryStrategy.extension("bin").require(sega::matchesMagic)).or(sega));
         formats.put("n64", DiscoveryStrategy.extension("z64", "n64", "v64").or(DiscoveryStrategy.magic(0x80, 0x37, 0x12, 0x40)).or(DiscoveryStrategy.magic(0x37, 0x80, 0x40, 0x12)).or(DiscoveryStrategy.magic(0x40, 0x12, 0x37, 0x80)));
         formats.put("mame", DiscoveryStrategy.extension("zip").require((name, b) -> ArcadeSets.contains(name)));
+        // Shared disc formats (.iso/.chd/.cue/...) only match inside a platform-named folder; console-unique ones match anywhere.
+        formats.put("ps2", DiscoveryStrategy.extension("iso", "chd", "cue", "img", "mdf", "nrg", "gz").inDir("ps2", "playstation 2", "playstation2")
+                .or(DiscoveryStrategy.extension("cso", "zso")));
+        formats.put("ps1", DiscoveryStrategy.extension("iso", "chd", "cue", "img", "ccd", "m3u").inDir(
+                new String[]{"ps1", "psx", "playstation"}, new String[]{"ps2", "playstation 2", "playstation2"})
+                .or(DiscoveryStrategy.extension("pbp", "minis")));
+        formats.put("dreamcast", DiscoveryStrategy.extension("iso", "chd", "cue", "img").inDir("dreamcast", "dc")
+                .or(DiscoveryStrategy.extension("cdi", "gdi", "m1", "dsf")));
+        formats.put("wii", DiscoveryStrategy.extension("iso", "chd", "img").inDir("wii")
+                .or(DiscoveryStrategy.extension("wbfs", "rvz", "wad", "dol", "elf")));
+        formats.put("gamecube", DiscoveryStrategy.extension("iso", "chd", "img").inDir("gamecube", "ngc")
+                .or(DiscoveryStrategy.extension("gcm", "gcz", "nkit", "tgc")));
         ALL = Collections.unmodifiableMap(formats);
     }
     private static boolean gameBoy(byte[] b) { return b.length > 0x143 && Arrays.equals(b, 0x104, 0x134, GB_LOGO, 0, GB_LOGO.length); }

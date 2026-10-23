@@ -34,7 +34,18 @@ public final class RomRepository {
         return scan(warning);
     }
     public List<RomScanner.Game> scan(Consumer<String> warning) throws IOException {
-        List<RomScanner.Game> games = new RomScanner(formats, maxBytes).scan(root, warning);
+        return persist(new RomScanner(formats, maxBytes).scan(root, warning));
+    }
+    /** Incremental scan: files whose path is already indexed are kept as-is and never reopened. */
+    public List<RomScanner.Game> scanNew(Consumer<String> warning, List<RomScanner.Game> existing) throws IOException {
+        Set<String> known = new HashSet<>();
+        for (var game : existing) known.add(game.source().file());
+        var games = new LinkedHashMap<String, RomScanner.Game>();
+        for (var game : new RomScanner(formats, maxBytes).scan(root, warning, known)) games.putIfAbsent(game.cartridge() + "/" + game.id(), game);
+        for (var game : existing) if (Files.isRegularFile(root.resolve(game.source().file()))) games.putIfAbsent(game.cartridge() + "/" + game.id(), game);
+        return persist(List.copyOf(games.values()));
+    }
+    private List<RomScanner.Game> persist(List<RomScanner.Game> games) throws IOException {
         byte[] bytes = GSON.toJson(new Catalog(VERSION, root.toString(), maxBytes, formats.keySet(), games)).getBytes(StandardCharsets.UTF_8);
         if (bytes.length > 32 * 1024 * 1024) throw new IOException("Catalog exceeds limit");
         SaveStates.writeAtomic(cache.resolve("catalog.json"), bytes);

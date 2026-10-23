@@ -32,6 +32,8 @@ public final class DockedConsoleBlock extends BlockWithEntity {
     @Override protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
         String id = definition.id().getPath();
         if (id.equals("mame_console")) return state.get(FACING).getAxis() == Direction.Axis.X ? Block.createCuboidShape(0, 0, -1, 16, 40, 17) : Block.createCuboidShape(-1, 0, 0, 17, 40, 16);
+        if (id.equals("wii_console")) return state.get(FACING).getAxis() == Direction.Axis.X ? Block.createCuboidShape(2, 0, 5.25, 14.2, 14.6, 10.75) : Block.createCuboidShape(5.25, 0, 2, 10.75, 14.6, 14.2);
+        if (id.equals("gamecube_console")) return state.get(FACING).getAxis() == Direction.Axis.X ? Block.createCuboidShape(2, 0, 2.2, 14.8, 12.1, 13.8) : Block.createCuboidShape(2.2, 0, 2, 13.8, 12.1, 14.8);
         double height = id.equals("nes_console") ? 6.5 : 5.8;
         return state.get(FACING).getAxis() == Direction.Axis.X ? Block.createCuboidShape(2, 0, 1, 14, height, 15) : Block.createCuboidShape(1, 0, 2, 15, height, 14);
     }

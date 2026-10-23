@@ -16,11 +16,12 @@ public final class RomIndex {
     }
     private final Map<String, Game> games;
     private RomIndex(Map<String, Game> games) { this.games = Collections.unmodifiableMap(games); }
-    public static RomIndex load(Path root, Path cache, long maxBytes, boolean forceScan, Consumer<String> warning) throws IOException {
+    public static RomIndex load(Path root, Path cache, long maxBytes, boolean forceScan, boolean onlyNew, List<RomScanner.Game> previous, Consumer<String> warning) throws IOException {
         Map<String, DiscoveryStrategy> formats = new LinkedHashMap<>();
         for (CartridgeItem cartridge : ConsoleRegistry.cartridges()) formats.put(cartridge.id().toString(), cartridge.discovery());
         var repository = new RomRepository(root, cache, formats, maxBytes);
-        var found = forceScan ? repository.scan(warning) : repository.initialize(warning);
+        var found = onlyNew && previous != null ? repository.scanNew(warning, previous)
+                : forceScan ? repository.scan(warning) : repository.initialize(warning);
         Map<String, Game> games = new LinkedHashMap<>();
         for (var game : found) {
             var cartridge = ConsoleRegistry.cartridge(Identifier.of(game.cartridge()));

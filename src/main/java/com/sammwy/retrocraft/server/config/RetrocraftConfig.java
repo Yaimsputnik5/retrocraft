@@ -33,8 +33,6 @@ public final class RetrocraftConfig {
     }
 
     public Map<String, String> cores = new HashMap<>(KnownCores.defaultMappings());
-    /** Cores the server will prepare and offer; the library can still download any known core on demand. */
-    public List<String> enabledCores = new ArrayList<>(KnownCores.defaults());
     public int checkpointIntervalSeconds = 2;
     public int transferTimeoutSeconds = 30;
     public int ownerTimeoutSeconds = 8;
@@ -55,11 +53,15 @@ public final class RetrocraftConfig {
     public static Path cacheRoot() { return FabricLoader.getInstance().getGameDir().resolve("cache/retrocraft"); }
     public static Path clientCache() { return cacheRoot().resolve("client"); }
     public static Path serverCache() { return cacheRoot().resolve("server"); }
+    /** Shared core pool: one copy serves the integrated server and hybrid clients on this machine (LAN included). */
+    public static Path coreCache() { return cacheRoot().resolve("cores"); }
+    public static Path runtimeCache() { return cacheRoot().resolve("runtime"); }
     public static Path savesRoot() { return root().resolve("saves"); }
     public Path file() { return root().resolve("server.json"); }
 
-    public boolean coreEnabled(String id) { return enabledCores != null && enabledCores.contains(id); }
+    public boolean coreEnabled(String id) { return true; }
     public static Path biosDir(String coreId) { return root().resolve("bios").resolve(coreId); }
+    public static Path systemDir(String coreId) { return coreId.equals("pcsx2") ? root().resolve("bios") : biosDir(coreId); }
 
     public String coreId(String cartridge) {
         String configured = cores.get(cartridge);
@@ -91,8 +93,7 @@ public final class RetrocraftConfig {
             }
             catch (JsonParseException ex) { throw new IOException("Invalid " + (migrated ? legacy : file), ex); }
         } else config = new RetrocraftConfig();
-        // Configs written before the core library existed get the default enabled set.
-        if (config != null && config.enabledCores == null) config.enabledCores = new ArrayList<>(KnownCores.defaults());
+        if (config != null) config.cores.values().removeIf(v -> { try { KnownCores.get(v); return false; } catch (IllegalArgumentException ex) { return true; } });
         if (config == null || config.cores == null || config.cores.values().stream().anyMatch(v -> v == null || v.isBlank()) || config.audioRadius < 1 || config.audioRadius > 256
                 || config.checkpointIntervalSeconds < 1 || config.checkpointIntervalSeconds > 30
                 || config.transferTimeoutSeconds < 10 || config.transferTimeoutSeconds > 120

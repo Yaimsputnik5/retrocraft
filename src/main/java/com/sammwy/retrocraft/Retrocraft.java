@@ -21,8 +21,11 @@ import net.minecraft.item.*;
 import net.minecraft.registry.*;
 import net.minecraft.screen.ScreenHandlerType;
 import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.WorldSavePath;
+import java.nio.file.Path;
 import org.slf4j.*;
 import com.sammwy.retrocraft.roms.discovery.RomFormats;
 
@@ -33,6 +36,7 @@ public final class Retrocraft implements ModInitializer {
     public static ScreenHandlerType<ConsoleScreenHandler> CONSOLE_SCREEN;
     public static ItemGroup CREATIVE_GROUP;
     private static InstanceManager instances;
+    private static volatile MinecraftServer bootServer;
     public static InstanceManager instances() { return instances; }
 
     @Override public void onInitialize() {
@@ -46,6 +50,11 @@ public final class Retrocraft implements ModInitializer {
         registerSystem("gb", "Game Boy", ConsoleType.HANDHELD);
         registerSystem("gbc", "Game Boy Color", ConsoleType.HANDHELD);
         registerSystem("gba", "Game Boy Advance", ConsoleType.HANDHELD);
+        registerSystem("ps1", "PlayStation", ConsoleType.DOCKED);
+        registerSystem("ps2", "PlayStation 2", ConsoleType.DOCKED);
+        registerSystem("dreamcast", "Dreamcast", ConsoleType.DOCKED);
+        registerSystem("wii", "Wii", ConsoleType.DOCKED);
+        registerSystem("gamecube", "GameCube", ConsoleType.DOCKED);
         var megadrive = registerSystem("megadrive", "Mega Drive", ConsoleType.DOCKED);
         ConsoleRegistry.registerConsole(Identifier.of("retrocraft", "genesis_console"), "Genesis", ConsoleType.DOCKED, megadrive);
         registerSystem("n64", "Nintendo 64", ConsoleType.DOCKED);
@@ -69,8 +78,15 @@ public final class Retrocraft implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(HybridPackets.Lease.ID, (packet, context) -> { if (instances != null) instances.ownership(context.player(), packet); });
         ServerPlayNetworking.registerGlobalReceiver(HybridPackets.Blob.ID, (packet, context) -> { if (instances != null) instances.upload(context.player(), packet); });
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
-            try { instances = new InstanceManager(server, RetrocraftConfig.load()); }
-            catch (Exception ex) { LOG.error("Retrocraft could not initialize", ex); }
+            bootServer = server;
+            Path worldRoot = server.getSavePath(WorldSavePath.ROOT);
+            Thread.ofVirtual().name("retrocraft-config-load").start(() -> {
+                try {
+                    RetrocraftConfig config = RetrocraftConfig.load();
+                    InstanceManager manager = new InstanceManager(server, config, worldRoot);
+                    server.execute(() -> { if (bootServer == server) instances = manager; else manager.close(); });
+                } catch (Exception ex) { LOG.error("Retrocraft could not initialize", ex); }
+            });
         });
         ServerTickEvents.END_SERVER_TICK.register(server -> { if (instances != null) instances.tick(); });
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> { if (instances != null) instances.sendCatalog(handler.player); });
@@ -80,9 +96,11 @@ public final class Retrocraft implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.ConfigApply.ID, (packet, context) -> { if (instances != null) instances.applySettings(context.player(), packet); });
         ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.RomAction.ID, (packet, context) -> { if (instances != null) instances.romAction(context.player(), packet); });
         ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.RomUpload.ID, (packet, context) -> { if (instances != null) instances.romUpload(context.player(), packet); });
-        ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.CoreAction.ID, (packet, context) -> { if (instances != null) instances.coreAction(context.player(), packet); });
+        ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.BiosRequest.ID, (packet, context) -> { if (instances != null) instances.requestBios(context.player(), packet); });
+        ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.BiosReady.ID, (packet, context) -> { if (instances != null) instances.biosReady(context.player(), packet); });
+
         ServerPlayNetworking.registerGlobalReceiver(Packets.ThumbnailUpload.ID, (packet, context) -> { if (instances != null) instances.thumbnailUpload(context.player(), packet); });
-        ServerLifecycleEvents.SERVER_STOPPING.register(server -> { if (instances != null) { instances.close(); instances = null; } });
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> { bootServer = null; if (instances != null) { instances.close(); instances = null; } });
         CommandRegistrationCallback.EVENT.register((dispatcher, access, environment) -> {
             for (String name : java.util.List.of("retrocraft", "rc")) dispatcher.register(commandTree(name));
         });
@@ -99,7 +117,11 @@ public final class Retrocraft implements ModInitializer {
             if (instances == null) return 0;
             if (instances.reloadLibrary(context.getSource())) return 1;
             context.getSource().sendError(Text.translatable("message.retrocraft.scan_busy")); return 0;
-        }));
+        }).then(CommandManager.literal("onlynews").executes(context -> {
+            if (instances == null) return 0;
+            if (instances.reloadLibrary(context.getSource(), true)) return 1;
+            context.getSource().sendError(Text.translatable("message.retrocraft.scan_busy")); return 0;
+        })));
         root.then(CommandManager.literal("reload").executes(context -> {
             if (instances == null) return 0;
             if (instances.reloadConfig(context.getSource())) { context.getSource().sendFeedback(() -> Text.literal("Retrocraft config reloaded"), true); return 1; }

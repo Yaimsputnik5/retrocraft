@@ -15,10 +15,19 @@ public record RomSource(String file, String member, int ordinal) {
         if (Files.isRegularFile(cached) && Files.size(cached) <= limit && InstanceStore.sha256(cached).equals(hash)) return cached;
         Path root = library.toRealPath(), source = root.resolve(file).normalize().toRealPath();
         if (!source.startsWith(root) || !Files.isRegularFile(source)) throw new IOException("ROM escaped library");
+        // Disc-sized ROMs are served from the library itself: reverify the prefix hash instead of copying gigabytes.
+        long size = Files.size(source);
+        if (size > limit) {
+            if (!RomScanner.hash(source, size, limit).equals(hash)) throw new IOException("ROM changed since it was indexed");
+            return source;
+        }
         // Revalidate content when materializing a cache miss. A stale source cannot change GameID.
         byte[] bytes;
         if (ordinal < 0) try (InputStream in = Files.newInputStream(source)) { bytes = RomArchives.bounded(in, limit); }
         else bytes = RomArchives.read(source, member, ordinal, limit);
         return RomCache.acceptNamed(cache, hash, filename, bytes);
+    }
+    public static boolean matches(Path rom, String hash, long limit) throws IOException {
+        return hash.equals(RomScanner.hash(rom, Files.size(rom), limit));
     }
 }

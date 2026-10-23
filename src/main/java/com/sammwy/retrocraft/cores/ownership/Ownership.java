@@ -6,8 +6,9 @@ import java.util.UUID;
 public final class Ownership {
     public enum Mode { SERVER, PREPARING_CLIENT, CLIENT, RETURNING_SERVER }
     private volatile Mode mode = Mode.SERVER;
-    private UUID owner;
-    private long epoch, deadline, lastCheckpoint;
+    private volatile UUID owner;
+    private volatile long epoch;
+    private long deadline, lastCheckpoint;
     public Mode mode() { return mode; }
     public UUID owner() { return owner; }
     public long epoch() { return epoch; }

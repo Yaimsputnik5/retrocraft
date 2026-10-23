@@ -26,6 +26,13 @@ public final class GameSaves {
             return bytes;
         } catch (IOException ex) { return null; }
     }
+    public byte[] restoreBattery(UUID owner, boolean global, String gameId) {
+        try {
+            Path file = battery(owner, global, gameId);
+            if (!Files.isRegularFile(file) || Files.size(file) > WorkerProtocol.MAX_STATE) return null;
+            return Files.readAllBytes(file);
+        } catch (IOException ex) { return null; }
+    }
 
     /**
      * Publishes the instance snapshot to the durable save directory and exports the battery SRAM next to it.
@@ -40,6 +47,11 @@ public final class GameSaves {
         if (powered) SaveStates.writeAtomic(state(owner, global, gameId), bytes);
         byte[] sram = sram(bytes);
         if (sram != null) SaveStates.writeAtomic(battery(owner, global, gameId), sram);
+    }
+    public void persistBattery(UUID owner, boolean global, String gameId, Path source) throws IOException {
+        Files.deleteIfExists(state(owner, global, gameId));
+        if (Files.isRegularFile(source) && Files.size(source) <= WorkerProtocol.MAX_STATE)
+            SaveStates.writeAtomic(battery(owner, global, gameId), Files.readAllBytes(source));
     }
 
     /** Deletes .state files not loaded within {@code maxAge}; battery .sav files are never touched. */

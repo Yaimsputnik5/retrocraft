@@ -31,7 +31,8 @@ public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedCo
         };
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(rotation));
         if (id.equals("mame_console")) { roof(console, matrices, vertices, overlay); crt(console, matrices, vertices); }
-        else if (!console.cartridge().isEmpty()) {
+        else if (!console.cartridge().isEmpty() && (id.equals("nes_console") || id.equals("snes_console") || id.equals("n64_console")
+                || id.equals("genesis_console") || id.equals("megadrive_console"))) {
             if (id.equals("nes_console")) {
                 matrices.translate(0, .33, -.37);
                 matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(90));

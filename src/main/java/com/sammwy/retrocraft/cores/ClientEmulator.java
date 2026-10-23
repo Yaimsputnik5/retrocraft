@@ -23,7 +23,7 @@ public final class ClientEmulator implements AutoCloseable {
 
     private static Path biosDir(Path core) {
         // The pool layout is POOL/platform/<coreId>/<binary> — the parent dir name is the trusted id.
-        return com.sammwy.retrocraft.server.config.RetrocraftConfig.biosDir(core.getParent().getFileName().toString());
+        return com.sammwy.retrocraft.server.config.RetrocraftConfig.systemDir(core.getParent().getFileName().toString());
     }
 
     /** {@code input} maps a controller port (0-3) to its current 16-bit RetroPad mask. */

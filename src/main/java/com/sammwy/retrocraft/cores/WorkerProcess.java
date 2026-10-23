@@ -4,6 +4,7 @@ import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 import com.sammwy.retrocraft.cores.stream.*;
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -34,6 +35,7 @@ public final class WorkerProcess implements AutoCloseable {
     }
     public record Output(FrameCodec.Frame frame, byte[] audio) {}
     private final Process process;
+    private final Path log;
     private final Socket socket;
     private final DataInputStream in;
     private final DataOutputStream out;
@@ -69,11 +71,33 @@ public final class WorkerProcess implements AutoCloseable {
             if (!Double.isFinite(fps) || fps < 40 || fps > 120 || sampleRate < 8000 || sampleRate > 192000)
                 throw new IOException("Invalid worker timing");
             process = child;
+            this.log = log;
             socket = connection;
         } catch (IOException | RuntimeException ex) {
             if (connection != null) try { connection.close(); } catch (IOException ignored) {}
+            Throwable cause = ex;
+            if (ex instanceof EOFException) {
+                try {
+                    if (child != null && child.isAlive()) child.waitFor(200, TimeUnit.MILLISECONDS);
+                    String status = child != null && !child.isAlive() ? "exit code " + child.exitValue() : "connection closed";
+                    long size = Files.exists(log) ? Files.size(log) : 0;
+                    String detail = "";
+                    if (size > 0) try (RandomAccessFile file = new RandomAccessFile(log.toFile(), "r")) {
+                        file.seek(Math.max(0, size - 2048));
+                        byte[] tail = new byte[(int) Math.min(size, 2048)];
+                        file.readFully(tail);
+                        detail = "; worker log: " + new String(tail, StandardCharsets.UTF_8).strip();
+                    }
+                    EOFException failure = new EOFException("Emulator worker terminated before handshake (" + status + ")" + detail);
+                    failure.initCause(ex);
+                    cause = failure;
+                } catch (IOException | InterruptedException detailFailure) {
+                    if (detailFailure instanceof InterruptedException) Thread.currentThread().interrupt();
+                }
+            }
             if (child != null) child.destroyForcibly();
-            throw ex;
+            if (cause instanceof IOException io) throw io;
+            throw (RuntimeException) cause;
         }
     }
 
@@ -90,25 +114,44 @@ public final class WorkerProcess implements AutoCloseable {
 
     /** One 16-bit RetroPad mask per controller port; missing ports read as idle. */
     public Output advance(int[] masks, boolean video, boolean sound) throws IOException {
-        out.writeByte(WorkerProtocol.RUN);
-        for (int port = 0; port < WorkerProtocol.PORTS; port++) out.writeShort(port < masks.length ? masks[port] : 0);
-        out.writeByte((video ? 1 : 0) | (sound ? 2 : 0));
-        out.flush();
-        int width = in.readUnsignedShort(), height = in.readUnsignedShort();
-        if (!((width == 0 && height == 0) || (width >= 1 && width <= FrameCodec.MAX_WIDTH && height >= 1 && height <= FrameCodec.MAX_HEIGHT))) throw new IOException("Invalid worker frame");
-        byte[] rgb = new byte[width * height * 3];
-        in.readFully(rgb);
-        int length = in.readInt();
-        if (length < 0 || length > WorkerProtocol.MAX_AUDIO || length % 4 != 0) throw new IOException("Invalid worker audio");
-        byte[] audio = new byte[length];
-        in.readFully(audio);
-        return new Output(width == 0 ? null : new FrameCodec.Frame(width, height, rgb), audio);
+        try {
+            out.writeByte(WorkerProtocol.RUN);
+            for (int port = 0; port < WorkerProtocol.PORTS; port++) out.writeShort(port < masks.length ? masks[port] : 0);
+            out.writeByte((video ? 1 : 0) | (sound ? 2 : 0));
+            out.flush();
+            int width = in.readUnsignedShort(), height = in.readUnsignedShort();
+            if (!((width == 0 && height == 0) || (width >= 1 && width <= FrameCodec.MAX_WIDTH && height >= 1 && height <= FrameCodec.MAX_HEIGHT))) throw new IOException("Invalid worker frame");
+            byte[] rgb = new byte[width * height * 3];
+            in.readFully(rgb);
+            int length = in.readInt();
+            if (length < 0 || length > WorkerProtocol.MAX_AUDIO || length % 4 != 0) throw new IOException("Invalid worker audio");
+            byte[] audio = new byte[length];
+            in.readFully(audio);
+            return new Output(width == 0 ? null : new FrameCodec.Frame(width, height, rgb), audio);
+        } catch (EOFException ex) { throw workerExited("running a frame", ex); }
     }
 
     public void save() throws IOException {
-        out.writeByte(WorkerProtocol.SAVE);
-        out.flush();
-        if (!in.readBoolean()) throw new IOException("Snapshot rejected");
+        try {
+            out.writeByte(WorkerProtocol.SAVE);
+            out.flush();
+            if (!in.readBoolean()) throw new IOException("Snapshot rejected");
+        } catch (EOFException ex) { throw workerExited("saving a snapshot", ex); }
+    }
+
+    private IOException workerExited(String stage, EOFException cause) {
+        String exit = process.isAlive() ? "closed the connection" : "exited with code " + process.exitValue();
+        String tail = "";
+        try {
+            long size = Files.exists(log) ? Files.size(log) : 0;
+            if (size > 0) try (RandomAccessFile file = new RandomAccessFile(log.toFile(), "r")) {
+                file.seek(Math.max(0, size - 2048));
+                byte[] bytes = new byte[(int) Math.min(size, 2048)];
+                file.readFully(bytes);
+                tail = "; worker log: " + new String(bytes, StandardCharsets.UTF_8).strip();
+            }
+        } catch (IOException ignored) { }
+        return new IOException("Emulator worker " + exit + " while " + stage + tail, cause);
     }
 
     @Override public void close() {

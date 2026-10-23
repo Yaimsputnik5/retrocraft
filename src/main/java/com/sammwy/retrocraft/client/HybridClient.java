@@ -24,9 +24,12 @@ public final class HybridClient {
     private enum Phase { RECEIVING, PREPARED, ACTIVE, RETURNING, CLOSED }
     private static final class Local {
         final HybridPackets.Lease offer;
-        final Map<BlobTransfer.Kind, BlobTransfer.Receiver> incoming = new EnumMap<>(BlobTransfer.Kind.class);
+        final Map<BlobTransfer.Kind, BlobTransfer.Receiver> incoming = new java.util.concurrent.ConcurrentHashMap<>();
+        final ArrayDeque<BlobTransfer.Chunk> pending = new ArrayDeque<>();
+        boolean receiving;
         final ArrayDeque<BlobTransfer.Sender> states = new ArrayDeque<>(), media = new ArrayDeque<>();
         final FrameCodec.Encoder encoder = new FrameCodec.Encoder();
+        boolean encodingVideo;
         final AudioPlayer audio = new AudioPlayer();
         final ByteArrayOutputStream pcm = new ByteArrayOutputStream();
         volatile ClientEmulator emulator;
@@ -48,7 +51,7 @@ public final class HybridClient {
             pcm.writeBytes(output.audio());
         }
         synchronized byte[] takeAudio() { byte[] bytes = pcm.toByteArray(); pcm.reset(); return bytes; }
-        void close() { phase = Phase.CLOSED; if (emulator != null) emulator.close(); audio.close(); states.clear(); media.clear(); incoming.clear(); frame = null; }
+        void close() { phase = Phase.CLOSED; if (emulator != null) emulator.close(); audio.close(); states.clear(); media.clear(); incoming.clear(); synchronized (this) { pending.clear(); } frame = null; }
     }
     private final AudioStreams remoteAudio;
     private final Map<String, CoreManager.Prepared> prepared = new HashMap<>();
@@ -79,16 +82,21 @@ public final class HybridClient {
         Thread.ofVirtual().name("retrocraft-client-cores").start(() -> {
             try {
                 CacheMigration.prepare(RetrocraftConfig.root(), RetrocraftConfig.cacheRoot(), true);
-                Path jar = WorkerRuntime.extract(RetrocraftConfig.clientCache().resolve("runtime"));
-                CoreManager manager = new CoreManager(RetrocraftConfig.clientCache().resolve("cores"), jar);
-                Map<String, CoreManager.Prepared> ready = new HashMap<>();
+                Path jar = WorkerRuntime.extract(RetrocraftConfig.runtimeCache());
+                CoreManager manager = new CoreManager(RetrocraftConfig.coreCache(), jar);
+                Map<String, CoreManager.Prepared> ready = new java.util.concurrent.ConcurrentHashMap<>();
+                try (var tasks = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+                    for (CoreIdentity requested : packet.cores()) tasks.submit(() -> {
+                        String id = requested.id();
+                        var cached = previous.get(id);
+                        try {
+                            ready.put(id, cached != null && Files.isRegularFile(cached.path()) ? cached : manager.prepare(id));
+                        } catch (Exception ex) { Retrocraft.LOG.warn("Client could not prepare core {}", id, ex); }
+                    });
+                }
                 for (CoreIdentity requested : packet.cores()) {
-                    KnownCores.get(requested.id()); // no remote URL, path or arbitrary native code identifier
-                    var cached = previous.get(requested.id());
-                    var core = cached != null && requested.compatible(cached.identity()) && Files.isRegularFile(cached.path())
-                            && InstanceStore.sha256(cached.path()).equals(cached.identity().sha256()) ? cached : manager.prepare(requested.id());
-                    if (!requested.compatible(core.identity())) throw new IOException("Core build differs from server: " + requested.id());
-                    if (ready.put(requested.id(), core) != null) throw new IOException("Duplicate core in settings");
+                    var core = ready.get(requested.id());
+                    if (core == null || !requested.compatible(core.identity())) throw new IOException("Core build differs from server: " + requested.id());
                 }
                 callbacks.add(() -> {
                     if (!connection.equals(token) || generation != settingsGeneration) return;
@@ -144,29 +152,53 @@ public final class HybridClient {
         var chunk = packet.chunk(); Local local = locals.get(chunk.instance());
         if (local == null || local.offer.epoch() != chunk.epoch() || local.phase != Phase.RECEIVING
                 || chunk.kind() != BlobTransfer.Kind.ROM && chunk.kind() != BlobTransfer.Kind.SNAPSHOT) return;
-        try {
-            var receiver = local.incoming.computeIfAbsent(chunk.kind(), ignored -> new BlobTransfer.Receiver());
-            byte[] bytes = receiver.accept(chunk, System.nanoTime());
-            if (bytes == null) return;
-            if (chunk.kind() == BlobTransfer.Kind.ROM && !BlobTransfer.hash(bytes).equals(local.offer.gameId())) throw new IOException("ROM hash differs from ownership offer");
-            UUID token = connection;
-            Thread.ofVirtual().name("retrocraft-client-assets").start(() -> {
+        UUID token = connection;
+        synchronized (local) {
+            if (local.pending.size() >= 128) { fail(local, token, new IOException("Client asset queue overflow")); return; }
+            local.pending.addLast(chunk);
+            if (local.receiving) return;
+            local.receiving = true;
+        }
+        Thread.ofVirtual().name("retrocraft-client-asset-decode").start(() -> {
+            while (true) {
+                BlobTransfer.Chunk next;
+                synchronized (local) {
+                    next = local.pending.pollFirst();
+                    if (next == null) { local.receiving = false; return; }
+                }
+                if (local.phase == Phase.CLOSED) return;
                 try {
-                    Path result;
-                    if (chunk.kind() == BlobTransfer.Kind.ROM) result = RomCache.acceptNamed(RetrocraftConfig.clientCache().resolve("roms"), local.offer.gameId(), local.offer.romName(), bytes);
-                    else {
-                        byte[] state = SnapshotWire.unpack(bytes); SaveStates.validate(state);
-                        result = RetrocraftConfig.clientCache().resolve("sessions").resolve(token.toString()).resolve(chunk.instance().toString()).resolve(Long.toString(chunk.epoch())).resolve("snapshot.bin");
-                        SaveStates.writeAtomic(result, state);
-                    }
-                    callbacks.add(() -> {
-                        if (!current(local, token)) return;
-                        if (chunk.kind() == BlobTransfer.Kind.ROM) { local.rom = result; signal(local.offer, HybridPackets.Action.ROM_READY, 0); } else local.snapshot = result;
-                        startIfReady(local, token);
-                    });
-                } catch (Exception ex) { callbacks.add(() -> fail(local, token, ex)); }
-            });
-        } catch (IOException ex) { fail(local, connection, ex); }
+                    var receiver = local.incoming.computeIfAbsent(next.kind(), ignored -> new BlobTransfer.Receiver());
+                    byte[] bytes = receiver.accept(next, System.nanoTime());
+                    if (bytes == null) continue;
+                    if (next.kind() == BlobTransfer.Kind.ROM && !BlobTransfer.hash(bytes).equals(local.offer.gameId()))
+                        throw new IOException("ROM hash differs from ownership offer");
+                    writeAsset(local, token, next, bytes);
+                } catch (IOException ex) {
+                    synchronized (local) { local.pending.clear(); local.receiving = false; }
+                    callbacks.add(() -> fail(local, token, ex)); return;
+                }
+            }
+        });
+    }
+
+    private void writeAsset(Local local, UUID token, BlobTransfer.Chunk chunk, byte[] bytes) {
+        Thread.ofVirtual().name("retrocraft-client-assets").start(() -> {
+            try {
+                Path result;
+                if (chunk.kind() == BlobTransfer.Kind.ROM) result = RomCache.acceptNamed(RetrocraftConfig.clientCache().resolve("roms"), local.offer.gameId(), local.offer.romName(), bytes);
+                else {
+                    byte[] state = SnapshotWire.unpack(bytes); SaveStates.validate(state);
+                    result = RetrocraftConfig.clientCache().resolve("sessions").resolve(token.toString()).resolve(chunk.instance().toString()).resolve(Long.toString(chunk.epoch())).resolve("snapshot.bin");
+                    SaveStates.writeAtomic(result, state);
+                }
+                callbacks.add(() -> {
+                    if (!current(local, token)) return;
+                    if (chunk.kind() == BlobTransfer.Kind.ROM) { local.rom = result; signal(local.offer, HybridPackets.Action.ROM_READY, 0); } else local.snapshot = result;
+                    startIfReady(local, token);
+                });
+            } catch (Exception ex) { callbacks.add(() -> fail(local, token, ex)); }
+        });
     }
 
     void demand(HybridPackets.Demand packet) {
@@ -186,9 +218,11 @@ public final class HybridClient {
             public void checkpoint(byte[] bytes, boolean last) {
                 try {
                     byte[] packed = SnapshotWire.pack(bytes);
+                    var sender = new BlobTransfer.Sender(local.offer.instance(), local.offer.epoch(),
+                            last ? BlobTransfer.Kind.FINAL_SNAPSHOT : BlobTransfer.Kind.SNAPSHOT, ++local.checkpointSequence, packed);
                     callbacks.add(() -> {
                         if (!current(local, token)) return;
-                        local.states.add(new BlobTransfer.Sender(local.offer.instance(), local.offer.epoch(), last ? BlobTransfer.Kind.FINAL_SNAPSHOT : BlobTransfer.Kind.SNAPSHOT, ++local.checkpointSequence, packed));
+                        local.states.add(sender);
                     });
                 } catch (IOException ex) { failed(ex); }
             }
@@ -244,13 +278,28 @@ public final class HybridClient {
                             catch (IOException ex) { fail(local, connection, ex); }
                         }
                     }
-                    if (local.relayVideo && local.frame != null && local.media.size() < 2 && local.media.stream().noneMatch(sender -> sender.kind() == BlobTransfer.Kind.VIDEO)) {
-                        try {
-                            boolean key = local.forceKey || now >= local.nextVideoKey;
-                            var frame = local.encoder.encode(local.frame, key); local.forceKey = false;
-                            if (key) local.nextVideoKey = now + 3_000_000_000L;
-                            local.media.add(new BlobTransfer.Sender(local.offer.instance(), local.offer.epoch(), BlobTransfer.Kind.VIDEO, frame.sequence(), MediaWire.video(frame)));
-                        } catch (IOException ex) { fail(local, connection, ex); }
+                    if (local.relayVideo && local.frame != null && !local.encodingVideo && local.media.size() < 2
+                            && local.media.stream().noneMatch(sender -> sender.kind() == BlobTransfer.Kind.VIDEO)) {
+                        local.encodingVideo = true;
+                        boolean key = local.forceKey || now >= local.nextVideoKey;
+                        local.forceKey = false;
+                        FrameCodec.Frame picture = local.frame;
+                        UUID token = connection;
+                        Thread.ofVirtual().name("retrocraft-client-video-encode").start(() -> {
+                            try {
+                                var frame = local.encoder.encode(picture, key);
+                                var sender = new BlobTransfer.Sender(local.offer.instance(), local.offer.epoch(), BlobTransfer.Kind.VIDEO, frame.sequence(), MediaWire.video(frame));
+                                callbacks.add(() -> {
+                                    local.encodingVideo = false;
+                                    if (!current(local, token) || local.phase != Phase.ACTIVE) return;
+                                    if (local.media.size() >= 2 || local.media.stream().anyMatch(item -> item.kind() == BlobTransfer.Kind.VIDEO)) {
+                                        local.forceKey = true; return;
+                                    }
+                                    if (key) local.nextVideoKey = System.nanoTime() + 3_000_000_000L;
+                                    local.media.add(sender);
+                                });
+                            } catch (IOException ex) { callbacks.add(() -> { local.encodingVideo = false; fail(local, token, ex); }); }
+                        });
                     }
                 }
             }
@@ -271,14 +320,16 @@ public final class HybridClient {
         Thread.ofVirtual().name("retrocraft-thumb-upload").start(() -> {
             try {
                 byte[] png = ThumbnailCodec.encode(frame);
-                if (local.phase == Phase.ACTIVE && ClientPlayNetworking.canSend(Packets.ThumbnailUpload.ID))
-                    ClientPlayNetworking.send(new Packets.ThumbnailUpload(instance, png));
+                callbacks.add(() -> {
+                    if (local.phase == Phase.ACTIVE && ClientPlayNetworking.canSend(Packets.ThumbnailUpload.ID))
+                        ClientPlayNetworking.send(new Packets.ThumbnailUpload(instance, png));
+                });
             } catch (IOException ignored) { }
         });
     }
 
     void disconnect() {
-        connection = UUID.randomUUID(); prepared.clear();
+        connection = UUID.randomUUID(); prepared.clear(); settingsGeneration = 0;
         for (Local local : locals.values()) local.close();
         locals.clear(); callbacks.clear(); workerJar = null;
     }
