@@ -4,34 +4,57 @@ import com.sammwy.retrocraft.cores.KnownCores;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig.*;
 import com.sammwy.retrocraft.server.console.ConsoleRegistry;
 import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
 import java.util.*;
 import java.util.function.*;
 import java.util.stream.*;
 
 /** Typed view over {@link RetrocraftConfig}: one entry per key, shared by /retrocraft config, JSON load and command completion. */
 public enum ConfigKey {
-    thumbnailIntervalSeconds(c -> Integer.toString(c.thumbnailIntervalSeconds), (c, v) -> c.thumbnailIntervalSeconds = integer(v, 1, 60)),
-    thumbnailUpload(c -> Boolean.toString(c.thumbnailUpload), (c, v) -> c.thumbnailUpload = bool(v), () -> Stream.of("true", "false")),
-    emulationMode(c -> c.emulationMode.id, (c, v) -> c.emulationMode = EmulationMode.parse(v), () -> Arrays.stream(EmulationMode.values()).map(mode -> mode.id)),
-    saveMode(c -> c.saveMode.id, (c, v) -> c.saveMode = SaveMode.parse(v), () -> Arrays.stream(SaveMode.values()).map(mode -> mode.id)),
-    streamFps(c -> Integer.toString(c.streamFps), (c, v) -> c.streamFps = integer(v, 1, 20)),
-    audioRadius(c -> Integer.toString(c.audioRadius), (c, v) -> c.audioRadius = integer(v, 1, 128)),
-    keyframeIntervalSeconds(c -> Integer.toString(c.keyframeIntervalSeconds), (c, v) -> c.keyframeIntervalSeconds = integer(v, 1, 60)),
-    autosaveIntervalSeconds(c -> Integer.toString(c.autosaveIntervalSeconds), (c, v) -> c.autosaveIntervalSeconds = integer(v, 5, 3600)),
-    maxActiveInstances(c -> Integer.toString(c.maxActiveInstances), (c, v) -> c.maxActiveInstances = integer(v, 1, 64)),
-    watcherTimeoutSeconds(c -> Integer.toString(c.watcherTimeoutSeconds), (c, v) -> c.watcherTimeoutSeconds = integer(v, 5, 120)),
-    checkpointIntervalSeconds(c -> Integer.toString(c.checkpointIntervalSeconds), (c, v) -> c.checkpointIntervalSeconds = integer(v, 1, 30)),
-    transferTimeoutSeconds(c -> Integer.toString(c.transferTimeoutSeconds), (c, v) -> c.transferTimeoutSeconds = integer(v, 10, 120)),
-    ownerTimeoutSeconds(c -> Integer.toString(c.ownerTimeoutSeconds), (c, v) -> c.ownerTimeoutSeconds = integer(v, 3, 60)),
-    maxRomSizeMiB(c -> Integer.toString(c.maxRomSizeMiB), (c, v) -> c.maxRomSizeMiB = integer(v, 1, 64));
+    thumbnailIntervalSeconds(Category.STREAMING, 1, 60, c -> Integer.toString(c.thumbnailIntervalSeconds), (c, v) -> c.thumbnailIntervalSeconds = integer(v, 1, 60)),
+    thumbnailUpload(Category.STREAMING, Kind.BOOL, c -> Boolean.toString(c.thumbnailUpload), (c, v) -> c.thumbnailUpload = bool(v), () -> Stream.of("true", "false")),
+    emulationMode(Category.EMULATION, Kind.ENUM, c -> c.emulationMode.id, (c, v) -> c.emulationMode = EmulationMode.parse(v), () -> Arrays.stream(EmulationMode.values()).map(mode -> mode.id)),
+    saveMode(Category.EMULATION, Kind.ENUM, c -> c.saveMode.id, (c, v) -> c.saveMode = SaveMode.parse(v), () -> Arrays.stream(SaveMode.values()).map(mode -> mode.id)),
+    streamFps(Category.STREAMING, 1, 20, c -> Integer.toString(c.streamFps), (c, v) -> c.streamFps = integer(v, 1, 20)),
+    audioRadius(Category.STREAMING, 1, 128, c -> Integer.toString(c.audioRadius), (c, v) -> c.audioRadius = integer(v, 1, 128)),
+    keyframeIntervalSeconds(Category.STREAMING, 1, 60, c -> Integer.toString(c.keyframeIntervalSeconds), (c, v) -> c.keyframeIntervalSeconds = integer(v, 1, 60)),
+    autosaveIntervalSeconds(Category.SESSIONS, 5, 3600, c -> Integer.toString(c.autosaveIntervalSeconds), (c, v) -> c.autosaveIntervalSeconds = integer(v, 5, 3600)),
+    maxActiveInstances(Category.EMULATION, 1, 64, c -> Integer.toString(c.maxActiveInstances), (c, v) -> c.maxActiveInstances = integer(v, 1, 64)),
+    watcherTimeoutSeconds(Category.SESSIONS, 5, 120, c -> Integer.toString(c.watcherTimeoutSeconds), (c, v) -> c.watcherTimeoutSeconds = integer(v, 5, 120)),
+    checkpointIntervalSeconds(Category.SESSIONS, 1, 30, c -> Integer.toString(c.checkpointIntervalSeconds), (c, v) -> c.checkpointIntervalSeconds = integer(v, 1, 30)),
+    transferTimeoutSeconds(Category.SESSIONS, 10, 120, c -> Integer.toString(c.transferTimeoutSeconds), (c, v) -> c.transferTimeoutSeconds = integer(v, 10, 120)),
+    ownerTimeoutSeconds(Category.SESSIONS, 3, 60, c -> Integer.toString(c.ownerTimeoutSeconds), (c, v) -> c.ownerTimeoutSeconds = integer(v, 3, 60)),
+    maxRomSizeMiB(Category.LIBRARY, 1, 64, c -> Integer.toString(c.maxRomSizeMiB), (c, v) -> c.maxRomSizeMiB = integer(v, 1, 64));
 
+    /** Sidebar grouping used by the settings GUI. */
+    public enum Category { EMULATION, STREAMING, SESSIONS, LIBRARY }
+    /** Control the GUI renders for the value: a number field, a pill toggle or a cycling choice. */
+    public enum Kind { INT, BOOL, ENUM }
+
+    private final Category category;
+    private final Kind kind;
+    private final int min, max;
     private final Function<RetrocraftConfig, String> getter;
     private final BiConsumer<RetrocraftConfig, String> setter;
     private final Supplier<Stream<String>> suggestions;
-    ConfigKey(Function<RetrocraftConfig, String> getter, BiConsumer<RetrocraftConfig, String> setter) { this(getter, setter, null); }
-    ConfigKey(Function<RetrocraftConfig, String> getter, BiConsumer<RetrocraftConfig, String> setter, Supplier<Stream<String>> suggestions) {
+    ConfigKey(Category category, int min, int max, Function<RetrocraftConfig, String> getter, BiConsumer<RetrocraftConfig, String> setter) {
+        this(category, Kind.INT, min, max, getter, setter, null);
+    }
+    ConfigKey(Category category, Kind kind, Function<RetrocraftConfig, String> getter, BiConsumer<RetrocraftConfig, String> setter, Supplier<Stream<String>> suggestions) {
+        this(category, kind, 0, 0, getter, setter, suggestions);
+    }
+    ConfigKey(Category category, Kind kind, int min, int max, Function<RetrocraftConfig, String> getter, BiConsumer<RetrocraftConfig, String> setter, Supplier<Stream<String>> suggestions) {
+        this.category = category; this.kind = kind; this.min = min; this.max = max;
         this.getter = getter; this.setter = setter; this.suggestions = suggestions;
     }
+
+    public Category category() { return category; }
+    public Kind kind() { return kind; }
+    public int min() { return min; }
+    public int max() { return max; }
+    public String get(RetrocraftConfig config) { return getter.apply(config); }
+    /** Choices for BOOL/ENUM keys; empty for numbers. */
+    public List<String> options() { return suggestions == null ? List.of() : suggestions.get().toList(); }
 
     private static int integer(String raw, int min, int max) {
         int value;
@@ -66,6 +89,7 @@ public enum ConfigKey {
         if (scalar != null) { scalar.setter.accept(config, value); return; }
         String cartridge = cartridge(key);
         if (cartridge == null) throw new IllegalArgumentException("Unknown config key " + key);
+        if (!KnownCores.compatible(cartridge).contains(value)) throw new IllegalArgumentException("Core " + value + " cannot run " + cartridge);
         config.cores.put(cartridge, KnownCores.get(value).id());
     }
 
@@ -83,6 +107,6 @@ public enum ConfigKey {
     private static String cartridge(String key) {
         if (!key.startsWith("cores.") || !key.substring(6).contains(":")) return null;
         String cartridge = key.substring(6);
-        return ConsoleRegistry.cartridge(net.minecraft.util.Identifier.tryParse(cartridge)) == null ? null : cartridge;
+        return ConsoleRegistry.cartridge(Identifier.tryParse(cartridge)) == null ? null : cartridge;
     }
 }

@@ -7,6 +7,7 @@ import com.sammwy.retrocraft.server.console.*;
 import com.sammwy.retrocraft.server.item.CartridgeItem;
 import com.sammwy.retrocraft.server.net.Packets;
 import com.sammwy.retrocraft.server.net.HybridPackets;
+import com.sammwy.retrocraft.server.net.SettingsPackets;
 import com.sammwy.retrocraft.server.screen.*;
 import com.sammwy.retrocraft.server.*;
 import com.sammwy.retrocraft.roms.*;
@@ -63,6 +64,7 @@ public final class Retrocraft implements ModInitializer {
                 }).build());
         Packets.register();
         HybridPackets.register();
+        SettingsPackets.register();
         ServerPlayNetworking.registerGlobalReceiver(HybridPackets.Status.ID, (packet, context) -> { if (instances != null) instances.coreStatus(context.player(), packet); });
         ServerPlayNetworking.registerGlobalReceiver(HybridPackets.Lease.ID, (packet, context) -> { if (instances != null) instances.ownership(context.player(), packet); });
         ServerPlayNetworking.registerGlobalReceiver(HybridPackets.Blob.ID, (packet, context) -> { if (instances != null) instances.upload(context.player(), packet); });
@@ -74,6 +76,10 @@ public final class Retrocraft implements ModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> { if (instances != null) instances.sendCatalog(handler.player); });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> { if (instances != null) instances.disconnect(handler.player.getUuid()); });
         ServerPlayNetworking.registerGlobalReceiver(Packets.Request.ID, (packet, context) -> { if (instances != null) instances.request(context.player(), packet); });
+        ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.GuiRequest.ID, (packet, context) -> { if (instances != null) instances.openSettings(context.player()); });
+        ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.ConfigApply.ID, (packet, context) -> { if (instances != null) instances.applySettings(context.player(), packet); });
+        ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.RomAction.ID, (packet, context) -> { if (instances != null) instances.romAction(context.player(), packet); });
+        ServerPlayNetworking.registerGlobalReceiver(SettingsPackets.RomUpload.ID, (packet, context) -> { if (instances != null) instances.romUpload(context.player(), packet); });
         ServerPlayNetworking.registerGlobalReceiver(Packets.ThumbnailUpload.ID, (packet, context) -> { if (instances != null) instances.thumbnailUpload(context.player(), packet); });
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> { if (instances != null) { instances.close(); instances = null; } });
         CommandRegistrationCallback.EVENT.register((dispatcher, access, environment) -> {
@@ -83,6 +89,11 @@ public final class Retrocraft implements ModInitializer {
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<net.minecraft.server.command.ServerCommandSource> commandTree(String name) {
         var root = CommandManager.literal(name).requires(source -> source.hasPermissionLevel(2));
+        root.then(CommandManager.literal("gui").executes(context -> {
+            if (instances == null) return 0;
+            instances.openSettings(context.getSource().getPlayerOrThrow());
+            return 1;
+        }));
         root.then(CommandManager.literal("scan").executes(context -> {
             if (instances == null) return 0;
             if (instances.reloadLibrary(context.getSource())) return 1;

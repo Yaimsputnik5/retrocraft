@@ -3,6 +3,7 @@ package com.sammwy.retrocraft.client;
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.server.net.Packets;
 import com.sammwy.retrocraft.server.net.HybridPackets;
+import com.sammwy.retrocraft.server.net.SettingsPackets;
 import com.sammwy.retrocraft.roms.RomCatalog;
 import com.sammwy.retrocraft.server.console.*;
 import com.sammwy.retrocraft.server.block.DockedConsoleBlock;
@@ -63,6 +64,10 @@ public final class RetrocraftClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(Packets.Thumbnail.ID, (packet, context) -> Thumbnails.accept(packet));
         ClientPlayNetworking.registerGlobalReceiver(Packets.Players.ID, (packet, context) -> PlayerHud.roster(packet));
         ClientPlayNetworking.registerGlobalReceiver(Packets.Pad.ID, (packet, context) -> PlayerHud.pad(packet));
+        ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.GuiOpen.ID, (packet, context) -> context.client().execute(() -> SettingsClient.guiOpen(context.client(), packet)));
+        ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.ConfigSaved.ID, (packet, context) -> context.client().execute(() -> SettingsClient.configSaved(packet)));
+        ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.RomList.ID, (packet, context) -> context.client().execute(() -> SettingsClient.romList(packet)));
+        ClientPlayNetworking.registerGlobalReceiver(SettingsPackets.RomEvent.ID, (packet, context) -> context.client().execute(() -> SettingsClient.romEvent(packet)));
         ClientPlayNetworking.registerGlobalReceiver(Packets.Catalog.ID, (packet, context) -> {
             if (packet.first()) { pendingCatalog.clear(); catalogGeneration = packet.generation(); }
             if (packet.generation() != catalogGeneration) return;
@@ -71,6 +76,7 @@ public final class RetrocraftClient implements ClientModInitializer {
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             EMULATION.tick(client);
+            SettingsClient.tick();
             video.tick();
             audio.tick();
             ScreenTextures.tick();
@@ -86,7 +92,7 @@ public final class RetrocraftClient implements ClientModInitializer {
         // Locally emulated frames are uploaded per rendered frame, not per tick, so in-world screens stay smooth.
         WorldRenderEvents.START.register(context -> { for (UUID id : EMULATION.active()) { var frame = EMULATION.frame(id); if (frame != null) video.local(id, frame); } });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
-            EMULATION.disconnect(); audio.close(); video.close(); Thumbnails.close(); PlayerHud.clear(); RomCatalog.clientEntries(List.of()); pendingCatalog.clear(); catalogDirty = true;
+            EMULATION.disconnect(); audio.close(); video.close(); Thumbnails.close(); PlayerHud.clear(); SettingsClient.disconnect(); RomCatalog.clientEntries(List.of()); pendingCatalog.clear(); catalogDirty = true;
             if (client.currentScreen instanceof ConsoleScreen screen) screen.serverClosed();
         });
     }

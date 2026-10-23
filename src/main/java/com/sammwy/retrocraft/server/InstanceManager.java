@@ -1,7 +1,9 @@
 package com.sammwy.retrocraft.server;
 
+import com.google.gson.Gson;
 import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 import com.sammwy.retrocraft.Retrocraft;
+import com.sammwy.retrocraft.server.config.ConfigKey;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
 import com.sammwy.retrocraft.server.console.*;
 import com.sammwy.retrocraft.server.block.*;
@@ -13,6 +15,7 @@ import com.sammwy.retrocraft.cores.*;
 import com.sammwy.retrocraft.cores.ownership.Ownership;
 import com.sammwy.retrocraft.cores.transfer.*;
 import com.sammwy.retrocraft.server.net.HybridPackets;
+import com.sammwy.retrocraft.server.net.SettingsPackets;
 import com.sammwy.retrocraft.roms.*;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -46,6 +49,9 @@ public final class InstanceManager implements AutoCloseable {
     private Set<String> requiredCores = Set.of();
     private final Set<String> preparingCores = new HashSet<>();
     private List<RomCatalog.Entry> publishedCatalog = List.of();
+    private final RomLibrary romLibrary;
+    private final Map<UUID, Upload> romUploads = new HashMap<>();
+    private boolean pendingScan;
     private int coreGeneration;
     private final ConcurrentLinkedQueue<Runnable> callbacks = new ConcurrentLinkedQueue<>();
     private final Map<UUID, Session> sessions = new HashMap<>();
@@ -138,6 +144,7 @@ public final class InstanceManager implements AutoCloseable {
         CacheMigration.prepare(RetrocraftConfig.root(), RetrocraftConfig.cacheRoot(), false);
         workerJar = WorkerRuntime.extract(RetrocraftConfig.serverCache().resolve("runtime"));
         cores = new CoreManager(RetrocraftConfig.serverCache().resolve("cores"), workerJar);
+        romLibrary = new RomLibrary(RetrocraftConfig.root().resolve("roms"));
         roms = loadLibrary(false);
         libraryUpdated();
         cleanOrphanSaves();
@@ -167,21 +174,38 @@ public final class InstanceManager implements AutoCloseable {
 
     public boolean reloadLibrary(net.minecraft.server.command.ServerCommandSource source) {
         if (scanning || stopping) return false;
+        startScan(source);
+        return true;
+    }
+
+    /** A library mutation from the operator GUI: rescan now, coalescing bursts and retrying after a busy scan. */
+    public void rescan() {
+        if (stopping) return;
+        if (scanning) { pendingScan = true; return; }
+        startScan(null);
+    }
+
+    private void startScan(net.minecraft.server.command.ServerCommandSource source) {
         scanning = true;
-        source.sendFeedback(() -> Text.translatable("message.retrocraft.scan_started"), false);
+        if (source != null) source.sendFeedback(() -> Text.translatable("message.retrocraft.scan_started"), false);
         Thread.ofVirtual().name("retrocraft-rom-scan").start(() -> {
             try {
                 RomIndex result = loadLibrary(true);
                 callbacks.add(() -> {
                     scanning = false; roms = result; libraryUpdated();
-                    source.sendFeedback(() -> Text.translatable("message.retrocraft.reloaded", roms.games().size()), false);
+                    if (source != null) source.sendFeedback(() -> Text.translatable("message.retrocraft.reloaded", roms.games().size()), false);
+                    else Retrocraft.LOG.info("ROM catalog updated: {} ROMs", roms.games().size());
+                    if (pendingScan) { pendingScan = false; rescan(); }
                 });
             } catch (Exception ex) {
                 Retrocraft.LOG.error("Cannot scan ROM catalog", ex);
-                callbacks.add(() -> { scanning = false; source.sendError(Text.translatable("message.retrocraft.scan_failed")); });
+                callbacks.add(() -> {
+                    scanning = false;
+                    if (source != null) source.sendError(Text.translatable("message.retrocraft.scan_failed"));
+                    if (pendingScan) { pendingScan = false; rescan(); }
+                });
             }
         });
-        return true;
     }
     private void libraryUpdated() {
         for (Session session : sessions.values()) {
@@ -216,6 +240,111 @@ public final class InstanceManager implements AutoCloseable {
         if (catalog.isEmpty()) send(player, new Packets.Catalog(catalogGeneration, true, true, List.of()));
         for (int i = 0; i < catalog.size(); i += 128)
             send(player, new Packets.Catalog(catalogGeneration, i == 0, i + 128 >= catalog.size(), catalog.subList(i, Math.min(i + 128, catalog.size()))));
+    }
+
+    private static boolean operator(ServerPlayerEntity player) { return player.hasPermissionLevel(2); }
+
+    /** /retrocraft gui or a client's RequestOpenSettingsGUI: operators get the schema, anyone else a denial. */
+    public void openSettings(ServerPlayerEntity player) {
+        send(player, operator(player) ? SettingsPackets.GuiOpen.of(config) : SettingsPackets.GuiOpen.denied("operator"));
+    }
+
+    /** Applies a batch of key/value edits. Validated on a probe copy first so a bad value cannot half-apply. */
+    public void applySettings(ServerPlayerEntity player, SettingsPackets.ConfigApply packet) {
+        if (!operator(player)) return;
+        String error = null;
+        var gson = new Gson();
+        RetrocraftConfig probe = gson.fromJson(gson.toJson(config), RetrocraftConfig.class);
+        for (var change : packet.changes()) {
+            try { ConfigKey.set(probe, change.key(), change.value()); }
+            catch (IllegalArgumentException ex) { error = change.key() + ": " + ex.getMessage(); break; }
+        }
+        if (error == null) {
+            for (var change : packet.changes()) ConfigKey.set(config, change.key(), change.value());
+            try { config.save(); applyConfig(); }
+            catch (IOException ex) { error = "Could not save the config file"; Retrocraft.LOG.error("Cannot save Retrocraft config", ex); }
+        }
+        send(player, new SettingsPackets.ConfigSaved(error == null, error == null ? "" : error, SettingsPackets.GuiOpen.schema(config)));
+        if (error == null) Retrocraft.LOG.info("{} updated Retrocraft settings via GUI", player.getGameProfile().getName());
+    }
+
+    /** RomManagementPacket: directory listings and library mutations, one request id per response. */
+    public void romAction(ServerPlayerEntity player, SettingsPackets.RomAction packet) {
+        if (!operator(player)) return;
+        try {
+            switch (packet.action()) {
+                case SettingsPackets.LIST -> sendRomList(player, packet.request(), packet.path());
+                case SettingsPackets.DELETE -> { romLibrary.delete(packet.path()); romChanged(player, packet.request()); }
+                case SettingsPackets.RENAME -> { romLibrary.rename(packet.path(), packet.target()); romChanged(player, packet.request()); }
+                case SettingsPackets.MOVE -> { romLibrary.move(packet.path(), packet.target()); romChanged(player, packet.request()); }
+                case SettingsPackets.MKDIR -> { romLibrary.mkdir(packet.path()); romChanged(player, packet.request()); }
+                case SettingsPackets.RESCAN -> { rescan(); send(player, new SettingsPackets.RomEvent(packet.request(), SettingsPackets.ACTION, true, "")); }
+                default -> send(player, SettingsPackets.RomEvent.fail(packet.request(), "Unknown action"));
+            }
+        } catch (IOException | RuntimeException ex) {
+            send(player, SettingsPackets.RomEvent.fail(packet.request(), ex.getMessage() == null ? "Operation failed" : ex.getMessage()));
+        }
+    }
+    private void romChanged(ServerPlayerEntity player, int request) {
+        send(player, new SettingsPackets.RomEvent(request, SettingsPackets.ACTION, true, ""));
+        rescan();
+    }
+    private void sendRomList(ServerPlayerEntity player, int request, String path) throws IOException {
+        var listing = romLibrary.list(path);
+        send(player, new SettingsPackets.RomList(request, path, listing.truncated(),
+                listing.entries().stream().map(e -> new SettingsPackets.RomList.Entry(e.name(), e.directory(), e.size())).toList()));
+    }
+
+    private static final class Upload {
+        final int id; final String dir, name, sha256; final long total;
+        final ByteArrayOutputStream data; long lastActivity;
+        Upload(int id, String dir, String name, long total, String sha256) {
+            this.id = id; this.dir = dir; this.name = name; this.sha256 = sha256; this.total = total;
+            data = new ByteArrayOutputStream((int) Math.min(total, 1 << 20));
+            lastActivity = System.nanoTime();
+        }
+    }
+
+    /** Chunked ROM upload; one active transfer per operator, staged in memory and verified before it lands. */
+    public void romUpload(ServerPlayerEntity player, SettingsPackets.RomUpload packet) {
+        if (!operator(player)) return;
+        switch (packet.phase()) {
+            case SettingsPackets.BEGIN -> beginUpload(player, packet);
+            case SettingsPackets.CHUNK -> uploadChunk(player, packet);
+            case SettingsPackets.ABORT -> { romUploads.remove(player.getUuid()); send(player, new SettingsPackets.RomEvent(packet.id(), SettingsPackets.UPLOAD_FAIL, true, "cancelled")); }
+            default -> { }
+        }
+    }
+    private void beginUpload(ServerPlayerEntity player, SettingsPackets.RomUpload packet) {
+        try {
+            if (romUploads.size() >= 8 && !romUploads.containsKey(player.getUuid())) throw new IOException("Too many concurrent uploads");
+            if (packet.total() < 1 || packet.total() > Math.min((long) config.maxRomSizeMiB * 1024 * 1024, BlobTransfer.MAX_ROM)) throw new IOException("File outside the ROM size limit");
+            if (!packet.sha256().matches("[0-9a-f]{64}")) throw new IOException("Invalid checksum");
+            romLibrary.destination(packet.dir(), packet.name()); // names, folder and collisions checked up front
+            romUploads.put(player.getUuid(), new Upload(packet.id(), packet.dir(), packet.name(), packet.total(), packet.sha256()));
+            send(player, new SettingsPackets.RomEvent(packet.id(), SettingsPackets.UPLOAD_ACCEPT, true, ""));
+        } catch (IOException | RuntimeException ex) {
+            send(player, new SettingsPackets.RomEvent(packet.id(), SettingsPackets.UPLOAD_FAIL, true, ex.getMessage() == null ? "Upload rejected" : ex.getMessage()));
+        }
+    }
+    private void uploadChunk(ServerPlayerEntity player, SettingsPackets.RomUpload packet) {
+        Upload upload = romUploads.get(player.getUuid());
+        if (upload == null || upload.id != packet.id()) return; // stale chunk of an aborted transfer
+        try {
+            if (packet.offset() != upload.data.size() || packet.data().length < 1
+                    || upload.data.size() + packet.data().length > upload.total) throw new IOException("Chunk outside transfer bounds");
+            upload.data.writeBytes(packet.data()); upload.lastActivity = System.nanoTime();
+            if (upload.data.size() < upload.total) return;
+            byte[] bytes = upload.data.toByteArray(); romUploads.remove(player.getUuid());
+            if (!BlobTransfer.hash(bytes).equals(upload.sha256)) throw new IOException("Upload checksum mismatch");
+            SaveStates.writeAtomic(romLibrary.destination(upload.dir, upload.name), bytes);
+            Retrocraft.LOG.info("{} uploaded ROM {}", player.getGameProfile().getName(), upload.name);
+            send(player, new SettingsPackets.RomEvent(packet.id(), SettingsPackets.UPLOAD_DONE, true, upload.name));
+            rescan();
+        } catch (IOException | RuntimeException ex) {
+            romUploads.remove(player.getUuid());
+            send(player, new SettingsPackets.RomEvent(packet.id(), SettingsPackets.UPLOAD_FAIL, true, ex.getMessage() == null ? "Upload failed" : ex.getMessage()));
+        }
     }
 
     public void powerOn(ConsoleHost host, ServerPlayerEntity player) {
@@ -350,7 +479,7 @@ public final class InstanceManager implements AutoCloseable {
     }
     public void disconnect(UUID player) {
         for (Session session : sessions.values()) if (player.equals(session.ownership.owner())) revoke(session, false);
-        readyClients.remove(player); clientGenerations.remove(player); outbound.remove(player);
+        readyClients.remove(player); clientGenerations.remove(player); outbound.remove(player); romUploads.remove(player);
         detachVideo(player);
         for (Session session : sessions.values()) { session.audioWatchers.remove(player); session.videoWatchers.remove(player); }
     }
@@ -419,6 +548,13 @@ public final class InstanceManager implements AutoCloseable {
         if (ticks % (20 * config.thumbnailIntervalSeconds) == 1) markThumbnails();
         if (ticks % (20 * 3600) == 2) cleanOrphanSaves();
         long now = System.nanoTime();
+        for (var it = romUploads.entrySet().iterator(); it.hasNext();) {
+            var entry = it.next();
+            if (now - entry.getValue().lastActivity <= TimeUnit.SECONDS.toNanos(60)) continue;
+            it.remove();
+            var player = server.getPlayerManager().getPlayer(entry.getKey());
+            if (player != null) send(player, new SettingsPackets.RomEvent(entry.getValue().id, SettingsPackets.UPLOAD_FAIL, true, "Upload timed out"));
+        }
         for (Session session : List.copyOf(sessions.values())) {
             finish(session);
             if (session.destroy) { if (session.thread == null) { persistSave(session); destroyFiles(session.data.id()); sessions.remove(session.data.id()); } continue; }
@@ -976,6 +1112,6 @@ public final class InstanceManager implements AutoCloseable {
             catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
             if (session.thread.isAlive()) { Retrocraft.LOG.error("Console {} exceeded shutdown deadline", session.data.id()); if (session.process != null) session.process.abort(); session.thread.interrupt(); }
         }
-        sessions.clear(); videoWatching.clear(); inputSessions.clear(); failedDiscovery.clear(); outbound.clear(); readyClients.clear(); callbacks.clear();
+        sessions.clear(); videoWatching.clear(); inputSessions.clear(); failedDiscovery.clear(); outbound.clear(); readyClients.clear(); callbacks.clear(); romUploads.clear();
     }
 }

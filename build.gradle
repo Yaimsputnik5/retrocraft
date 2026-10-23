@@ -7,7 +7,10 @@ version = project.mod_version
 group = project.maven_group
 base { archivesName = 'retrocraft' }
 
-repositories { mavenCentral() }
+repositories {
+    mavenCentral()
+    maven { name = 'Terraformers'; url = 'https://maven.terraformersmc.com/releases/' }
+}
 
 loom {
     runs {
@@ -24,6 +27,7 @@ dependencies {
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
     compileOnly 'net.java.dev.jna:jna:5.15.0'
     workerLibraries 'net.java.dev.jna:jna:5.15.0'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'

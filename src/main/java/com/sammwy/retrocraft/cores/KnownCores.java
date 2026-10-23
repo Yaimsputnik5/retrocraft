@@ -38,6 +38,11 @@ public final class KnownCores {
                 "retrocraft:gbc", "gambatte", "retrocraft:gba", "mgba", "retrocraft:megadrive", "genesis_plus_gx",
                 "retrocraft:n64", "parallel_n64", "retrocraft:mame", "mame2003_plus");
     }
+    /** Cores that can actually run a cartridge. One entry today; a list so alternatives can join later. */
+    public static List<String> compatible(String cartridge) {
+        String core = defaultMappings().get(cartridge);
+        return core == null ? List.of() : List.of(core);
+    }
     public static Set<String> ids() { return CORES.keySet(); }
     public static Core get(String id) {
         Core core = CORES.get(id);
