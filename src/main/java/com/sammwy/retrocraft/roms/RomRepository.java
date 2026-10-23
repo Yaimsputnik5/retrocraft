@@ -11,7 +11,7 @@ import com.sammwy.retrocraft.roms.discovery.DiscoveryStrategy;
 
 /** Disk catalog: startup reuses metadata without enumerating or hashing the ROM library. */
 public final class RomRepository {
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private record Catalog(

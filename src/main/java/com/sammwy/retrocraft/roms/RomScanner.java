@@ -52,9 +52,13 @@ public final class RomScanner {
                     if (cartridge == null) continue;
                     String name = file.getFileName().toString();
                     int dot = name.lastIndexOf('.');
-                    String title = dot > 0 ? name.substring(0, dot) : name;
-                    String filename = safeFilename(title, DiscoveryStrategy.suffix(name));
-                    if (ArcadeSets.contains(name)) filename = filename.toLowerCase(Locale.ROOT);
+                    String stem = dot > 0 ? name.substring(0, dot) : name;
+                    String filename = safeFilename(stem, DiscoveryStrategy.suffix(name));
+                    String title = stem;
+                    if (ArcadeSets.contains(name)) {
+                        filename = filename.toLowerCase(Locale.ROOT);
+                        title = ArcadeSets.title(name);
+                    }
                     String hash = hash(file, Files.size(file));
                     games.putIfAbsent(
                             cartridge + "/" + hash,

@@ -47,11 +47,13 @@ public final class WorkerMain {
         return input[port] == null ? 0 : input[port].state(device, index, id);
     }
 
+    private final Path biosDir;
     private final Memory systemDir;
     private final boolean arcade;
 
     private WorkerMain(String corePath, Path statePath, Path bios) throws IOException {
         this.statePath = statePath;
+        this.biosDir = bios;
         Files.createDirectories(statePath.getParent());
         directory = cString(statePath.getParent().toAbsolutePath().toString());
         systemDir =
@@ -115,6 +117,8 @@ public final class WorkerMain {
             initialized = true;
             Libretro.SystemInfo system = new Libretro.SystemInfo();
             core.retro_get_system_info(system);
+            if (arcade && biosDir != null && Files.isDirectory(biosDir) && rom.getParent() != null)
+                stageArcadeBios(rom.getParent());
             Libretro.GameInfo game = new Libretro.GameInfo();
             game.path = rom.toAbsolutePath().toString();
             if (system.needFullpath == 0) {
@@ -201,6 +205,29 @@ public final class WorkerMain {
             if (loaded) core.retro_unload_game();
             if (initialized) core.retro_deinit();
             if (content != null) content.close();
+        }
+    }
+
+    private void stageArcadeBios(Path romDir) {
+        try (var files = Files.list(biosDir)) {
+            for (Path file :
+                    files.filter(
+                                    p ->
+                                            Files.isRegularFile(p)
+                                                    && p.getFileName()
+                                                            .toString()
+                                                            .toLowerCase(Locale.ROOT)
+                                                            .endsWith(".zip"))
+                            .toList()) {
+                Path target = romDir.resolve(file.getFileName());
+                if (!Files.exists(target)) {
+                    try {
+                        Files.copy(file, target);
+                    } catch (IOException ignored) {
+                    }
+                }
+            }
+        } catch (IOException ignored) {
         }
     }
 

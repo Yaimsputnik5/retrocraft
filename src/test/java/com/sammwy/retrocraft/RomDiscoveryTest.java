@@ -46,6 +46,9 @@ class RomDiscoveryTest {
         Files.write(
                 root.resolve("PACMAN.ZIP"),
                 new byte[] {3}); // No ZIP parsing, even for a named arcade set.
+        Files.write(
+                root.resolve("neogeo.zip"),
+                new byte[] {9}); // BIOS archives are never indexed as playable games.
         for (String folder : List.of("PS2", "PlayStation", "Dreamcast", "Wii", "GameCube"))
             Files.write(
                     Files.createDirectories(root.resolve(folder)).resolve("game.iso"),
@@ -54,13 +57,12 @@ class RomDiscoveryTest {
         assertEquals(
                 Set.of("mame", "ps2", "ps1", "dreamcast", "wii", "gamecube"),
                 new HashSet<>(games.stream().map(RomScanner.Game::cartridge).toList()));
-        assertEquals(
-                "pacman.zip",
-                games.stream()
-                        .filter(g -> g.cartridge().equals("mame"))
-                        .findFirst()
-                        .orElseThrow()
-                        .filename());
+        var arcadeGame =
+                games.stream().filter(g -> g.cartridge().equals("mame")).findFirst().orElseThrow();
+        assertEquals("pacman.zip", arcadeGame.filename());
+        assertEquals("Pac-Man (Midway)", arcadeGame.name());
+        assertEquals("neogeo", ArcadeSets.requiredBios("mslug.zip").id());
+        assertEquals("kof99", ArcadeSets.machine("kof99p.zip").parent());
         assertTrue(
                 games.stream()
                         .allMatch(g -> g.source().ordinal() == -1 && g.source().member() == null));

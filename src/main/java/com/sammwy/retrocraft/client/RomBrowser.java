@@ -9,6 +9,7 @@ import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
 import com.sammwy.retrocraft.roms.RomCatalog;
 import com.sammwy.retrocraft.roms.RomLibrary;
+import com.sammwy.retrocraft.roms.discovery.ArcadeSets;
 import com.sammwy.retrocraft.server.net.SettingsPackets;
 
 import net.minecraft.client.MinecraftClient;
@@ -970,8 +971,22 @@ final class RomBrowser {
             }
             if (ry + ROW_H > listY && ry < listY + listH) {
                 icon(context, GLYPH_CART, x + 8, ry + 4, 0xFF6B7288);
+                var machine =
+                        entry.cartridge().equals("retrocraft:mame")
+                                ? ArcadeSets.machine(entry.name())
+                                : null;
+                String label =
+                        machine != null
+                                ? entry.name()
+                                        + " ("
+                                        + machine.zip()
+                                        + (machine.bios() != null
+                                                ? " · BIOS: " + machine.bios() + ".zip"
+                                                : "")
+                                        + ")"
+                                : entry.name();
                 context.drawTextWithShadow(
-                        tr, tr.trimToWidth(entry.name(), w - 120), x + 24, ry + 4, TEXT);
+                        tr, tr.trimToWidth(label, w - 120), x + 24, ry + 4, TEXT);
                 context.drawTextWithShadow(
                         tr,
                         entry.gameId().substring(0, 8),

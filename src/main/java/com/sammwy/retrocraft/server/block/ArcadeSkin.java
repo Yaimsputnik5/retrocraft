@@ -2,6 +2,8 @@ package com.sammwy.retrocraft.server.block;
 
 import java.util.Locale;
 
+import com.sammwy.retrocraft.roms.discovery.ArcadeSets;
+
 /** Resolves MAME short set IDs and readable names to shared cabinet artwork. */
 public enum ArcadeSkin {
     GENERIC("mame_console"),
@@ -26,10 +28,23 @@ public enum ArcadeSkin {
     }
 
     public static ArcadeSkin of(String name) {
+        if (name == null || name.isBlank()) return GENERIC;
+        var machine = ArcadeSets.machine(name);
+        if (machine != null) {
+            ArcadeSkin skin = match(machine.id());
+            if (skin != GENERIC) return skin;
+            if (machine.parent() != null) {
+                skin = match(machine.parent());
+                if (skin != GENERIC) return skin;
+            }
+        }
         String id = name.replace('\\', '/');
         id = id.substring(id.lastIndexOf('/') + 1).toLowerCase(Locale.ROOT);
         if (id.endsWith(".zip")) id = id.substring(0, id.length() - 4);
-        id = id.replaceAll("[^a-z0-9]", "");
+        return match(id.replaceAll("[^a-z0-9]", ""));
+    }
+
+    private static ArcadeSkin match(String id) {
         if (id.startsWith("pacman")
                 || id.startsWith("puckman")
                 || id.startsWith("mspac")
@@ -52,7 +67,10 @@ public enum ArcadeSkin {
         if (id.startsWith("galaga") || id.startsWith("galagam") || id.startsWith("galagao"))
             return GALAGA;
         if (id.startsWith("sf2")
+                || id.startsWith("ssf2")
+                || id.startsWith("hsf2")
                 || id.startsWith("sfa")
+                || id.startsWith("sfz")
                 || id.startsWith("sfiii")
                 || id.startsWith("streetfighter")
                 || id.equals("sf")

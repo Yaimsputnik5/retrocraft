@@ -109,9 +109,10 @@ public final class RomLibrary {
      * itself. Returns how many files landed.
      */
     public int install(String dir, String name, byte[] bytes, boolean unpack) throws IOException {
+        if (unpack && ArcadeSets.isBios(name)) bytes = BiosFiles.normalizeArcadeBios(name, bytes);
         Path target = destination(dir, name);
         SaveStates.writeAtomic(target, bytes);
-        if (!unpack || !RomArchives.supported(name) || ArcadeSets.contains(name)) return 1;
+        if (!unpack || !RomArchives.supported(name) || ArcadeSets.isArchive(name)) return 1;
         int[] count = {0}, visited = {0};
         long[] expanded = {0};
         try {
@@ -126,6 +127,8 @@ public final class RomLibrary {
                                 || member.size() > 16L * 1024 * 1024
                                 || member.size() == 0) return;
                         byte[] content = RomArchives.bounded(in, 16L * 1024 * 1024);
+                        if (ArcadeSets.isBios(base))
+                            content = BiosFiles.normalizeArcadeBios(base, content);
                         expanded[0] += content.length;
                         if (expanded[0] > 64L * 1024 * 1024)
                             throw new IOException("BIOS archive expands beyond limit");

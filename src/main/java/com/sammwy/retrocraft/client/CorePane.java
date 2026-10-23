@@ -8,6 +8,7 @@ import java.util.*;
 import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
 import com.sammwy.retrocraft.cores.KnownCores;
+import com.sammwy.retrocraft.roms.discovery.ArcadeSets;
 import com.sammwy.retrocraft.server.console.ConsoleRegistry;
 import com.sammwy.retrocraft.server.net.SettingsPackets;
 
@@ -392,8 +393,10 @@ final class CorePane {
             return;
         }
         var file = files.get(index);
+        var arcadeBios = core.id().equals("mame2003") ? ArcadeSets.bios(file.name()) : null;
+        String label = arcadeBios != null ? file.name() + " · " + arcadeBios.title() : file.name();
         draw(context, GLYPH_FILE, ix, ry + 5, 0xFF8B93A6);
-        context.drawTextWithShadow(tr, tr.trimToWidth(file.name(), w - 150), ix + 12, ry + 5, TEXT);
+        context.drawTextWithShadow(tr, tr.trimToWidth(label, w - 150), ix + 12, ry + 5, TEXT);
         context.drawTextWithShadow(
                 tr,
                 humanSize(file.size()),

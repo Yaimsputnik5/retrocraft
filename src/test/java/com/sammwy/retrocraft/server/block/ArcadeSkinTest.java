@@ -19,8 +19,13 @@ class ArcadeSkinTest {
         assertEquals(ArcadeSkin.DONKEY_KONG, ArcadeSkin.of("dkongjr"));
         assertEquals(ArcadeSkin.GALAGA, ArcadeSkin.of("galagamw"));
         assertEquals(ArcadeSkin.STREET_FIGHTER, ArcadeSkin.of("sf2ceua"));
+        assertEquals(
+                ArcadeSkin.STREET_FIGHTER,
+                ArcadeSkin.of("Super Street Fighter II: The New Challengers (World 930911)"));
         assertEquals(ArcadeSkin.METAL_SLUG, ArcadeSkin.of("mslug3h"));
+        assertEquals(ArcadeSkin.METAL_SLUG, ArcadeSkin.of("Metal Slug - Super Vehicle-001"));
         assertEquals(ArcadeSkin.MORTAL_KOMBAT, ArcadeSkin.of("mkla1"));
+        assertEquals(ArcadeSkin.MORTAL_KOMBAT, ArcadeSkin.of("Ultimate Mortal Kombat 3 (rev 1.2)"));
         assertEquals(ArcadeSkin.BUBBLE_BOBBLE, ArcadeSkin.of("bublbobr"));
     }
 

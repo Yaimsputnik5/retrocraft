@@ -20,6 +20,7 @@ import com.sammwy.retrocraft.cores.transfer.*;
 import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 import com.sammwy.retrocraft.roms.*;
+import com.sammwy.retrocraft.roms.discovery.ArcadeSets;
 import com.sammwy.retrocraft.server.block.*;
 import com.sammwy.retrocraft.server.config.ConfigKey;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
@@ -893,7 +894,7 @@ public final class InstanceManager implements AutoCloseable {
                 .start(
                         () -> {
                             try {
-                                requireBios(coreId);
+                                requireBios(coreId, game);
                                 var data =
                                         store.create(
                                                 playerId,
@@ -958,15 +959,15 @@ public final class InstanceManager implements AutoCloseable {
                                 callbacks.add(
                                         () -> {
                                             pendingStarts.remove(key);
-                                            if (host.canAccess(player))
-                                                error(
-                                                        player,
-                                                        ex.getMessage() != null
-                                                                        && ex.getMessage()
-                                                                                .startsWith(
-                                                                                        "PS2 BIOS missing")
-                                                                ? "bios_missing"
-                                                                : "storage_failed");
+                                            if (host.canAccess(player)) {
+                                                if (ex instanceof BiosFiles.MissingException
+                                                        || ex.getMessage() != null
+                                                                && ex.getMessage()
+                                                                        .startsWith(
+                                                                                "PS2 BIOS missing"))
+                                                    error(player, ex, null);
+                                                else error(player, "storage_failed");
+                                            }
                                         });
                             }
                         });
@@ -1040,7 +1041,7 @@ public final class InstanceManager implements AutoCloseable {
             return;
         }
         if (session.failure != null) {
-            error(player, failureKey(session.failure));
+            error(player, session.failure, session);
             return;
         }
         detachVideo(player.getUuid());
@@ -1775,7 +1776,7 @@ public final class InstanceManager implements AutoCloseable {
                                         CoreManager.Prepared prepared = preparedCores.get(coreId);
                                         if (prepared == null)
                                             throw new IOException("Core not prepared");
-                                        requireBios(coreId);
+                                        requireBios(coreId, game);
                                         Path core = prepared.path();
                                         Path rom = game.materialize();
                                         if (!RomSource.matches(
@@ -1912,7 +1913,7 @@ public final class InstanceManager implements AutoCloseable {
             return new WorkerProcess(workerJar, core, rom, state, bios, log);
         } catch (IOException ex) {
             if (ex instanceof EOFException && workerLogSays(log, "Core rejected ROM"))
-                throw new RomRejectedException(ex);
+                throw new RomRejectedException(ex, rom);
             if (!Files.exists(store.backup(session.data.id()))) throw ex;
             Retrocraft.LOG.warn(
                     "Latest checkpoint rejected for {}; restoring previous complete state",
@@ -1929,8 +1930,11 @@ public final class InstanceManager implements AutoCloseable {
      * rejecting a mismatched romset).
      */
     static final class RomRejectedException extends IOException {
-        RomRejectedException(Throwable cause) {
+        final Path rom;
+
+        RomRejectedException(Throwable cause, Path rom) {
             super("Core rejected ROM", cause);
+            this.rom = rom;
         }
     }
 
@@ -1942,11 +1946,17 @@ public final class InstanceManager implements AutoCloseable {
         }
     }
 
-    private static void requireBios(String coreId) throws IOException {
+    private static void requireBios(String coreId, RomIndex.Game game) throws IOException {
+        if (coreId.equals("mame2003")) {
+            if (game != null)
+                BiosFiles.ensureArcadeBios(RetrocraftConfig.biosDir(coreId), game.materialize());
+            return;
+        }
         if (!coreId.equals("pcsx2")) return;
         BiosFiles.migrateLegacy(RetrocraftConfig.root().resolve("bios"));
         Path bios = RetrocraftConfig.biosDir(coreId);
-        if (!Files.isDirectory(bios)) throw new IOException("PS2 BIOS missing");
+        if (!Files.isDirectory(bios))
+            throw new BiosFiles.MissingException("PS2 BIOS missing", "pcsx2", null, "PS2 BIOS");
         try (var files = Files.list(bios)) {
             if (files.noneMatch(
                     path ->
@@ -1955,7 +1965,7 @@ public final class InstanceManager implements AutoCloseable {
                                             .toString()
                                             .toLowerCase(Locale.ROOT)
                                             .endsWith(".bin")))
-                throw new IOException("PS2 BIOS missing");
+                throw new BiosFiles.MissingException("PS2 BIOS missing", "pcsx2", null, "PS2 BIOS");
         }
     }
 
@@ -1965,10 +1975,9 @@ public final class InstanceManager implements AutoCloseable {
         session.finished = false;
         resetVideo(session);
         if (session.failure != null) {
-            String key = failureKey(session.failure);
             for (UUID id : session.videoWatchers.keySet()) {
                 var player = server.getPlayerManager().getPlayer(id);
-                if (player != null) error(player, key);
+                if (player != null) error(player, session.failure, session);
             }
             stopSubscribers(session);
         }
@@ -1976,6 +1985,7 @@ public final class InstanceManager implements AutoCloseable {
 
     private static String failureKey(Throwable failure) {
         if (failure instanceof RomRejectedException) return "rom_rejected";
+        if (failure instanceof BiosFiles.MissingException) return "bios_missing";
         if (failure instanceof IOException && failure.getMessage() != null) {
             if (failure.getMessage().startsWith("PS2 BIOS missing")) return "bios_missing";
             if (failure.getMessage().startsWith("ROM/core changed since snapshot"))
@@ -2129,6 +2139,56 @@ public final class InstanceManager implements AutoCloseable {
 
     private static void send(ServerPlayerEntity player, CustomPayload packet) {
         ServerPlayNetworking.send(player, packet);
+    }
+
+    private static void error(ServerPlayerEntity player, Throwable failure, Session session) {
+        if (failure instanceof BiosFiles.MissingException missing) {
+            boolean admin = operator(player);
+            var arcadeBios = missing.biosId() != null ? ArcadeSets.bios(missing.biosId()) : null;
+            if (arcadeBios != null) {
+                player.sendMessage(
+                        Text.translatable(
+                                "message.retrocraft.arcade_bios_missing" + (admin ? "_admin" : ""),
+                                arcadeBios.zip(),
+                                arcadeBios.title()),
+                        false);
+            } else {
+                player.sendMessage(
+                        Text.translatable(
+                                "message.retrocraft.bios_missing" + (admin ? "_admin" : "")),
+                        false);
+            }
+            if (ServerPlayNetworking.canSend(player, SettingsPackets.BiosRequired.ID))
+                send(player, new SettingsPackets.BiosRequired(missing.packetTarget(), admin));
+            return;
+        }
+        if (failure instanceof RomRejectedException rejected && session != null) {
+            var machine = ArcadeSets.machine(session.game.filename());
+            if (machine != null) {
+                Path romDir = rejected.rom != null ? rejected.rom.getParent() : null;
+                if (machine.parent() != null
+                        && romDir != null
+                        && !Files.isRegularFile(romDir.resolve(machine.parent() + ".zip"))) {
+                    player.sendMessage(
+                            Text.translatable(
+                                    "message.retrocraft.rom_rejected_parent",
+                                    machine.zip(),
+                                    machine.title(),
+                                    machine.parent() + ".zip",
+                                    ArcadeSets.title(machine.parent())),
+                            false);
+                    return;
+                }
+                player.sendMessage(
+                        Text.translatable(
+                                "message.retrocraft.rom_rejected_mame",
+                                machine.zip(),
+                                machine.title()),
+                        false);
+                return;
+            }
+        }
+        error(player, failureKey(failure));
     }
 
     private static void error(ServerPlayerEntity player, String key) {
