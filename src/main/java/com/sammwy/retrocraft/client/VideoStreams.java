@@ -1,12 +1,14 @@
 package com.sammwy.retrocraft.client;
 
+import java.io.IOException;
+import java.util.*;
+
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.cores.stream.FrameCodec;
 import com.sammwy.retrocraft.server.net.Packets;
+
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
-import java.io.IOException;
-import java.util.*;
 
 /** Ordered delta decoding off-thread; only the latest picture is uploaded by the render thread. */
 final class VideoStreams {
@@ -20,11 +22,13 @@ final class VideoStreams {
         boolean decoding, closed, local;
         FrameCodec.Frame uploaded;
     }
+
     private final Map<UUID, Stream> streams = new HashMap<>();
 
     private boolean visible(UUID id) {
         return ClientPreferences.get().renderWorldScreens
-                || MinecraftClient.getInstance().currentScreen instanceof ConsoleScreen screen && screen.instance.equals(id);
+                || MinecraftClient.getInstance().currentScreen instanceof ConsoleScreen screen
+                        && screen.instance.equals(id);
     }
 
     void accept(Packets.Video packet) {
@@ -35,7 +39,10 @@ final class VideoStreams {
         synchronized (stream) {
             if (stream.pending.size() >= 4) {
                 stream.pending.clear();
-                if (!packet.frame().keyframe()) { stream.needsResync = true; return; }
+                if (!packet.frame().keyframe()) {
+                    stream.needsResync = true;
+                    return;
+                }
             }
             stream.pending.addLast(packet);
             if (stream.decoding) return;
@@ -49,14 +56,18 @@ final class VideoStreams {
             Packets.Video packet;
             synchronized (stream) {
                 packet = stream.closed ? null : stream.pending.pollFirst();
-                if (packet == null) { stream.decoding = false; return; }
+                if (packet == null) {
+                    stream.decoding = false;
+                    return;
+                }
             }
             try {
                 FrameCodec.Frame frame = stream.decoder.decode(packet.frame());
                 if (frame != null) {
                     stream.decoded = frame;
                     stream.sequence = Math.max(0, stream.decoder.sequence());
-                } else if (packet.frame().sequence() > stream.decoder.sequence()) stream.needsResync = true;
+                } else if (packet.frame().sequence() > stream.decoder.sequence())
+                    stream.needsResync = true;
             } catch (IOException | IllegalArgumentException ex) {
                 Retrocraft.LOG.warn("Invalid console frame: {}", ex.toString());
                 stream.needsResync = true;
@@ -72,26 +83,36 @@ final class VideoStreams {
         stream.decoded = frame;
     }
 
-    /** Coalescing GPU uploads bounds render-thread work even when decoding catches up after a stall. */
+    /**
+     * Coalescing GPU uploads bounds render-thread work even when decoding catches up after a stall.
+     */
     void render() {
         long now = System.nanoTime();
         long period = 1_000_000_000L / ClientPreferences.get().maxVideoFps;
         for (var entry : streams.entrySet()) {
             Stream stream = entry.getValue();
             FrameCodec.Frame frame = stream.decoded;
-            if (frame == null || frame == stream.uploaded || now - stream.lastUpload < period || !visible(entry.getKey())) continue;
+            if (frame == null
+                    || frame == stream.uploaded
+                    || now - stream.lastUpload < period
+                    || !visible(entry.getKey())) continue;
             ScreenTextures.upload(entry.getKey(), frame);
             stream.uploaded = frame;
             stream.lastUpload = now;
         }
     }
 
-    long sequence(UUID instance) { Stream stream = streams.get(instance); return stream == null ? 0 : stream.sequence; }
+    long sequence(UUID instance) {
+        Stream stream = streams.get(instance);
+        return stream == null ? 0 : stream.sequence;
+    }
 
     private void resync(UUID instance, Stream stream) {
-        if (System.nanoTime() - stream.lastResync < 1_000_000_000L || !ClientPlayNetworking.canSend(Packets.Request.ID)) return;
+        if (System.nanoTime() - stream.lastResync < 1_000_000_000L
+                || !ClientPlayNetworking.canSend(Packets.Request.ID)) return;
         stream.needsResync = false;
-        ClientPlayNetworking.send(Packets.Request.of(Packets.RESYNC, instance)); stream.lastResync = System.nanoTime();
+        ClientPlayNetworking.send(Packets.Request.of(Packets.RESYNC, instance));
+        stream.lastResync = System.nanoTime();
     }
 
     void preferencesChanged() {
@@ -103,23 +124,40 @@ final class VideoStreams {
         long now = System.nanoTime();
         for (UUID id : List.copyOf(streams.keySet())) {
             Stream stream = streams.get(id);
-            if (!visible(id)) { stop(id); continue; }
-            if (!stream.local && (stream.needsResync || now - stream.lastSeen > 1_000_000_000L)) resync(id, stream);
-            if (now - stream.lastSeen > 2_000_000_000L) { stop(id); continue; }
+            if (!visible(id)) {
+                stop(id);
+                continue;
+            }
+            if (!stream.local && (stream.needsResync || now - stream.lastSeen > 1_000_000_000L))
+                resync(id, stream);
+            if (now - stream.lastSeen > 2_000_000_000L) {
+                stop(id);
+                continue;
+            }
             if (stream.local || !ClientPlayNetworking.canSend(Packets.Request.ID)) continue;
             // An open play screen already acknowledges its stream in the input heartbeat.
-            if (MinecraftClient.getInstance().currentScreen instanceof ConsoleScreen screen && screen.instance.equals(id)) continue;
+            if (MinecraftClient.getInstance().currentScreen instanceof ConsoleScreen screen
+                    && screen.instance.equals(id)) continue;
             if (stream.sequence != stream.acknowledged || now - stream.lastAckAt >= 500_000_000L) {
-                ClientPlayNetworking.send(new Packets.Request(Packets.VIDEO_ACK, id, 0, stream.sequence));
-                stream.acknowledged = stream.sequence; stream.lastAckAt = now;
+                ClientPlayNetworking.send(
+                        new Packets.Request(Packets.VIDEO_ACK, id, 0, stream.sequence));
+                stream.acknowledged = stream.sequence;
+                stream.lastAckAt = now;
             }
         }
     }
 
     void stop(UUID id) {
         Stream stream = streams.remove(id);
-        if (stream != null) { synchronized (stream) { stream.closed = true; stream.pending.clear(); } ScreenTextures.freeze(id); }
+        if (stream != null) {
+            synchronized (stream) {
+                stream.closed = true;
+                stream.pending.clear();
+            }
+            ScreenTextures.freeze(id);
+        }
     }
+
     void close() {
         for (UUID id : List.copyOf(streams.keySet())) stop(id);
         ScreenTextures.clear();

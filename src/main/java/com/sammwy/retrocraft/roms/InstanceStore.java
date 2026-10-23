@@ -1,32 +1,69 @@
 package com.sammwy.retrocraft.roms;
 
-import com.google.gson.*;
 import java.io.*;
 import java.nio.file.*;
 import java.security.*;
 import java.util.*;
 
+import com.google.gson.*;
+
 public final class InstanceStore {
-    public record Metadata(int version, UUID id, UUID owner, String console, String gameId, String rom, String coreSha256) {}
+    public record Metadata(
+            int version,
+            UUID id,
+            UUID owner,
+            String console,
+            String gameId,
+            String rom,
+            String coreSha256) {}
+
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private final Path root;
-    public InstanceStore(Path root) throws IOException { this.root = root; Files.createDirectories(root); }
-    public Path directory(UUID id) { return root.resolve(id.toString()); }
-    public Path snapshot(UUID id) { return directory(id).resolve("snapshot.bin"); }
-    public Path backup(UUID id) { return directory(id).resolve("previous-snapshot.bin"); }
-    public void promote(UUID id, Path staged) throws IOException {
-        if (Files.exists(snapshot(id))) Files.move(snapshot(id), backup(id), StandardCopyOption.REPLACE_EXISTING);
-        try { Files.move(staged, snapshot(id), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
-        catch (AtomicMoveNotSupportedException ex) { Files.move(staged, snapshot(id), StandardCopyOption.REPLACE_EXISTING); }
+
+    public InstanceStore(Path root) throws IOException {
+        this.root = root;
+        Files.createDirectories(root);
     }
 
-    public Metadata create(UUID owner, String console, String gameId, String rom, Path core) throws IOException {
+    public Path directory(UUID id) {
+        return root.resolve(id.toString());
+    }
+
+    public Path snapshot(UUID id) {
+        return directory(id).resolve("snapshot.bin");
+    }
+
+    public Path backup(UUID id) {
+        return directory(id).resolve("previous-snapshot.bin");
+    }
+
+    public void promote(UUID id, Path staged) throws IOException {
+        if (Files.exists(snapshot(id)))
+            Files.move(snapshot(id), backup(id), StandardCopyOption.REPLACE_EXISTING);
+        try {
+            Files.move(
+                    staged,
+                    snapshot(id),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ex) {
+            Files.move(staged, snapshot(id), StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    public Metadata create(UUID owner, String console, String gameId, String rom, Path core)
+            throws IOException {
         UUID id = UUID.randomUUID();
         Metadata data = new Metadata(2, id, owner, console, gameId, rom, sha256(core));
         Files.createDirectories(directory(id));
         Path temporary = directory(id).resolve("instance.json.tmp");
-        try (Writer writer = Files.newBufferedWriter(temporary)) { GSON.toJson(data, writer); }
-        Files.move(temporary, directory(id).resolve("instance.json"), StandardCopyOption.REPLACE_EXISTING);
+        try (Writer writer = Files.newBufferedWriter(temporary)) {
+            GSON.toJson(data, writer);
+        }
+        Files.move(
+                temporary,
+                directory(id).resolve("instance.json"),
+                StandardCopyOption.REPLACE_EXISTING);
         return data;
     }
 
@@ -35,17 +72,26 @@ public final class InstanceStore {
         if (Files.size(file) > 8192) throw new IOException("Oversized instance metadata");
         try (Reader reader = Files.newBufferedReader(file)) {
             Metadata data = GSON.fromJson(reader, Metadata.class);
-            if (data == null || data.version != 2 || !id.equals(data.id) || data.owner == null || data.rom == null
-                    || data.console == null || data.gameId == null || data.coreSha256 == null) throw new IOException("Invalid instance metadata");
+            if (data == null
+                    || data.version != 2
+                    || !id.equals(data.id)
+                    || data.owner == null
+                    || data.rom == null
+                    || data.console == null
+                    || data.gameId == null
+                    || data.coreSha256 == null) throw new IOException("Invalid instance metadata");
             return data;
-        } catch (JsonParseException ex) { throw new IOException("Invalid instance metadata", ex); }
+        } catch (JsonParseException ex) {
+            throw new IOException("Invalid instance metadata", ex);
+        }
     }
 
     public void destroy(UUID id) throws IOException {
         Path directory = directory(id);
         if (!Files.exists(directory)) return;
         try (var files = Files.walk(directory)) {
-            for (Path path : files.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
+            for (Path path : files.sorted(Comparator.reverseOrder()).toList())
+                Files.deleteIfExists(path);
         }
     }
 
@@ -58,6 +104,8 @@ public final class InstanceStore {
                 while ((length = in.read(chunk)) != -1) digest.update(chunk, 0, length);
             }
             return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException ex) { throw new AssertionError(ex); }
+        } catch (NoSuchAlgorithmException ex) {
+            throw new AssertionError(ex);
+        }
     }
 }

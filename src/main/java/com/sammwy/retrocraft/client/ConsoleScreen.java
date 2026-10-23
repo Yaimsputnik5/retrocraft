@@ -1,6 +1,11 @@
 package com.sammwy.retrocraft.client;
 
+import java.util.UUID;
+
+import org.lwjgl.glfw.GLFW;
+
 import com.sammwy.retrocraft.server.net.Packets;
+
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -10,8 +15,6 @@ import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
-import org.lwjgl.glfw.GLFW;
-import java.util.UUID;
 
 public final class ConsoleScreen extends Screen {
     private static final int HEADER = 18, HUD = 52, MARGIN = 8;
@@ -27,75 +30,190 @@ public final class ConsoleScreen extends Screen {
 
     ConsoleScreen(Packets.Ui packet) {
         super(Text.literal(packet.title()));
-        instance = packet.instance(); controller = packet.controller(); canManage = packet.canManage(); inWorld = packet.inWorld(); screen = packet.screen();
+        instance = packet.instance();
+        controller = packet.controller();
+        canManage = packet.canManage();
+        inWorld = packet.inWorld();
+        screen = packet.screen();
         theme = ConsoleTheme.of(packet.console());
         consoleName = Text.translatable("console.retrocraft." + packet.console());
         displayTitle = Text.empty().append(consoleName).append(" · ").append(title);
-        consoleStack = new ItemStack(Registries.ITEM.get(Identifier.of("retrocraft", packet.console())));
+        consoleStack =
+                new ItemStack(Registries.ITEM.get(Identifier.of("retrocraft", packet.console())));
     }
 
     void update(Packets.Ui packet) {
         boolean changed = controller != packet.controller() || canManage != packet.canManage();
-        controller = packet.controller(); canManage = packet.canManage(); inWorld = packet.inWorld(); screen = packet.screen();
+        controller = packet.controller();
+        canManage = packet.canManage();
+        inWorld = packet.inWorld();
+        screen = packet.screen();
         if (changed) clearAndInit();
     }
 
-    @Override protected void init() {
-        if (client != null && !hudHiddenByUs) { hudWasHidden = client.options.hudHidden; client.options.hudHidden = true; hudHiddenByUs = true; }
-        if (inWorld && ClientPreferences.get().cameraFocus && ClientPreferences.get().renderWorldScreens) CameraRig.focus(BlockPos.fromLong(screen));
+    @Override
+    protected void init() {
+        if (client != null && !hudHiddenByUs) {
+            hudWasHidden = client.options.hudHidden;
+            client.options.hudHidden = true;
+            hudHiddenByUs = true;
+        }
+        if (inWorld
+                && ClientPreferences.get().cameraFocus
+                && ClientPreferences.get().renderWorldScreens)
+            CameraRig.focus(BlockPos.fromLong(screen));
         // Miniature actions in the top-right corner; Escape closes the screen.
         int x = width - MARGIN;
         if (canManage) {
-            x -= 14; addDrawableChild(new IconButton(x, 4, IconButton.Icon.POWER, b -> ClientPlayNetworking.send(Packets.Request.of(Packets.POWER_OFF, instance)), Text.translatable("screen.retrocraft.power_off")));
-            x -= 16; addDrawableChild(new IconButton(x, 4, IconButton.Icon.EJECT, b -> ClientPlayNetworking.send(Packets.Request.of(Packets.EJECT, instance)), Text.translatable("screen.retrocraft.eject")));
+            x -= 14;
+            addDrawableChild(
+                    new IconButton(
+                            x,
+                            4,
+                            IconButton.Icon.POWER,
+                            b ->
+                                    ClientPlayNetworking.send(
+                                            Packets.Request.of(Packets.POWER_OFF, instance)),
+                            Text.translatable("screen.retrocraft.power_off")));
+            x -= 16;
+            addDrawableChild(
+                    new IconButton(
+                            x,
+                            4,
+                            IconButton.Icon.EJECT,
+                            b ->
+                                    ClientPlayNetworking.send(
+                                            Packets.Request.of(Packets.EJECT, instance)),
+                            Text.translatable("screen.retrocraft.eject")));
         }
-        if (!controller) { x -= 74; addDrawableChild(ButtonWidget.builder(Text.translatable("screen.retrocraft.take_control"), b -> ClientPlayNetworking.send(Packets.Request.of(Packets.CLAIM_INPUT, instance))).dimensions(x, 4, 70, 14).build()); }
+        if (!controller) {
+            x -= 74;
+            addDrawableChild(
+                    ButtonWidget.builder(
+                                    Text.translatable("screen.retrocraft.take_control"),
+                                    b ->
+                                            ClientPlayNetworking.send(
+                                                    Packets.Request.of(
+                                                            Packets.CLAIM_INPUT, instance)))
+                            .dimensions(x, 4, 70, 14)
+                            .build());
+        }
     }
 
-    @Override public void tick() {
+    @Override
+    public void tick() {
         if (!subscribed || !ClientPlayNetworking.canSend(Packets.Request.ID)) return;
         int mask = controller ? InputControls.buttons(client) : 0;
-        ClientPlayNetworking.send(new Packets.Request(Packets.INPUT, instance, mask, RetrocraftClient.VIDEO.sequence(instance)));
+        ClientPlayNetworking.send(
+                new Packets.Request(
+                        Packets.INPUT, instance, mask, RetrocraftClient.VIDEO.sequence(instance)));
     }
 
-    @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
-        if (key == GLFW.GLFW_KEY_ESCAPE) { close(); return true; }
-        if (key == GLFW.GLFW_KEY_F8) { client.setScreen(SettingsScreen.modMenu(null)); return true; }
+    @Override
+    public boolean keyPressed(int key, int scanCode, int modifiers) {
+        if (key == GLFW.GLFW_KEY_ESCAPE) {
+            close();
+            return true;
+        }
+        if (key == GLFW.GLFW_KEY_F8) {
+            client.setScreen(SettingsScreen.modMenu(null));
+            return true;
+        }
         // Game input must not activate focused GUI buttons (Enter/Space).
         return true;
     }
 
-    @Override public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    @Override
+    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         var entry = ScreenTextures.get(instance);
         textureId = entry == null ? null : entry.id();
-        if (entry != null) { frameWidth = entry.width(); frameHeight = entry.height(); }
+        if (entry != null) {
+            frameWidth = entry.width();
+            frameHeight = entry.height();
+        }
         if (inWorld && ClientPreferences.get().renderWorldScreens) {
-            // The cabinet block shows the video; only the key legend and the miniature actions are drawn.
+            // The cabinet block shows the video; only the key legend and the miniature actions are
+            // drawn.
             context.drawItem(consoleStack, MARGIN, 3);
-            context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(displayTitle.getString(), Math.max(0, width - 2 * MARGIN - 20 - (canManage ? 32 : 0) - (controller ? 0 : 74))), MARGIN + 20, 7, 0xffe6e9f0);
-            if (!controller) context.drawTextWithShadow(textRenderer, Text.translatable("screen.retrocraft.spectator"), MARGIN + 20, 17, 0xffa8b0c0);
-            if (textureId == null) context.drawCenteredTextWithShadow(textRenderer, Text.translatable("screen.retrocraft.connecting"), width / 2, height - HUD - 10, 0xffd8dde6);
+            context.drawTextWithShadow(
+                    textRenderer,
+                    textRenderer.trimToWidth(
+                            displayTitle.getString(),
+                            Math.max(
+                                    0,
+                                    width
+                                            - 2 * MARGIN
+                                            - 20
+                                            - (canManage ? 32 : 0)
+                                            - (controller ? 0 : 74))),
+                    MARGIN + 20,
+                    7,
+                    0xffe6e9f0);
+            if (!controller)
+                context.drawTextWithShadow(
+                        textRenderer,
+                        Text.translatable("screen.retrocraft.spectator"),
+                        MARGIN + 20,
+                        17,
+                        0xffa8b0c0);
+            if (textureId == null)
+                context.drawCenteredTextWithShadow(
+                        textRenderer,
+                        Text.translatable("screen.retrocraft.connecting"),
+                        width / 2,
+                        height - HUD - 10,
+                        0xffd8dde6);
             PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
             super.render(context, mouseX, mouseY, delta);
             return;
         }
         context.fill(0, 0, width, height, 0x70000000);
         context.drawItem(consoleStack, MARGIN, 3);
-        context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(displayTitle.getString(), Math.max(0, width - 2 * MARGIN - 20 - (canManage ? 32 : 0) - (controller ? 0 : 74))), MARGIN + 20, 7, 0xffe6e9f0);
-        if (!controller) context.drawTextWithShadow(textRenderer, Text.translatable("screen.retrocraft.spectator"), MARGIN + 20, 17, 0xffa8b0c0);
+        context.drawTextWithShadow(
+                textRenderer,
+                textRenderer.trimToWidth(
+                        displayTitle.getString(),
+                        Math.max(
+                                0,
+                                width
+                                        - 2 * MARGIN
+                                        - 20
+                                        - (canManage ? 32 : 0)
+                                        - (controller ? 0 : 74))),
+                MARGIN + 20,
+                7,
+                0xffe6e9f0);
+        if (!controller)
+            context.drawTextWithShadow(
+                    textRenderer,
+                    Text.translatable("screen.retrocraft.spectator"),
+                    MARGIN + 20,
+                    17,
+                    0xffa8b0c0);
 
-        // The video takes all the room between the top strip and the key legend, keeping its aspect ratio, inside a slim console bezel.
+        // The video takes all the room between the top strip and the key legend, keeping its aspect
+        // ratio, inside a slim console bezel.
         Bezel bezel = Bezel.of(theme.bezel());
         int areaTop = HEADER + MARGIN, areaHeight = height - HUD - MARGIN - areaTop;
-        int availW = width - 2 * MARGIN - bezel.left - bezel.right, availH = areaHeight - bezel.top - bezel.bottom;
+        int availW = width - 2 * MARGIN - bezel.left - bezel.right,
+                availH = areaHeight - bezel.top - bezel.bottom;
         float fit = Math.min((float) availW / frameWidth, (float) availH / frameHeight);
-        int w = Math.max(1, Math.round(frameWidth * fit)), h = Math.max(1, Math.round(frameHeight * fit));
-        int x = (width - bezel.left - bezel.right - w) / 2 + bezel.left, y = areaTop + (areaHeight - bezel.top - bezel.bottom - h) / 2 + bezel.top;
+        int w = Math.max(1, Math.round(frameWidth * fit)),
+                h = Math.max(1, Math.round(frameHeight * fit));
+        int x = (width - bezel.left - bezel.right - w) / 2 + bezel.left,
+                y = areaTop + (areaHeight - bezel.top - bezel.bottom - h) / 2 + bezel.top;
         drawBezel(context, bezel, x, y, w, h);
-        if (textureId != null) context.drawTexture(textureId, x, y, w, h, 0, 0, frameWidth, frameHeight, frameWidth, frameHeight);
+        if (textureId != null)
+            context.drawTexture(
+                    textureId, x, y, w, h, 0, 0, frameWidth, frameHeight, frameWidth, frameHeight);
         else {
             context.fill(x, y, x + w, y + h, theme.screenOff());
-            context.drawCenteredTextWithShadow(textRenderer, Text.translatable("screen.retrocraft.connecting"), x + w / 2, y + h / 2 - 4, theme.handheld() ? 0xff1f2e1a : 0xffd8dde6);
+            context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    Text.translatable("screen.retrocraft.connecting"),
+                    x + w / 2,
+                    y + h / 2 - 4,
+                    theme.handheld() ? 0xff1f2e1a : 0xffd8dde6);
         }
         PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
         super.render(context, mouseX, mouseY, delta);
@@ -134,9 +252,11 @@ public final class ConsoleScreen extends Screen {
             }
             case GBA -> {
                 rounded(context, ox + b.rim, oy + b.rim, ow - 2 * b.rim, oh - 2 * b.rim, dark, 2);
-                for (int sx : new int[]{ox + 10, ox + ow - 40}) context.fill(sx, oy - 3, sx + 30, oy + 1, 0xff4b4190);
+                for (int sx : new int[] {ox + 10, ox + ow - 40})
+                    context.fill(sx, oy - 3, sx + 30, oy + 1, 0xff4b4190);
                 led(context, ix + 2, iy + ih - 5, 0xff3ab064);
-                context.fill(ix + 8, iy + ih - 4, ix + Math.min(iw - 4, 48), iy + ih - 3, 0xff777788);
+                context.fill(
+                        ix + 8, iy + ih - 4, ix + Math.min(iw - 4, 48), iy + ih - 3, 0xff777788);
             }
             case NES_HANDHELD -> {
                 context.fill(ox + 2, oy + 2, ox + ow - 2, oy + oh - 2, 0xff2d2d31);
@@ -145,19 +265,45 @@ public final class ConsoleScreen extends Screen {
                 led(context, ox + 4, oy + 4, 0xffd9453a);
             }
             case TV -> {
-                rounded(context, ox + b.rim, oy + b.rim, ow - 2 * b.rim, oh - b.rim - b.bottom + b.inner, dark, 4);
+                rounded(
+                        context,
+                        ox + b.rim,
+                        oy + b.rim,
+                        ow - 2 * b.rim,
+                        oh - b.rim - b.bottom + b.inner,
+                        dark,
+                        4);
                 int strip = iy + ih + 4;
-                context.fill(ox + 10, strip + 3, ox + 10 + Math.min(60, ow / 4), strip + 4, ConsoleTheme.shade(shell, .7f));
-                context.fill(ox + 10, strip + 6, ox + 10 + Math.min(60, ow / 4), strip + 7, ConsoleTheme.shade(shell, .7f));
+                context.fill(
+                        ox + 10,
+                        strip + 3,
+                        ox + 10 + Math.min(60, ow / 4),
+                        strip + 4,
+                        ConsoleTheme.shade(shell, .7f));
+                context.fill(
+                        ox + 10,
+                        strip + 6,
+                        ox + 10 + Math.min(60, ow / 4),
+                        strip + 7,
+                        ConsoleTheme.shade(shell, .7f));
                 context.fill(ox + 12, strip + 1, ox + 18, strip + 2, accent);
-                for (int k = 0; k < 3; k++) context.fill(ox + ow - 40 + k * 9, strip + 2, ox + ow - 35 + k * 9, strip + 7, 0xff8a8a92);
+                for (int k = 0; k < 3; k++)
+                    context.fill(
+                            ox + ow - 40 + k * 9,
+                            strip + 2,
+                            ox + ow - 35 + k * 9,
+                            strip + 7,
+                            0xff8a8a92);
                 led(context, ox + ow - 12, strip + 3, 0xffd9453a);
             }
             case ARCADE -> {
-                context.fill(ox + 2, oy + 2, ox + 5, oy + oh - 2, 0xffc04f8a); context.fill(ox + 6, oy + 6, ox + 8, oy + oh - 6, 0xff2b7fc4);
-                context.fill(ox + ow - 5, oy + 2, ox + ow - 2, oy + oh - 2, 0xffc04f8a); context.fill(ox + ow - 8, oy + 6, ox + ow - 6, oy + oh - 6, 0xff2b7fc4);
+                context.fill(ox + 2, oy + 2, ox + 5, oy + oh - 2, 0xffc04f8a);
+                context.fill(ox + 6, oy + 6, ox + 8, oy + oh - 6, 0xff2b7fc4);
+                context.fill(ox + ow - 5, oy + 2, ox + ow - 2, oy + oh - 2, 0xffc04f8a);
+                context.fill(ox + ow - 8, oy + 6, ox + ow - 6, oy + oh - 6, 0xff2b7fc4);
                 context.fill(ox + 9, oy + 3, ox + ow - 9, oy + 13, 0xff1b1d3f);
-                context.fill(ox + 9, oy + 3, ox + ow - 9, oy + 4, 0xff2b7fc4); context.fill(ox + 9, oy + 12, ox + ow - 9, oy + 13, 0xffc04f8a);
+                context.fill(ox + 9, oy + 3, ox + ow - 9, oy + 4, 0xff2b7fc4);
+                context.fill(ox + 9, oy + 12, ox + ow - 9, oy + 13, 0xffc04f8a);
                 context.fill(ox + ow / 2 - 24, oy + 6, ox + ow / 2 + 24, oy + 10, accent);
                 led(context, ox + ow - 20, oy + 6, 0xff3ab064);
                 context.fill(ox + b.rim + 3, oy + 15, ox + ow - b.rim - 3, oy + oh - b.rim, dark);
@@ -172,8 +318,10 @@ public final class ConsoleScreen extends Screen {
         context.fill(x, y + r, x + r, y + h - r, color);
         context.fill(x + w - r, y + r, x + w, y + h - r, color);
         for (int k = 1; k < r; k++) {
-            context.fill(x + r - k, y + k, x + r, y + k + 1, color); context.fill(x + w - r, y + k, x + w - r + k, y + k + 1, color);
-            context.fill(x + r - k, y + h - k - 1, x + r, y + h - k, color); context.fill(x + w - r, y + h - k - 1, x + w - r + k, y + h - k, color);
+            context.fill(x + r - k, y + k, x + r, y + k + 1, color);
+            context.fill(x + w - r, y + k, x + w - r + k, y + k + 1, color);
+            context.fill(x + r - k, y + h - k - 1, x + r, y + h - k, color);
+            context.fill(x + w - r, y + h - k - 1, x + w - r + k, y + h - k, color);
         }
     }
 
@@ -183,18 +331,31 @@ public final class ConsoleScreen extends Screen {
         context.fill(x, y, x + 1, y + 1, ConsoleTheme.shade(color, 1.4f));
     }
 
-    @Override public boolean shouldPause() { return false; }
-    @Override public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) { }
-    void serverClosed() { subscribed = false; close(); }
+    @Override
+    public boolean shouldPause() {
+        return false;
+    }
 
-    @Override public void removed() {
-        if (hudHiddenByUs && client != null) { client.options.hudHidden = hudWasHidden; hudHiddenByUs = false; }
+    @Override
+    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
+
+    void serverClosed() {
+        subscribed = false;
+        close();
+    }
+
+    @Override
+    public void removed() {
+        if (hudHiddenByUs && client != null) {
+            client.options.hudHidden = hudWasHidden;
+            hudHiddenByUs = false;
+        }
         CameraRig.release();
         PlayerHud.drop(instance);
         if (RetrocraftClient.EMULATION != null) RetrocraftClient.EMULATION.release(instance);
-        if (subscribed && ClientPlayNetworking.canSend(Packets.Request.ID)) ClientPlayNetworking.send(Packets.Request.of(Packets.CLOSE, instance));
+        if (subscribed && ClientPlayNetworking.canSend(Packets.Request.ID))
+            ClientPlayNetworking.send(Packets.Request.of(Packets.CLOSE, instance));
         subscribed = false;
         super.removed();
     }
-
 }

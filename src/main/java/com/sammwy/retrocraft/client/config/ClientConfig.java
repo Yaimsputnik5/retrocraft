@@ -1,14 +1,15 @@
 package com.sammwy.retrocraft.client.config;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonParseException;
-import com.sammwy.retrocraft.roms.SaveStates;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonParseException;
+import com.sammwy.retrocraft.roms.SaveStates;
 
 /** Personal preferences; never used to authorize or change server settings. */
 public final class ClientConfig {
@@ -35,17 +36,20 @@ public final class ClientConfig {
 
     public ClientConfig changed(Map<String, String> changes) {
         ClientConfig copy = GSON.fromJson(GSON.toJson(this), ClientConfig.class);
-        changes.forEach((key, value) -> {
-            switch (key) {
-                case "volume" -> copy.volume = Integer.parseInt(value);
-                case "maxVideoFps" -> copy.maxVideoFps = Integer.parseInt(value);
-                case "renderWorldScreens" -> copy.renderWorldScreens = bool(value);
-                case "renderHandheldScreens" -> copy.renderHandheldScreens = bool(value);
-                case "showPlayerHud" -> copy.showPlayerHud = bool(value);
-                case "cameraFocus" -> copy.cameraFocus = bool(value);
-                default -> throw new IllegalArgumentException("Unknown client setting: " + key);
-            }
-        });
+        changes.forEach(
+                (key, value) -> {
+                    switch (key) {
+                        case "volume" -> copy.volume = Integer.parseInt(value);
+                        case "maxVideoFps" -> copy.maxVideoFps = Integer.parseInt(value);
+                        case "renderWorldScreens" -> copy.renderWorldScreens = bool(value);
+                        case "renderHandheldScreens" -> copy.renderHandheldScreens = bool(value);
+                        case "showPlayerHud" -> copy.showPlayerHud = bool(value);
+                        case "cameraFocus" -> copy.cameraFocus = bool(value);
+                        default ->
+                                throw new IllegalArgumentException(
+                                        "Unknown client setting: " + key);
+                    }
+                });
         copy.validate();
         return copy;
     }
@@ -61,7 +65,8 @@ public final class ClientConfig {
     }
 
     private static boolean bool(String value) {
-        if (!value.equals("true") && !value.equals("false")) throw new IllegalArgumentException("Expected true or false");
+        if (!value.equals("true") && !value.equals("false"))
+            throw new IllegalArgumentException("Expected true or false");
         return Boolean.parseBoolean(value);
     }
 }

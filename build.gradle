@@ -1,6 +1,7 @@
 plugins {
     id 'fabric-loom' version '1.10.5'
     id 'maven-publish'
+    id 'com.diffplug.spotless' version '7.0.2'
 }
 
 version = project.mod_version
@@ -77,4 +78,13 @@ test {
     if (System.getenv('RETROCRAFT_TEST_MAME_ROM')) systemProperty 'retrocraft.testMameRom', System.getenv('RETROCRAFT_TEST_MAME_ROM')
     if (System.getenv('RETROCRAFT_TEST_MAME_SAVABLE_ROM')) systemProperty 'retrocraft.testMameSavableRom', System.getenv('RETROCRAFT_TEST_MAME_SAVABLE_ROM')
     if (System.getenv('RETROCRAFT_TEST_MAME_BIOS')) systemProperty 'retrocraft.testMameBios', System.getenv('RETROCRAFT_TEST_MAME_BIOS')
+}
+
+spotless {
+    java {
+        target 'src/**/*.java'
+        googleJavaFormat('1.24.0').aosp()
+        removeUnusedImports()
+        importOrder('java', 'javax', 'org', 'com', 'net', '')
+    }
 }

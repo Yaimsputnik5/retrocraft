@@ -1,14 +1,19 @@
 package com.sammwy.retrocraft;
 
-import com.sammwy.retrocraft.cores.stream.FrameCodec;
-import org.junit.jupiter.api.Test;
-import java.io.*;
-import java.util.Random;
-import java.util.zip.DeflaterOutputStream;
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.*;
+import java.util.Arrays;
+import java.util.Random;
+import java.util.zip.DeflaterOutputStream;
+
+import org.junit.jupiter.api.Test;
+
+import com.sammwy.retrocraft.cores.stream.FrameCodec;
+
 class FrameCodecTest {
-    @Test void keyframesDeltasAndPartialEdgeTilesRoundTrip() throws Exception {
+    @Test
+    void keyframesDeltasAndPartialEdgeTilesRoundTrip() throws Exception {
         var encoder = new FrameCodec.Encoder();
         var decoder = new FrameCodec.Decoder();
         byte[] pixels = new byte[257 * 239 * 3];
@@ -28,7 +33,8 @@ class FrameCodecTest {
         assertArrayEquals(updated, decoder.decode(unchanged).rgb());
     }
 
-    @Test void droppedDeltaRequiresKeyframeAndStaleFramesCannotRollBack() throws Exception {
+    @Test
+    void droppedDeltaRequiresKeyframeAndStaleFramesCannotRollBack() throws Exception {
         var encoder = new FrameCodec.Encoder();
         var decoder = new FrameCodec.Decoder();
         var frame = new FrameCodec.Frame(256, 240, new byte[256 * 240 * 3]);
@@ -42,7 +48,8 @@ class FrameCodecTest {
         assertEquals(key.sequence(), decoder.sequence());
     }
 
-    @Test void restartingVideoAfterOwnershipReturnKeepsSequenceAndForcesKeyframe() throws Exception {
+    @Test
+    void restartingVideoAfterOwnershipReturnKeepsSequenceAndForcesKeyframe() throws Exception {
         var encoder = new FrameCodec.Encoder();
         var decoder = new FrameCodec.Decoder();
         var frame = new FrameCodec.Frame(256, 240, new byte[256 * 240 * 3]);
@@ -55,21 +62,36 @@ class FrameCodecTest {
         assertEquals(22, returned.sequence());
     }
 
-    @Test void malformedAndOversizedCompressedFramesAreRejected() throws Exception {
+    @Test
+    void malformedAndOversizedCompressedFramesAreRejected() throws Exception {
         byte[] raw = new byte[2_000_000];
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        try (DeflaterOutputStream out = new DeflaterOutputStream(bytes)) { out.write(raw); }
-        assertThrows(IOException.class, () -> new FrameCodec.Decoder().decode(new FrameCodec.Encoded(1, -1, true, bytes.toByteArray())));
-        assertThrows(IOException.class, () -> new FrameCodec.Decoder().decode(new FrameCodec.Encoded(1, -1, true, new byte[]{1, 2, 3})));
-        assertThrows(IllegalArgumentException.class, () -> new FrameCodec.Frame(513, 240, new byte[0]));
+        try (DeflaterOutputStream out = new DeflaterOutputStream(bytes)) {
+            out.write(raw);
+        }
+        assertThrows(
+                IOException.class,
+                () ->
+                        new FrameCodec.Decoder()
+                                .decode(new FrameCodec.Encoded(1, -1, true, bytes.toByteArray())));
+        assertThrows(
+                IOException.class,
+                () ->
+                        new FrameCodec.Decoder()
+                                .decode(new FrameCodec.Encoded(1, -1, true, new byte[] {1, 2, 3})));
+        assertThrows(
+                IllegalArgumentException.class, () -> new FrameCodec.Frame(513, 240, new byte[0]));
         assertThrows(IllegalArgumentException.class, () -> new FrameCodec.Frame(0, 0, new byte[0]));
     }
 
-    @Test void denseUpdatesUseKeyframesAndEmptyDeltasReuseThePicture() throws Exception {
-        var encoder = new FrameCodec.Encoder(); var decoder = new FrameCodec.Decoder();
+    @Test
+    void denseUpdatesUseKeyframesAndEmptyDeltasReuseThePicture() throws Exception {
+        var encoder = new FrameCodec.Encoder();
+        var decoder = new FrameCodec.Decoder();
         byte[] pixels = new byte[256 * 240 * 3];
         decoder.decode(encoder.encode(new FrameCodec.Frame(256, 240, pixels), false));
-        byte[] noise = pixels.clone(); new Random(10).nextBytes(noise);
+        byte[] noise = pixels.clone();
+        new Random(10).nextBytes(noise);
         var dense = encoder.encode(new FrameCodec.Frame(256, 240, noise), false);
         assertTrue(dense.keyframe());
         var frame = decoder.decode(dense);
@@ -79,11 +101,15 @@ class FrameCodecTest {
         assertEquals(unchanged.sequence(), decoder.sequence());
     }
 
-    @Test void trailingCompressedBytesAreRejectedWithoutAdvancingTheDecoder() throws Exception {
-        var encoded = new FrameCodec.Encoder().encode(new FrameCodec.Frame(8, 8, new byte[192]), false);
-        byte[] corrupt = java.util.Arrays.copyOf(encoded.data(), encoded.data().length + 1024);
+    @Test
+    void trailingCompressedBytesAreRejectedWithoutAdvancingTheDecoder() throws Exception {
+        var encoded =
+                new FrameCodec.Encoder().encode(new FrameCodec.Frame(8, 8, new byte[192]), false);
+        byte[] corrupt = Arrays.copyOf(encoded.data(), encoded.data().length + 1024);
         var decoder = new FrameCodec.Decoder();
-        assertThrows(IOException.class, () -> decoder.decode(new FrameCodec.Encoded(1, -1, true, corrupt)));
+        assertThrows(
+                IOException.class,
+                () -> decoder.decode(new FrameCodec.Encoded(1, -1, true, corrupt)));
         assertEquals(-1, decoder.sequence());
         assertNotNull(decoder.decode(encoded));
     }

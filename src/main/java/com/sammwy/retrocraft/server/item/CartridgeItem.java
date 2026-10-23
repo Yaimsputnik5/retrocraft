@@ -1,28 +1,41 @@
 package com.sammwy.retrocraft.server.item;
 
+import java.util.*;
+
+import com.sammwy.retrocraft.roms.discovery.DiscoveryStrategy;
+import com.sammwy.retrocraft.server.console.ConsoleRegistry;
+
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.NbtComponent;
 import net.minecraft.item.*;
+import net.minecraft.item.tooltip.TooltipType;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-import com.sammwy.retrocraft.server.console.ConsoleRegistry;
-import java.util.*;
-import net.minecraft.item.tooltip.TooltipType;
 import net.minecraft.util.Identifier;
-import com.sammwy.retrocraft.roms.discovery.DiscoveryStrategy;
 
 /** A registered cartridge item fixes the console family; NBT identifies only the ROM. */
 public final class CartridgeItem extends Item {
     private final Identifier id;
     private final DiscoveryStrategy discovery;
+
     public CartridgeItem(Identifier id, DiscoveryStrategy discovery) {
-        super(new Settings().maxCount(1)); this.id = id; this.discovery = discovery;
+        super(new Settings().maxCount(1));
+        this.id = id;
+        this.discovery = discovery;
     }
-    public Identifier id() { return id; }
-    public DiscoveryStrategy discovery() { return discovery; }
+
+    public Identifier id() {
+        return id;
+    }
+
+    public DiscoveryStrategy discovery() {
+        return discovery;
+    }
+
     public ItemStack game(String hash, String name) {
-        if (!hash.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("GameID must be SHA-256");
+        if (!hash.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("GameID must be SHA-256");
         ItemStack stack = new ItemStack(this);
         NbtCompound data = new NbtCompound();
         data.putString("GameID", hash);
@@ -30,15 +43,26 @@ public final class CartridgeItem extends Item {
         stack.set(DataComponentTypes.CUSTOM_NAME, Text.literal(name));
         return stack;
     }
+
     /** Second tooltip line: which consoles accept this cartridge. */
-    @Override public void appendTooltip(ItemStack stack, TooltipContext context, List<Text> tooltip, TooltipType type) {
+    @Override
+    public void appendTooltip(
+            ItemStack stack, TooltipContext context, List<Text> tooltip, TooltipType type) {
         List<String> consoles = new ArrayList<>();
-        for (var console : ConsoleRegistry.consoles()) if (console.cartridge() == this) consoles.add(console.displayName().getString());
-        if (!consoles.isEmpty()) tooltip.add(Text.translatable("tooltip.retrocraft.plays_on", String.join(", ", consoles)).formatted(Formatting.GRAY));
+        for (var console : ConsoleRegistry.consoles())
+            if (console.cartridge() == this) consoles.add(console.displayName().getString());
+        if (!consoles.isEmpty())
+            tooltip.add(
+                    Text.translatable("tooltip.retrocraft.plays_on", String.join(", ", consoles))
+                            .formatted(Formatting.GRAY));
     }
+
     public static String gameId(ItemStack stack) {
         if (!(stack.getItem() instanceof CartridgeItem)) return "";
-        String id = stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt().getString("GameID");
+        String id =
+                stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT)
+                        .copyNbt()
+                        .getString("GameID");
         return id.matches("[0-9a-f]{64}") ? id : "";
     }
 }

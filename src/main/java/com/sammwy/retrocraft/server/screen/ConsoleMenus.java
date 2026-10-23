@@ -1,7 +1,8 @@
 package com.sammwy.retrocraft.server.screen;
 
-import com.sammwy.retrocraft.server.console.*;
 import com.sammwy.retrocraft.Retrocraft;
+import com.sammwy.retrocraft.server.console.*;
+
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
@@ -20,15 +21,33 @@ public final class ConsoleMenus {
         }
         inventory(player, host);
     }
-    public static void inventory(ServerPlayerEntity player, ConsoleHost host) { inventory(player, host, false); }
+
+    public static void inventory(ServerPlayerEntity player, ConsoleHost host) {
+        inventory(player, host, false);
+    }
+
     private static void inventory(ServerPlayerEntity player, ConsoleHost host, boolean powered) {
         if (!host.canAccess(player) || !powered && host.instance() != null) return;
         int locked = host instanceof HandheldHost handheld ? handheld.inventorySlot() : -1;
-        player.openHandledScreen(new ExtendedScreenHandlerFactory<ConsoleOpenData>() {
-            @Override public ConsoleOpenData getScreenOpeningData(ServerPlayerEntity p) { return new ConsoleOpenData(host.definition().id(), locked); }
-            @Override public Text getDisplayName() { return host.definition().displayName(); }
-            @Override public ScreenHandler createMenu(int syncId, PlayerInventory inventory, PlayerEntity user) { return new ConsoleScreenHandler(syncId, inventory, host, locked); }
-        });
+        player.openHandledScreen(
+                new ExtendedScreenHandlerFactory<ConsoleOpenData>() {
+                    @Override
+                    public ConsoleOpenData getScreenOpeningData(ServerPlayerEntity p) {
+                        return new ConsoleOpenData(host.definition().id(), locked);
+                    }
+
+                    @Override
+                    public Text getDisplayName() {
+                        return host.definition().displayName();
+                    }
+
+                    @Override
+                    public ScreenHandler createMenu(
+                            int syncId, PlayerInventory inventory, PlayerEntity user) {
+                        return new ConsoleScreenHandler(syncId, inventory, host, locked);
+                    }
+                });
     }
+
     private ConsoleMenus() {}
 }

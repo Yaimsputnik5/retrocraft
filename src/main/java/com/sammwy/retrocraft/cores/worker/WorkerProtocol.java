@@ -6,5 +6,6 @@ public final class WorkerProtocol {
     public static final int PORTS = 4;
     public static final int MAX_AUDIO = 262_144;
     public static final int MAX_STATE = 32 * 1024 * 1024;
+
     private WorkerProtocol() {}
 }
