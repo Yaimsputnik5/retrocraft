@@ -10,7 +10,7 @@ import java.util.function.Consumer;
 
 /** Disk catalog: startup reuses metadata without enumerating or hashing the ROM library. */
 public final class RomRepository {
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private record Catalog(int version, String root, long maxBytes, Set<String> formats, List<RomScanner.Game> games) {}
     private final Path root, cache;

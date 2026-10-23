@@ -28,7 +28,7 @@ public final class RomScanner {
                     if (skip.contains(relative)) continue;
                     // Extension-only matching on the relative path — inDir gates see parent folders, no archive spelunking or magic reads.
                     String cartridge = null;
-                    for (var entry : formats.entrySet()) if (entry.getValue().matchesExtension(relative, new byte[0])) { cartridge = entry.getKey(); break; }
+                    for (var entry : formats.entrySet()) if (entry.getValue().matches(relative)) { cartridge = entry.getKey(); break; }
                     if (cartridge == null) continue;
                     String name = file.getFileName().toString();
                     int dot = name.lastIndexOf('.');

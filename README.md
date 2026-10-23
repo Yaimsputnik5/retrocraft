@@ -73,7 +73,7 @@ Cores are downloaded on demand from the [official libretro buildbot](https://bui
 
 2. Install `build/libs/retrocraft-0.1.0.jar` together with Fabric API on the server and on every client.
 
-3. Put your ROMs in `config/retrocraft/roms/` on the server. Any folder layout works, and ZIP / GZIP / TAR / TAR.GZ archives are scanned too. Games are identified by their content hash, not their file name.
+3. Put your ROMs in `config/retrocraft/roms/` on the server. Detection uses file extensions and, for shared disc formats such as ISO and CHD, platform folders (`ps1`, `ps2`, `dreamcast`, `wii`, `gamecube`). ROM headers and archive contents are never inspected during discovery. Known MAME ZIP basenames stay intact. Games use content hashes for identity.
 
 4. Start the world. Cartridges for every ROM found appear in the **Retrocraft** creative tab, alongside the consoles and TVs.
 
