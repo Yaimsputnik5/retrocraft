@@ -1,0 +1,297 @@
+[
+  {
+    "asset": "marco.png",
+    "source": "https://github.com/nathancy/Metal-Slug/blob/master/Metal_Slug/Player/PlayerLeft.png",
+    "source_sha256": "93995484d92ab4090829fefc07306c5237eace6aad75b1301824d595ad94d4a8",
+    "crop": null,
+    "color_key": null,
+    "native_size": [
+      29,
+      38
+    ]
+  },
+  {
+    "asset": "sv001.png",
+    "source": "https://github.com/hadiyatahir/MetalSlugRemake/blob/master/metalSlug4/Sprites/Metal%20Slug.png",
+    "source_sha256": "1eda7d7d7ec194e66973211c8dd76d905d6841fe8afd9ac313a154cdbf6254ed",
+    "crop": [
+      8,
+      22,
+      72,
+      83
+    ],
+    "color_key": [
+      153,
+      217,
+      234
+    ],
+    "native_size": [
+      60,
+      56
+    ]
+  },
+  {
+    "asset": "metal_slug_logo.png",
+    "source": "https://github.com/nathancy/Metal-Slug/blob/master/Metal_Slug/Title.gif",
+    "source_sha256": "a6439d933ea1fb8d9143dbfcc94b1351658c7c9bd2a9605cfe0dad0eb2f5004f",
+    "crop": null,
+    "color_key": null,
+    "native_size": [
+      236,
+      138
+    ]
+  },
+  {
+    "asset": "ryu.png",
+    "source": "https://www.fightersgeneration.com/characters3/ryu-a.html",
+    "source_sha256": "e83b5d6aea1700aabeab9464306bea61a8e25dee63a193cf8c4b98e44b6eac7b",
+    "crop": null,
+    "color_key": null,
+    "native_size": [
+      59,
+      90
+    ]
+  },
+  {
+    "asset": "street_fighter_logo.png",
+    "source": "https://www.fightersgeneration.com/games/sf2.html",
+    "source_sha256": "a9117f931ae6f95bffe5a1607fc75dfc9b62a8aba933d6ef3faac5d8b69bdb9e",
+    "crop": null,
+    "color_key": [
+      255,
+      255,
+      255
+    ],
+    "native_size": [
+      480,
+      258
+    ]
+  },
+  {
+    "asset": "scorpion.png",
+    "source": "https://www.mortalkombatwarehouse.com/mk2/scorpion/",
+    "source_sha256": "02d9209eb5193e760eecdaf402beb7b9eec3b5d6563cf1ff7af2dbc157bf34db",
+    "crop": null,
+    "color_key": null,
+    "native_size": [
+      71,
+      138
+    ]
+  },
+  {
+    "asset": "donkey_kong.png",
+    "source": "https://github.com/maxbgrove/donkeykong-cis110/blob/master/donkeyCenter.png",
+    "source_sha256": "d0e9c05d066befcd26851531435dff20054eeb7e577e42e6cadd75d07e840e06",
+    "crop": null,
+    "color_key": null,
+    "native_size": [
+      40,
+      32
+    ]
+  },
+  {
+    "asset": "jumpman.png",
+    "source": "https://github.com/maxbgrove/donkeykong-cis110/blob/master/marioStand.png",
+    "source_sha256": "60d5abe403daf4cc290f85362f08e9f750151b106402b1926bb4b2882e43f4e6",
+    "crop": null,
+    "color_key": null,
+    "native_size": [
+      12,
+      16
+    ]
+  },
+  {
+    "asset": "barrel.png",
+    "source": "https://github.com/maxbgrove/donkeykong-cis110/blob/master/barrel.png",
+    "source_sha256": "afc394409b25edf015dda7c100bb50e5609bcf04bdc61a61b7d96bc5dafe89a7",
+    "crop": null,
+    "color_key": null,
+    "native_size": [
+      12,
+      10
+    ]
+  },
+  {
+    "asset": "bub.png",
+    "source": "https://github.com/erinrrr/Bubble-Bobble-Sprite/blob/main/res/player1/PlayerSprite.png",
+    "source_sha256": "ae4b930abfd35eb5a6c8800e6bc5340bdeefac948889e6907eb9cc0ce95ec989",
+    "crop": [
+      0,
+      0,
+      16,
+      16
+    ],
+    "color_key": null,
+    "native_size": [
+      16,
+      16
+    ]
+  },
+  {
+    "asset": "bob.png",
+    "source": "https://github.com/erinrrr/Bubble-Bobble-Sprite/blob/main/res/player2/PlayerTwoSprite.png",
+    "source_sha256": "c3526f60460b029816e37b507d16479dc326ad08ed23a693e8dafd3255a6a987",
+    "crop": [
+      0,
+      0,
+      16,
+      16
+    ],
+    "color_key": null,
+    "native_size": [
+      16,
+      16
+    ]
+  },
+  {
+    "asset": "bubble_bobble_logo.png",
+    "source": "https://github.com/erinrrr/Bubble-Bobble-Sprite/blob/main/res/Bubble_Bobble_Arcade.png",
+    "source_sha256": "c570347b1011cc2fcf6c33cad44db10b265ff724635a0cd465737ce35ae9d4f6",
+    "crop": [
+      0,
+      2520,
+      186,
+      2668
+    ],
+    "color_key": [
+      0,
+      0,
+      0
+    ],
+    "native_size": [
+      178,
+      144
+    ]
+  },
+  {
+    "asset": "galaga_boss.png",
+    "source": "https://github.com/ihalseide/Galaga/blob/master/resources/graphics/sheet.png",
+    "source_sha256": "d7fe87d2849f2c1d2117808f419f267dcdd6e3168e187148bbf2d2189f90a8dc",
+    "crop": [
+      96,
+      16,
+      112,
+      32
+    ],
+    "color_key": [
+      0,
+      0,
+      0
+    ],
+    "native_size": [
+      15,
+      15
+    ]
+  },
+  {
+    "asset": "galaga_butterfly.png",
+    "source": "https://github.com/ihalseide/Galaga/blob/master/resources/graphics/sheet.png",
+    "source_sha256": "d7fe87d2849f2c1d2117808f419f267dcdd6e3168e187148bbf2d2189f90a8dc",
+    "crop": [
+      96,
+      32,
+      112,
+      48
+    ],
+    "color_key": [
+      0,
+      0,
+      0
+    ],
+    "native_size": [
+      13,
+      10
+    ]
+  },
+  {
+    "asset": "galaga_bee.png",
+    "source": "https://github.com/ihalseide/Galaga/blob/master/resources/graphics/sheet.png",
+    "source_sha256": "d7fe87d2849f2c1d2117808f419f267dcdd6e3168e187148bbf2d2189f90a8dc",
+    "crop": [
+      144,
+      32,
+      160,
+      48
+    ],
+    "color_key": [
+      0,
+      0,
+      0
+    ],
+    "native_size": [
+      12,
+      11
+    ]
+  },
+  {
+    "asset": "galaga_fighter.png",
+    "source": "https://github.com/ihalseide/Galaga/blob/master/resources/graphics/sheet.png",
+    "source_sha256": "d7fe87d2849f2c1d2117808f419f267dcdd6e3168e187148bbf2d2189f90a8dc",
+    "crop": [
+      80,
+      0,
+      96,
+      16
+    ],
+    "color_key": [
+      0,
+      0,
+      0
+    ],
+    "native_size": [
+      14,
+      15
+    ]
+  },
+  {
+    "asset": "galaga_logo.png",
+    "source": "https://github.com/ihalseide/Galaga/blob/master/resources/graphics/green_title.png",
+    "source_sha256": "fb900a3100a76e23058d4de85c180d9e9e99f3f6005c1a1dbc06f4d2f2b8ef10",
+    "crop": null,
+    "color_key": null,
+    "native_size": [
+      134,
+      68
+    ]
+  },
+  {
+    "asset": "mortal_kombat_logo.png",
+    "source": "https://www.mortalkombatwarehouse.com/mk1/",
+    "source_sha256": "3620485ae38878b16b50c69a20b803f489c16144afffe0500b7048a69969f565",
+    "crop": [
+      [
+        62,
+        29,
+        335,
+        116
+      ],
+      [
+        62,
+        122,
+        335,
+        209
+      ]
+    ],
+    "preparation": "Gold letter faces isolated from red title background; original glyphs and dark outline retained."
+  },
+  {
+    "asset": "mortal_kombat_wide.png",
+    "source": "https://www.mortalkombatwarehouse.com/mk1/",
+    "source_sha256": "3620485ae38878b16b50c69a20b803f489c16144afffe0500b7048a69969f565",
+    "crop": [
+      [
+        62,
+        29,
+        335,
+        116
+      ],
+      [
+        62,
+        122,
+        335,
+        209
+      ]
+    ],
+    "preparation": "Gold letter faces isolated from red title background; original glyphs and dark outline retained."
+  }
+]

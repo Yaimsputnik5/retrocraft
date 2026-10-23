@@ -1,4 +1,7 @@
-"""Original pixel artwork for the arcade cabinet families; no external artwork or fonts."""
+"""Cabinet prints: original classic art and curated arcade sprites (see art/arcade)."""
+
+from functools import lru_cache
+from pathlib import Path
 
 from PIL import Image, ImageDraw
 
@@ -32,11 +35,11 @@ THEMES = {
 # Additional families share the cabinet geometry, with their own palette and pixel artwork.
 for key, title, shell, accent in [
     ("generic", "ARCADE", "#282b38", "#6bc6d9"),
-    ("donkey_kong", "DONKEY KONG", "#c84e35", "#ead088"),
+    ("donkey_kong", "DONKEY KONG", "#5691b2", "#efc58c"),
     ("galaga", "GALAGA", "#161f3d", "#65b4e3"),
     ("street_fighter", "STREET FIGHTER", "#234a92", "#f5ae48"),
-    ("metal_slug", "METAL SLUG", "#506247", "#e8cf77"),
-    ("mortal_kombat", "MORTAL KOMBAT", "#392030", "#dd9d37"),
+    ("metal_slug", "METAL SLUG", "#b4473c", "#e9d7aa"),
+    ("mortal_kombat", "MORTAL KOMBAT", "#2c2430", "#d6ab51"),
     ("bubble_bobble", "BUBBLE BOBBLE", "#25827e", "#9cde76"),
 ]:
     THEMES[key] = {"id": "mame_console" if key == "generic" else "mame_" + key + "_console",
@@ -200,45 +203,7 @@ def side_art(theme, text):
         d.rectangle((33, 162, 54, 169), fill="#9ebd7b")
         d.rectangle((42, 156, 45, 162), fill="#9ebd7b")
     else:
-        # A distinct emblem for each family, built from original pixel geometry.
-        accent = t["accent"]
-        text(im, t["title"], (max(6, (88 - len(t["title"]) * 4) // 2), 20), t["ink"])
-        if theme == "donkey_kong":
-            for y in (72, 110, 148):
-                d.line((10, y, 78, y - 12), fill=accent, width=5)
-                d.line((22, y - 4, 22, y - 25), fill="#75b5d5", width=3)
-            for x, y in ((35, 60), (53, 100), (65, 139)):
-                d.ellipse((x, y, x + 12, y + 15), outline="#f1c67c", width=3)
-        elif theme == "galaga":
-            for x, y in ((18, 65), (55, 65), (36, 98)):
-                sprite(im, ["00100", "10101", "11111", "01110", "10101"], x, y, 3, accent)
-            d.polygon([(44, 139), (28, 163), (44, 156), (60, 163)], fill="#e6e6e3")
-            d.line((44, 133, 44, 118), fill="#ed6e5b", width=2)
-        elif theme == "street_fighter":
-            d.polygon([(15, 140), (30, 95), (47, 107), (65, 68), (74, 90), (56, 139), (39, 124), (25, 155)], fill=accent)
-            text(im, "VS", (33, 161), t["ink"], 3)
-        elif theme == "metal_slug":
-            d.rectangle((14, 107, 73, 133), fill=accent)
-            d.rectangle((27, 90, 56, 111), fill="#a3b2a0")
-            d.rectangle((55, 97, 79, 102), fill="#e7e0c2")
-            for x in range(20, 70, 14):
-                d.ellipse((x, 126, x + 10, 137), fill=t["trim"])
-            text(im, "MISSION", (16, 155), t["ink"], 2)
-        elif theme == "mortal_kombat":
-            d.ellipse((9, 61, 79, 131), outline=accent, width=5)
-            d.polygon([(25, 112), (39, 82), (32, 73), (58, 76), (67, 89), (49, 86), (42, 99), (59, 118), (43, 113), (34, 125)], fill=accent)
-            text(im, "FIGHT", (24, 153), t["ink"], 2)
-        elif theme == "bubble_bobble":
-            for x, y, r in ((27, 86, 19), (59, 120, 17), (25, 152, 11)):
-                d.ellipse((x-r, y-r, x+r, y+r), outline=accent, width=3)
-                d.line((x-r+5, y-4, x-r+8, y-9), fill="#e2ffff", width=2)
-        else:
-            for y in range(58, 171, 14):
-                d.line((10, y, 77, y), fill="#355263")
-            d.line((44, 68, 44, 120), fill=accent, width=5)
-            d.ellipse((33, 59, 55, 81), fill="#cd6499", outline=t["trim"], width=2)
-            d.ellipse((18, 115, 70, 137), fill=t["trim"], outline=accent, width=3)
-            text(im, "1UP", (33, 153), t["ink"], 2)
+        illustrated_side(im, theme, t, text)
     return im
 
 
@@ -257,12 +222,7 @@ def marquee(theme, text):
         text(im, "PAC-MAN", (7, 7), "#f4d23d", 3)
         text(im, "1UP", (42, 23), "#e0d29a")
     else:
-        words = t["title"].split()
-        if len(words) == 1:
-            text(im, words[0], (max(4, (96 - len(words[0]) * 8) // 2), 10), t["accent"], 2)
-        else:
-            for word, y in zip(words, (5, 18)):
-                text(im, word, (max(4, (96 - len(word) * 8) // 2), y), t["accent"], 2)
+        return illustrated_marquee(theme, t, text)
     return im
 
 
@@ -284,8 +244,209 @@ def control_art(theme, text):
         for x in (8, 35, 62):
             sprite(im, INVADER, x, 25, 1, "#75b9ad")
     else:
-        for x in (8, 24, 40, 56, 72):
-            d.ellipse((x, 25, x + 4, 29), fill=t["accent"])
+        return illustrated_controls(im, theme, t, text)
     text(im, "MOVE", (53, 4), "#e3dba9")
     text(im, "FIRE", (8, 4), "#e3dba9")
+    return im
+
+
+ART = Path(__file__).resolve().parent / "art/arcade"
+
+
+@lru_cache(maxsize=None)
+def artwork(name):
+    with Image.open(ART / f"{name}.png") as source:
+        return source.convert("RGBA")
+
+
+def decal(im, name, x, y, scale=1, bounds=None, flip=False, ink=None):
+    art = artwork(name)
+    if ink:
+        tinted = Image.new("RGBA", art.size, ink)
+        tinted.putalpha(art.getchannel("A"))
+        art = tinted
+    if flip:
+        art = art.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    if bounds:
+        scale = min(bounds[0] / art.width, bounds[1] / art.height)
+    size = (max(1, round(art.width * scale)), max(1, round(art.height * scale)))
+    if size != art.size:
+        art = art.resize(size, Image.Resampling.NEAREST)
+    im.alpha_composite(art, (x, y))
+
+
+def center_decal(im, name, y, bounds, ink=None):
+    art = artwork(name)
+    scale = min(bounds[0] / art.width, bounds[1] / art.height)
+    x = (im.width - round(art.width * scale)) // 2
+    decal(im, name, x, y, bounds=bounds, ink=ink)
+
+
+def caption(im, label, y, text, ink, scale=1):
+    text(im, label, ((im.width - (len(label) * 4 - 1) * scale) // 2, y), ink, scale)
+
+
+def girder(d, y, slope=0):
+    d.line((8, y, 79, y + slope), fill="#77384b", width=6)
+    d.line((8, y - 2, 79, y + slope - 2), fill="#ea8a88")
+    for x in range(10, 73, 8):
+        yy = y + (x - 8) * slope // 71
+        d.line((x, yy + 1, x + 4, yy - 2, x + 8, yy + 1), fill="#cf6874")
+
+
+def bubble(d, x, y, radius):
+    d.ellipse((x - radius, y - radius, x + radius, y + radius), outline="#9cdee1")
+    d.arc((x - radius + 2, y - radius + 2, x + radius - 2, y + radius - 2),
+          185, 280, fill="#f1eed9", width=2)
+
+
+def illustrated_side(im, theme, t, text):
+    """Keep the classic cabinet grid; print recognizable game art within its margins."""
+    d = ImageDraw.Draw(im)
+    if theme == "metal_slug":
+        # Neo Geo MVS red/cream, with Marco's actual red vest and the round SV-001.
+        d.rectangle((8, 48, 79, 186), fill="#233036")
+        center_decal(im, "metal_slug_logo", 12, (48, 30))
+        decal(im, "marco", 15, 51, 2)
+        decal(im, "sv001", 14, 130)
+        d.line((8, 47, 79, 47), fill="#e2d1a4")
+    elif theme == "street_fighter":
+        center_decal(im, "street_fighter_logo", 14, (48, 28))
+        d.ellipse((14, 77, 74, 157), fill="#426d9c")
+        # His head sits below the narrowest cheek; the whole stance remains visible.
+        decal(im, "ryu", 9, 91)
+        d.line((8, 183, 79, 183), fill="#c0534d", width=2)
+        d.line((8, 186, 79, 186), fill="#e9bf73")
+    elif theme == "mortal_kombat":
+        center_decal(im, "mortal_kombat_logo", 11, (48, 28))
+        # The digitized arcade fighter retains his hood, mask and yellow tabard.
+        center_decal(im, "scorpion", 42, (64, 125))
+    elif theme == "donkey_kong":
+        caption(im, "DONKEY", 13, text, "#74374c", 2)
+        caption(im, "DONKEY", 12, text, "#f3d6ac", 2)
+        caption(im, "KONG", 26, text, "#74374c", 2)
+        caption(im, "KONG", 25, text, "#f3d6ac", 2)
+        center_decal(im, "donkey_kong", 76, (60, 48))
+        girder(d, 128, -5)
+        girder(d, 154, 6)
+        girder(d, 182, -5)
+        for x, y in ((22, 130), (62, 155)):
+            for xx in (x, x + 8):
+                d.line((xx, y, xx, y + 24), fill="#c1dfdb", width=2)
+            for yy in range(y + 4, y + 24, 5):
+                d.line((x, yy, x + 8, yy), fill="#c1dfdb")
+        decal(im, "barrel", 44, 141)
+        decal(im, "barrel", 16, 164)
+        decal(im, "jumpman", 53, 139)
+    elif theme == "galaga":
+        for i in range(40):
+            d.point((8 + i * 37 % 72, 48 + i * 29 % 136),
+                    fill=("#6d8ca1", "#c0b7ac", "#7aafac")[i % 3])
+        center_decal(im, "galaga_logo", 14, (48, 25), ink="#b3cf78")
+        center_decal(im, "galaga_boss", 87, (45, 45))
+        decal(im, "galaga_bee", 14, 56)
+        decal(im, "galaga_butterfly", 57, 58)
+        for x in (38, 49):
+            d.line((x, 137, x, 145), fill="#edb4a0", width=2)
+        center_decal(im, "galaga_fighter", 153, (28, 30))
+    elif theme == "bubble_bobble":
+        center_decal(im, "bubble_bobble_logo", 10, (48, 39))
+        for x, y, r in ((66, 69, 9), (17, 123, 10), (69, 120, 6), (22, 174, 9)):
+            bubble(d, x, y, r)
+        decal(im, "bub", 12, 66, 3)
+        decal(im, "bob", 28, 133, 3)
+    else:
+        # The all-games cabinet uses the same motifs as the three original skins.
+        colored_title(im, "ARCADE", (9, 19), text, 3)
+        for i in range(24):
+            d.point((8 + i * 31 % 72, 50 + i * 23 % 133), fill="#647b91")
+        sprite(im, INVADER, 22, 61, 4, "#77bdb5")
+        pacman(im, 27, 124, 16)
+        ghost(im, 55, 110, 2, "#d17a83")
+        for px, py in ((0, 1), (1, 1), (2, 1), (1, 0)):
+            block(im, 15 + px * 9, 155 + py * 9, 9, "#be89c7")
+        for px, py in ((0, 0), (1, 0), (0, 1), (1, 1)):
+            block(im, 55 + px * 9, 155 + py * 9, 9, "#e0bf62")
+
+
+def illustrated_marquee(theme, t, text):
+    # Match the physical 20 x 8.5 face. Extra texels preserve the actual logotypes.
+    im = Image.new("RGBA", (192, 80), t["trim"])
+    d = ImageDraw.Draw(im)
+    d.rectangle((2, 2, 189, 77), outline=t["accent"], width=3)
+    logos = {
+        "metal_slug": "metal_slug_logo",
+        "street_fighter": "street_fighter_logo",
+        "mortal_kombat": "mortal_kombat_wide",
+        "galaga": "galaga_logo",
+        "bubble_bobble": "bubble_bobble_logo",
+    }
+    if theme in logos:
+        name = logos[theme]
+        height = 66 if theme != "mortal_kombat" else 46
+        art = artwork(name)
+        scale = min(176 / art.width, height / art.height)
+        y = (80 - round(art.height * scale)) // 2
+        center_decal(im, name, y, (176, height), ink="#b3cf78" if theme == "galaga" else None)
+        if theme == "metal_slug":
+            d.line((12, 18, 12, 61), fill="#a65c4c", width=2)
+            d.line((179, 18, 179, 61), fill="#a65c4c", width=2)
+        elif theme == "galaga":
+            for x, y in ((12, 18), (179, 58), (25, 62), (164, 16)):
+                d.rectangle((x, y, x + 1, y + 1), fill="#b8cfcc")
+        elif theme == "bubble_bobble":
+            decal(im, "bub", 12, 26, 2)
+            decal(im, "bob", 148, 26, 2, flip=True)
+    elif theme == "donkey_kong":
+        caption(im, "DONKEY", 15, text, "#cd7668", 4)
+        caption(im, "DONKEY", 13, text, "#f3d6ac", 4)
+        caption(im, "KONG", 45, text, "#cd7668", 4)
+        caption(im, "KONG", 43, text, "#f3d6ac", 4)
+        decal(im, "barrel", 12, 29, 2)
+        decal(im, "barrel", 156, 29, 2)
+    else:
+        colored_title(im, "ARCADE", (26, 15), text, 6)
+        caption(im, "INSERT COIN", 57, text, "#b7d0cf", 2)
+    return im
+
+
+def illustrated_controls(im, theme, t, text):
+    d = ImageDraw.Draw(im)
+    if theme == "metal_slug":
+        decal(im, "sv001", 7, 17, bounds=(18, 17))
+        for x, label in ((34, "A"), (50, "B"), (66, "C")):
+            d.rectangle((x, 25, x + 9, 32), outline="#bbbc94")
+            text(im, label, (x + 3, 27), "#e3d6b1")
+        text(im, "FIRE", (8, 4), "#e3dba9")
+    elif theme == "street_fighter":
+        for x in (8, 32, 56):
+            d.polygon([(x, 30), (x + 7, 30), (x + 5, 27), (x + 8, 27)], fill="#e2b66e")
+        text(im, "PUNCH", (6, 4), "#e2c693")
+        text(im, "KICK", (6, 12), "#be8974")
+    elif theme == "mortal_kombat":
+        for x in range(9, 67, 5):
+            d.rectangle((x, 28, x + 4, 30), outline="#bc954e")
+        d.polygon([(66, 26), (76, 29), (66, 32), (69, 29)], fill="#e6d7aa")
+        text(im, "PUNCH", (6, 4), "#d6ba80")
+        text(im, "KICK", (6, 12), "#a88765")
+    elif theme == "donkey_kong":
+        d.line((5, 32, 78, 32), fill="#ce7a7d", width=2)
+        for x in (10, 36, 62):
+            decal(im, "barrel", x, 22)
+        text(im, "JUMP", (8, 4), "#e3dba9")
+    elif theme == "galaga":
+        for x, name in ((9, "galaga_bee"), (37, "galaga_butterfly"), (65, "galaga_boss")):
+            decal(im, name, x, 23, bounds=(10, 10))
+        text(im, "FIRE", (8, 4), "#e3dba9")
+    elif theme == "bubble_bobble":
+        decal(im, "bub", 8, 20, bounds=(13, 13))
+        decal(im, "bob", 64, 20, bounds=(13, 13))
+        bubble(d, 35, 28, 4)
+        bubble(d, 48, 28, 3)
+        text(im, "BUBBLE", (5, 4), "#d6e2b4")
+    else:
+        for x in (9, 36, 63):
+            sprite(im, INVADER, x, 25, 1, "#7dbcb5")
+        text(im, "FIRE", (8, 4), "#e3dba9")
+    text(im, "MOVE", (53, 4), "#e3dba9")
     return im

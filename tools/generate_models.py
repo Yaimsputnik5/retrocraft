@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build Retrocraft's vanilla cuboid models and hand-drawn pixel texture atlases.
 
-Development only: Python 3 + Pillow. No downloaded artwork, fonts or build-time dependency.
+Development only: Python 3 + Pillow. Local art inputs; no downloads or build-time dependency.
 Coordinates: home console front = north (-Z), handheld/media front = south (+Z).
 One model unit uses four texels; markings stay crisp and the plastic stays deliberately plain.
 """
@@ -1464,14 +1464,15 @@ def optical_disc(name):
     m.save()
 
 
-def arcade_side_uv(m, e, art, offset=0):
+def arcade_side_uv(m, e, art, offset=0, front=-3):
     u0, v0, u1, v1 = m.region(art)
     za, zb = e["from"][2], e["to"][2]
     ya, yb = e["from"][1] + offset, e["to"][1] + offset
+    depth = 19 - front
     # Both cabinet sides have readable lettering, with a continuous graphic across the roof seam.
     for face, lo, hi in [
-        ("west", (za + 3) / 22, (zb + 3) / 22),
-        ("east", (19 - zb) / 22, (19 - za) / 22),
+        ("west", (za - front) / depth, (zb - front) / depth),
+        ("east", (19 - zb) / depth, (19 - za) / depth),
     ]:
         e["faces"][face] = {
             "texture": "#atlas",
@@ -1490,6 +1491,9 @@ def arcade(theme):
     shell, trim = t["shell"], t["trim"]
     m = Model(name, texture="arcade_" + theme)
     art = side_art(theme, text)
+    # The new prints use the actual cheek depth (-1..19). The original three
+    # retain their established UV layout, including the space below the deck lip.
+    print_front = -3 if theme in ("pacman", "tetris", "space_invaders") else -1
     m.box("black plinth", [-4, 0, -3], [20, 1.5, 19], trim)
     m.box("lower cabinet", [-2.5, 1.5, 0], [18.5, 14.5, 18.7], shell)
     m.box(
@@ -1508,7 +1512,7 @@ def arcade(theme):
             (28, 32, 6),
         ]:
             e = m.box("sculpted side cheek", [x0, y0, z0], [x1, y1, 19], shell)
-            arcade_side_uv(m, e, art)
+            arcade_side_uv(m, e, art, front=print_front)
     m.box(
         "projecting control deck",
         [-4.04, 14.5, -3],
@@ -1579,7 +1583,7 @@ def arcade(theme):
     top.box("marquee housing", [-2.5, 0, 4], [18.5, 12, 18.7], trim)
     for x0, x1 in [(-4, -2.5), (18.5, 20)]:
         e = top.box("upper side panel", [x0, 0, 3], [x1, 16, 19], shell)
-        arcade_side_uv(top, e, art, 32)
+        arcade_side_uv(top, e, art, 32, front=print_front)
     top.box("marquee face frame", [-2.5, 1, 2.8], [18.5, 11.5, 4], trim)
     top.front("illustrated marquee", -2, 18, 2, 10.5, 2.78, marquee(theme, text), trim)
     top.box("marquee upper molding", [-2.5, 12, 3], [18.5, 14, 19], trim)
