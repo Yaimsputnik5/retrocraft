@@ -17,7 +17,7 @@ Retrocraft adds handhelds, home consoles, arcade cabinets and CRT televisions to
 | Game Boy Advance | Game Boy Advance | mgba |
 | Mega Drive / Genesis | Mega Drive, Genesis | genesis_plus_gx |
 | Nintendo 64 | Nintendo 64 | parallel_n64 |
-| Arcade | Pac-Man, Tetris and Space Invaders Arcade Machines | mame2003 |
+| Arcade | Generic machine with swappable ROMs; one permanent-ROM cabinet per catalog game | mame2003 |
 
 Plus three televisions to hook your consoles up to: a **Portable TV** (1 block), a **CRT Television** (2×1.5) and a big **Console Television** (3×2).
 
@@ -38,7 +38,7 @@ Stash it in a chest and the game is suspended; take it back out and it resumes.
 
 Home consoles are blocks. Place one, place a TV within 12 blocks, insert a cartridge (right-click the console with it) and power it on. The console grabs the nearest free TV and the game shows up on its screen, with sound coming from the set.
 
-Anyone can walk up and watch. Docked consoles provide up to four controller slots; **Take control** claims the next free slot. The first slot holds the hybrid emulation lease, while each player drives their own pad. Handhelds stay single-player. The three arcade cabinet skins share the same ROM boards and controls. Each has its own built-in CRT, so it does not need a TV, and needs three blocks of vertical space.
+Anyone can walk up and watch. Docked consoles provide up to four controller slots; **Take control** claims the next free slot. The first slot holds the hybrid emulation lease, while each player drives their own pad. Handhelds stay single-player. Arcade cabinets have a built-in CRT and need three blocks of vertical space. The generic arcade accepts swappable ROM boards. Each arcade ROM also appears as a dedicated cabinet in **RetroCraft - Arcades**: its internal ROM is permanent, and breaking the cabinet drops the same game variant without a separate board. Cabinet artwork follows the set name, so revisions share their family design; unrecognized sets use the generic artwork with a personalized marquee. Hardware lives in **RetroCraft - Consoles**, and ROM items in **RetroCraft - Games**.
 
 Break the console or eject the cartridge and the TV is free again. Unloading the chunk suspends the game; it comes back when someone's around to watch.
 

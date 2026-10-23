@@ -57,7 +57,12 @@ public final class ConsoleRegistry {
                             FabricBlockEntityTypeBuilder.create(
                                             DockedConsoleBlockEntity::new, block)
                                     .build()));
-            Registry.register(Registries.ITEM, id, new BlockItem(block, new Item.Settings()));
+            Registry.register(
+                    Registries.ITEM,
+                    id,
+                    definition.isInternalArcade()
+                            ? new ArcadeItem(block, new Item.Settings())
+                            : new BlockItem(block, new Item.Settings()));
         }
         CONSOLES.put(id, definition);
         return definition;

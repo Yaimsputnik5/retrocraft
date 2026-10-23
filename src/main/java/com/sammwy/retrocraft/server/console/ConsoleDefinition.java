@@ -17,6 +17,15 @@ public record ConsoleDefinition(
         return type == ConsoleType.DOCKED;
     }
 
+    public boolean isInternalArcade() {
+        return id.getPath().equals("mame_internal_console");
+    }
+
+    public boolean isLegacyArcade() {
+        return id.getPath().equals("mame_tetris_console")
+                || id.getPath().equals("mame_space_invaders_console");
+    }
+
     public boolean isArcade() {
         return type == ConsoleType.ARCADE;
     }

@@ -1,10 +1,10 @@
-"""Original pixel artwork for the three arcade skins; no external artwork or fonts."""
+"""Original pixel artwork for the arcade cabinet families; no external artwork or fonts."""
 
 from PIL import Image, ImageDraw
 
 THEMES = {
     "pacman": {
-        "id": "mame_console",
+        "id": "mame_pacman_console",
         "title": "PAC-MAN",
         "shell": "#e5bb32",
         "trim": "#171b29",
@@ -28,6 +28,21 @@ THEMES = {
         "ink": "#c4d968",
     },
 }
+
+# Additional families share the cabinet geometry, with their own palette and pixel artwork.
+for key, title, shell, accent in [
+    ("generic", "ARCADE", "#282b38", "#6bc6d9"),
+    ("donkey_kong", "DONKEY KONG", "#c84e35", "#ead088"),
+    ("galaga", "GALAGA", "#161f3d", "#65b4e3"),
+    ("street_fighter", "STREET FIGHTER", "#234a92", "#f5ae48"),
+    ("metal_slug", "METAL SLUG", "#506247", "#e8cf77"),
+    ("mortal_kombat", "MORTAL KOMBAT", "#392030", "#dd9d37"),
+    ("bubble_bobble", "BUBBLE BOBBLE", "#25827e", "#9cde76"),
+]:
+    THEMES[key] = {"id": "mame_console" if key == "generic" else "mame_" + key + "_console",
+                   "title": title, "shell": shell, "trim": "#141923",
+                   "accent": accent, "ink": "#e5e6df"}
+
 
 INVADER = [
     "00100000100",
@@ -168,7 +183,7 @@ def side_art(theme, text):
         text(im, "NEXT", (36, 153), "#afc5da")
         for x, y in [(0, 0), (1, 0), (2, 0), (1, 1)]:
             block(im, 31 + x * 8, 165 + y * 8, 8, "#af7cb9")
-    else:
+    elif theme == "space_invaders":
         for i in range(32):
             x = 8 + (i * 37) % 71
             y = 36 + (i * 31) % 144
@@ -184,6 +199,46 @@ def side_art(theme, text):
         )
         d.rectangle((33, 162, 54, 169), fill="#9ebd7b")
         d.rectangle((42, 156, 45, 162), fill="#9ebd7b")
+    else:
+        # A distinct emblem for each family, built from original pixel geometry.
+        accent = t["accent"]
+        text(im, t["title"], (max(6, (88 - len(t["title"]) * 4) // 2), 20), t["ink"])
+        if theme == "donkey_kong":
+            for y in (72, 110, 148):
+                d.line((10, y, 78, y - 12), fill=accent, width=5)
+                d.line((22, y - 4, 22, y - 25), fill="#75b5d5", width=3)
+            for x, y in ((35, 60), (53, 100), (65, 139)):
+                d.ellipse((x, y, x + 12, y + 15), outline="#f1c67c", width=3)
+        elif theme == "galaga":
+            for x, y in ((18, 65), (55, 65), (36, 98)):
+                sprite(im, ["00100", "10101", "11111", "01110", "10101"], x, y, 3, accent)
+            d.polygon([(44, 139), (28, 163), (44, 156), (60, 163)], fill="#e6e6e3")
+            d.line((44, 133, 44, 118), fill="#ed6e5b", width=2)
+        elif theme == "street_fighter":
+            d.polygon([(15, 140), (30, 95), (47, 107), (65, 68), (74, 90), (56, 139), (39, 124), (25, 155)], fill=accent)
+            text(im, "VS", (33, 161), t["ink"], 3)
+        elif theme == "metal_slug":
+            d.rectangle((14, 107, 73, 133), fill=accent)
+            d.rectangle((27, 90, 56, 111), fill="#a3b2a0")
+            d.rectangle((55, 97, 79, 102), fill="#e7e0c2")
+            for x in range(20, 70, 14):
+                d.ellipse((x, 126, x + 10, 137), fill=t["trim"])
+            text(im, "MISSION", (16, 155), t["ink"], 2)
+        elif theme == "mortal_kombat":
+            d.ellipse((9, 61, 79, 131), outline=accent, width=5)
+            d.polygon([(25, 112), (39, 82), (32, 73), (58, 76), (67, 89), (49, 86), (42, 99), (59, 118), (43, 113), (34, 125)], fill=accent)
+            text(im, "FIGHT", (24, 153), t["ink"], 2)
+        elif theme == "bubble_bobble":
+            for x, y, r in ((27, 86, 19), (59, 120, 17), (25, 152, 11)):
+                d.ellipse((x-r, y-r, x+r, y+r), outline=accent, width=3)
+                d.line((x-r+5, y-4, x-r+8, y-9), fill="#e2ffff", width=2)
+        else:
+            for y in range(58, 171, 14):
+                d.line((10, y, 77, y), fill="#355263")
+            d.line((44, 68, 44, 120), fill=accent, width=5)
+            d.ellipse((33, 59, 55, 81), fill="#cd6499", outline=t["trim"], width=2)
+            d.ellipse((18, 115, 70, 137), fill=t["trim"], outline=accent, width=3)
+            text(im, "1UP", (33, 153), t["ink"], 2)
     return im
 
 
@@ -197,10 +252,17 @@ def marquee(theme, text):
         text(im, "INVADERS", (17, 18), "#80c5b4", 2)
     elif theme == "tetris":
         colored_title(im, "TETRIS", (13, 8), text, 3)
-    else:
+    elif theme == "pacman":
         text(im, "PAC-MAN", (9, 9), "#ae4b3c", 3)
         text(im, "PAC-MAN", (7, 7), "#f4d23d", 3)
         text(im, "1UP", (42, 23), "#e0d29a")
+    else:
+        words = t["title"].split()
+        if len(words) == 1:
+            text(im, words[0], (max(4, (96 - len(words[0]) * 8) // 2), 10), t["accent"], 2)
+        else:
+            for word, y in zip(words, (5, 18)):
+                text(im, word, (max(4, (96 - len(word) * 8) // 2), y), t["accent"], 2)
     return im
 
 
@@ -218,9 +280,12 @@ def control_art(theme, text):
     elif theme == "tetris":
         for i, c in enumerate(["#e4bc4d", "#9e6bb5", "#62ad87", "#598fd0"]):
             block(im, 8 + i * 18, 25, 7, c)
-    else:
+    elif theme == "space_invaders":
         for x in (8, 35, 62):
             sprite(im, INVADER, x, 25, 1, "#75b9ad")
+    else:
+        for x in (8, 24, 40, 56, 72):
+            d.ellipse((x, 25, x + 4, 29), fill=t["accent"])
     text(im, "MOVE", (53, 4), "#e3dba9")
     text(im, "FIRE", (8, 4), "#e3dba9")
     return im

@@ -4,6 +4,8 @@ import java.util.UUID;
 
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.server.console.*;
+import com.sammwy.retrocraft.server.item.ArcadeItem;
+import com.sammwy.retrocraft.server.item.CartridgeItem;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
@@ -39,8 +41,23 @@ public final class DockedConsoleBlockEntity extends BlockEntity implements Conso
 
     @Override
     public void cartridge(ItemStack stack) {
+        if (hasInternalRom()) return;
         cartridge = stack;
         changed();
+    }
+
+    public void installInternalRom(ItemStack stack) {
+        if (!hasInternalRom()
+                || !cartridge.isEmpty()
+                || !stack.isOf(definition().cartridge())
+                || CartridgeItem.gameId(stack).isEmpty()) return;
+        cartridge = stack.copyWithCount(1);
+        changed();
+    }
+
+    public ItemStack arcadeStack() {
+        return ((ArcadeItem) getCachedState().getBlock().asItem())
+                .game(CartridgeItem.gameId(cartridge), cartridge.getName().getString());
     }
 
     @Override
@@ -115,7 +132,9 @@ public final class DockedConsoleBlockEntity extends BlockEntity implements Conso
     @Override
     protected void writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registries) {
         super.writeNbt(nbt, registries);
-        nbt.put("Cartridge", cartridge.encodeAllowEmpty(registries));
+        nbt.put(
+                hasInternalRom() ? "InternalRom" : "Cartridge",
+                cartridge.encodeAllowEmpty(registries));
         if (instance != null) nbt.putUuid("InstanceID", instance);
         if (tv != null) nbt.putLong("Tv", tv.asLong());
     }
@@ -123,7 +142,10 @@ public final class DockedConsoleBlockEntity extends BlockEntity implements Conso
     @Override
     protected void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registries) {
         super.readNbt(nbt, registries);
-        cartridge = ItemStack.fromNbtOrEmpty(registries, nbt.getCompound("Cartridge"));
+        cartridge =
+                ItemStack.fromNbtOrEmpty(
+                        registries,
+                        nbt.getCompound(hasInternalRom() ? "InternalRom" : "Cartridge"));
         instance = nbt.containsUuid("InstanceID") ? nbt.getUuid("InstanceID") : null;
         tv = nbt.contains("Tv", NbtElement.LONG_TYPE) ? BlockPos.fromLong(nbt.getLong("Tv")) : null;
     }

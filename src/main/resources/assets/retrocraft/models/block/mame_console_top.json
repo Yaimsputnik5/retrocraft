@@ -1,7 +1,7 @@
 {
   "credit": "Original Retrocraft pixel artwork; tools/generate_models.py",
   "textures": {
-    "atlas": "retrocraft:block/console/arcade_pacman_top",
+    "atlas": "retrocraft:block/console/arcade_generic_top",
     "particle": "#atlas"
   },
   "gui_light": "side",

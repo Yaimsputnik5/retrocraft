@@ -7,8 +7,10 @@ import org.lwjgl.glfw.GLFW;
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.cores.transfer.Downloads;
 import com.sammwy.retrocraft.roms.RomCatalog;
+import com.sammwy.retrocraft.server.block.ArcadeSkin;
 import com.sammwy.retrocraft.server.block.DockedConsoleBlock;
 import com.sammwy.retrocraft.server.console.*;
+import com.sammwy.retrocraft.server.item.ArcadeItem;
 import com.sammwy.retrocraft.server.item.HandheldConsoleItem;
 import com.sammwy.retrocraft.server.net.HybridPackets;
 import com.sammwy.retrocraft.server.net.Packets;
@@ -70,6 +72,11 @@ public final class RetrocraftClient implements ClientModInitializer {
                         ((DockedConsoleBlock) Registries.BLOCK.get(console.id())).entityType(),
                         DockedConsoleRenderer::new);
         }
+        FabricModelPredicateProviderRegistry.register(
+                Registries.ITEM.get(Identifier.of("retrocraft", "mame_internal_console")),
+                Identifier.of("retrocraft", "arcade_skin"),
+                (stack, world, entity, seed) ->
+                        ArcadeSkin.of(ArcadeItem.gameName(stack)).ordinal());
         for (var tv : ConsoleRegistry.televisions())
             BlockEntityRendererFactories.register(tv.entityType(), TvRenderer::new);
         ClientPlayNetworking.registerGlobalReceiver(
@@ -86,10 +93,7 @@ public final class RetrocraftClient implements ClientModInitializer {
                 HybridPackets.Demand.ID, (packet, context) -> EMULATION.demand(packet));
         HandledScreens.register(Retrocraft.CONSOLE_SCREEN, ConsoleInventoryScreen::new);
         ModelLoadingPlugin.register(
-                plugin ->
-                        DockedConsoleRenderer.TOP_MODELS
-                                .values()
-                                .forEach(id -> plugin.addModels(id)));
+                plugin -> DockedConsoleRenderer.arcadeModels().forEach(id -> plugin.addModels(id)));
         ClientPlayNetworking.registerGlobalReceiver(
                 Packets.Ui.ID,
                 (packet, context) -> {
@@ -212,6 +216,8 @@ public final class RetrocraftClient implements ClientModInitializer {
                                     client.player.hasPermissionLevel(2),
                                     client.world.getRegistryManager());
                     Retrocraft.CREATIVE_GROUP.updateEntries(display);
+                    Retrocraft.GAMES_GROUP.updateEntries(display);
+                    Retrocraft.ARCADES_GROUP.updateEntries(display);
                     ItemGroups.getSearchGroup().updateEntries(display);
                     if (client.currentScreen instanceof CreativeInventoryScreen screen)
                         screen.init(

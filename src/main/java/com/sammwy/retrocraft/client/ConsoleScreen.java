@@ -78,16 +78,18 @@ public final class ConsoleScreen extends AnimatedScreen {
                                     ClientPlayNetworking.send(
                                             Packets.Request.of(Packets.POWER_OFF, instance)),
                             Text.translatable("screen.retrocraft.power_off")));
-            x -= 16;
-            addDrawableChild(
-                    new IconButton(
-                            x,
-                            4,
-                            IconButton.Icon.EJECT,
-                            b ->
-                                    ClientPlayNetworking.send(
-                                            Packets.Request.of(Packets.EJECT, instance)),
-                            Text.translatable("screen.retrocraft.eject")));
+            if (!consoleId().equals("mame_internal_console")) {
+                x -= 16;
+                addDrawableChild(
+                        new IconButton(
+                                x,
+                                4,
+                                IconButton.Icon.EJECT,
+                                b ->
+                                        ClientPlayNetworking.send(
+                                                Packets.Request.of(Packets.EJECT, instance)),
+                                Text.translatable("screen.retrocraft.eject")));
+            }
         }
         if (!controller) {
             x -= 74;

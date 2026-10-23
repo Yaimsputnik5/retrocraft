@@ -1,6 +1,6 @@
 package com.sammwy.retrocraft.server.block;
 
-/** Shared model-space glass geometry for all three arcade cabinets. */
+/** Shared model-space glass geometry for all arcade cabinets. */
 public final class ArcadeCabinet {
     public static final float SCREEN_X0 = -1,
             SCREEN_X1 = 17,

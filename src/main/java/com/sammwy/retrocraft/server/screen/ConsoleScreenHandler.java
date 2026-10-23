@@ -71,12 +71,14 @@ public final class ConsoleScreenHandler extends ScreenHandler {
                 new Slot(cartridge, 0, 80, 35) {
                     @Override
                     public boolean canInsert(ItemStack stack) {
-                        return !powered() && stack.isOf(definition.cartridge());
+                        return !definition.isInternalArcade()
+                                && !powered()
+                                && stack.isOf(definition.cartridge());
                     }
 
                     @Override
                     public boolean canTakeItems(PlayerEntity player) {
-                        return !powered();
+                        return !definition.isInternalArcade() && !powered();
                     }
 
                     @Override
@@ -143,6 +145,7 @@ public final class ConsoleScreenHandler extends ScreenHandler {
                 }
             }
             case EJECT -> {
+                if (host.hasInternalRom()) return false;
                 if (powered()) manager.powerOff(host);
                 ItemStack ejected = cartridge.removeStack(0);
                 cartridge.markDirty();
@@ -165,6 +168,7 @@ public final class ConsoleScreenHandler extends ScreenHandler {
 
     @Override
     public void onSlotClick(int slot, int button, SlotActionType action, PlayerEntity player) {
+        if (slot == 0 && definition.isInternalArcade()) return;
         if (action == SlotActionType.SWAP && button == lockedSlot) return;
         if (slot > 0
                 && slot < slots.size()

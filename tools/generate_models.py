@@ -1694,6 +1694,24 @@ def generate():
     wii()
     for theme in THEMES:
         arcade(theme)
+    write_json("models/item/mame_internal_console.json", {
+        "parent": "retrocraft:item/mame_console",
+        "overrides": [
+            {"predicate": {"retrocraft:arcade_skin": i}, "model": "retrocraft:item/" + name}
+            for i, name in enumerate([
+                "mame_pacman_console", "mame_tetris_console", "mame_space_invaders_console",
+                "mame_donkey_kong_console", "mame_galaga_console", "mame_street_fighter_console",
+                "mame_metal_slug_console", "mame_mortal_kombat_console", "mame_bubble_bobble_console"
+            ], 1)
+        ]
+    })
+    for suffix in ("", "_on", "_top"):
+        write_json("models/block/mame_internal_console" + suffix + ".json", {
+            "parent": "retrocraft:block/mame_console" + suffix
+        })
+    write_json("blockstates/mame_internal_console.json", {
+        "variants": {"": {"model": "retrocraft:block/mame_console"}}
+    })
     for name in ("gb", "gbc", "gba", "nes"):
         handheld(name)
     for name in ("nes", "snes", "gb", "gbc", "gba", "n64", "megadrive", "mame"):
@@ -1701,7 +1719,7 @@ def generate():
     for name in ("ps1", "ps2", "dreamcast", "gamecube", "wii"):
         optical_disc(name)
     print(
-        "Generated 10 home consoles, 3 arcade variants, 4 handhelds and 13 game media models."
+        "Generated 10 home consoles, 10 arcade skins, 4 handhelds and 13 game media models."
     )
 
 

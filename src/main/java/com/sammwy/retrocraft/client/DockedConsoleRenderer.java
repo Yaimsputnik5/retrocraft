@@ -1,6 +1,10 @@
 package com.sammwy.retrocraft.client;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.joml.Matrix4f;
 
@@ -8,6 +12,7 @@ import com.sammwy.retrocraft.server.block.*;
 
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.render.*;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.block.entity.*;
@@ -26,12 +31,32 @@ import net.minecraft.util.math.random.Random;
 public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedConsoleBlockEntity> {
     /** Roof of the cabinet (model units above 32 cannot live in the block's own JSON model). */
     public static final Map<String, Identifier> TOP_MODELS =
-            Map.of(
-                    "mame_console", Identifier.of("retrocraft", "block/mame_console_top"),
-                    "mame_tetris_console",
-                            Identifier.of("retrocraft", "block/mame_tetris_console_top"),
-                    "mame_space_invaders_console",
-                            Identifier.of("retrocraft", "block/mame_space_invaders_console_top"));
+            Arrays.stream(ArcadeSkin.values())
+                    .collect(
+                            Collectors.toUnmodifiableMap(
+                                    ArcadeSkin::model,
+                                    skin ->
+                                            Identifier.of(
+                                                    "retrocraft",
+                                                    "block/" + skin.model() + "_top")));
+
+    public static List<Identifier> arcadeModels() {
+        return Arrays.stream(ArcadeSkin.values())
+                .flatMap(
+                        skin ->
+                                Stream.of(
+                                        TOP_MODELS.get(skin.model()),
+                                        Identifier.of("retrocraft", "block/" + skin.model()),
+                                        Identifier.of(
+                                                "retrocraft", "block/" + skin.model() + "_on")))
+                .toList();
+    }
+
+    private static String model(DockedConsoleBlockEntity console) {
+        return console.hasInternalRom()
+                ? ArcadeSkin.of(console.cartridge().getName().getString()).model()
+                : console.definition().id().getPath();
+    }
 
     private final ItemRenderer items;
 
@@ -59,7 +84,10 @@ public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedCo
                 };
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(rotation));
         if (console.definition().isArcade()) {
+            if (console.hasInternalRom()) casing(console, matrices, vertices, light, overlay);
             roof(console, matrices, vertices, overlay);
+            if (console.hasInternalRom() && model(console).equals(ArcadeSkin.GENERIC.model()))
+                marquee(console, matrices, vertices);
             crt(console, matrices, vertices);
         } else if (!console.cartridge().isEmpty()
                 && (id.equals("snes_console")
@@ -95,13 +123,71 @@ public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedCo
         matrices.pop();
     }
 
+    private static void casing(
+            DockedConsoleBlockEntity console,
+            MatrixStack matrices,
+            VertexConsumerProvider vertices,
+            int light,
+            int overlay) {
+        var client = MinecraftClient.getInstance();
+        var model =
+                client.getBakedModelManager()
+                        .getModel(
+                                Identifier.of(
+                                        "retrocraft",
+                                        "block/"
+                                                + model(console)
+                                                + (console.instance() == null ? "" : "_on")));
+        matrices.push();
+        matrices.translate(-.5, 0, -.5);
+        client.getBlockRenderManager()
+                .getModelRenderer()
+                .render(
+                        matrices.peek(),
+                        vertices.getBuffer(RenderLayer.getSolid()),
+                        console.getCachedState(),
+                        model,
+                        1,
+                        1,
+                        1,
+                        light,
+                        overlay);
+        matrices.pop();
+    }
+
+    /** Unrecognized sets still have a personalized marquee, without guessing another game's art. */
+    private static void marquee(
+            DockedConsoleBlockEntity console,
+            MatrixStack matrices,
+            VertexConsumerProvider vertices) {
+        var font = MinecraftClient.getInstance().textRenderer;
+        String name = console.cartridge().getName().getString();
+        if (name.isEmpty()) return;
+        float scale = Math.min(.008f, 1.1f / Math.max(1, font.getWidth(name)));
+        matrices.push();
+        matrices.translate(0, 35.5 / 16, 2.77 / 16 - .5);
+        matrices.scale(-scale, -scale, scale);
+        font.draw(
+                name,
+                -font.getWidth(name) / 2f,
+                -4,
+                0xffbcebf2,
+                false,
+                matrices.peek().getPositionMatrix(),
+                vertices,
+                TextRenderer.TextLayerType.NORMAL,
+                0xff141923,
+                0xf000f0);
+        matrices.pop();
+    }
+
     private static void roof(
             DockedConsoleBlockEntity console,
             MatrixStack matrices,
             VertexConsumerProvider vertices,
             int overlay) {
         var client = MinecraftClient.getInstance();
-        Identifier top = TOP_MODELS.get(console.definition().id().getPath());
+        Identifier top = TOP_MODELS.get(model(console));
         if (top == null) return;
         BakedModel model = client.getBakedModelManager().getModel(top);
         if (model == null || console.getWorld() == null) return;

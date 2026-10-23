@@ -1239,7 +1239,7 @@ public final class InstanceManager implements AutoCloseable {
                 ConsoleMenus.inventory(player, host);
             }
             case Packets.EJECT -> {
-                if (!session.host.canAccess(player)) return;
+                if (session.host.hasInternalRom() || !session.host.canAccess(player)) return;
                 ConsoleHost host = session.host;
                 powerOff(host);
                 ItemStack cartridge = host.cartridge();

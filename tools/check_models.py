@@ -116,6 +116,7 @@ def main():
                 "mame_console",
                 "mame_tetris_console",
                 "mame_space_invaders_console",
+                "mame_internal_console",
             ):
                 roof = resolve("retrocraft:block/" + name + "_top")["elements"]
                 es = es + [
@@ -142,8 +143,8 @@ def main():
                     f"{name}: selection bounds clip the casing: {bounds} / {[x0,z0,x1,z1,y1]}"
                 )
             checked += 1
-    if checked != 13:
-        raise ValueError(f"Expected outlines for 13 consoles, found {checked}")
+    if checked != 14:
+        raise ValueError(f"Expected outlines for 14 consoles, found {checked}")
     for name in ("ps1", "ps2", "dreamcast", "gamecube", "wii"):
         d = resolve("retrocraft:item/" + name)
         if any(
@@ -228,7 +229,7 @@ def main():
         if loot["pools"][0]["entries"][0]["name"] != "retrocraft:" + name:
             raise ValueError(f"{name}: breaking the skin drops a different cabinet")
     print(
-        f"Validated {count} models, all blockstates and textures, 4 live LCDs, 13 outlines, 5 colored disc rings and 3 arcade CRTs/joysticks/loot tables."
+        f"Validated {count} models, all blockstates and textures, 4 live LCDs, 14 outlines, 5 colored disc rings and 3 arcade CRTs/joysticks/loot tables."
     )
 
 

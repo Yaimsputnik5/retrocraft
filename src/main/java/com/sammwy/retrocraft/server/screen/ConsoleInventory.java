@@ -40,7 +40,7 @@ final class ConsoleInventory implements Inventory {
 
     @Override
     public ItemStack removeStack(int slot, int amount) {
-        if (slot != 0 || amount <= 0) return ItemStack.EMPTY;
+        if (host.hasInternalRom() || slot != 0 || amount <= 0) return ItemStack.EMPTY;
         ItemStack stack = host.cartridge();
         ItemStack removed = stack.split(amount);
         host.cartridge(stack.isEmpty() ? ItemStack.EMPTY : stack);
@@ -49,7 +49,7 @@ final class ConsoleInventory implements Inventory {
 
     @Override
     public ItemStack removeStack(int slot) {
-        if (slot != 0) return ItemStack.EMPTY;
+        if (host.hasInternalRom() || slot != 0) return ItemStack.EMPTY;
         ItemStack result = host.cartridge();
         host.cartridge(ItemStack.EMPTY);
         return result;
@@ -57,7 +57,7 @@ final class ConsoleInventory implements Inventory {
 
     @Override
     public void setStack(int slot, ItemStack stack) {
-        if (slot == 0) host.cartridge(stack);
+        if (!host.hasInternalRom() && slot == 0) host.cartridge(stack);
     }
 
     @Override

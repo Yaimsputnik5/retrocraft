@@ -1,0 +1,7 @@
+{
+  "parent": "retrocraft:block/mame_pacman_console",
+  "textures": {
+    "indicator": "retrocraft:block/console/led_red_on",
+    "screen": "retrocraft:block/console/crt_on"
+  }
+}

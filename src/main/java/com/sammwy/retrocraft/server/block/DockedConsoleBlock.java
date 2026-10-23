@@ -1,8 +1,11 @@
 package com.sammwy.retrocraft.server.block;
 
+import java.util.List;
+
 import com.mojang.serialization.MapCodec;
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.server.console.ConsoleDefinition;
+import com.sammwy.retrocraft.server.item.CartridgeItem;
 import com.sammwy.retrocraft.server.screen.ConsoleMenus;
 
 import net.minecraft.block.*;
@@ -10,6 +13,8 @@ import net.minecraft.block.entity.*;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemPlacementContext;
 import net.minecraft.item.ItemStack;
+import net.minecraft.loot.context.LootContextParameterSet;
+import net.minecraft.loot.context.LootContextParameters;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.state.StateManager;
 import net.minecraft.state.property.*;
@@ -63,7 +68,10 @@ public final class DockedConsoleBlock extends BlockWithEntity {
                     case "dreamcast_console" -> new double[] {1.35, 2.42, 14.4, 13.5, 4.22};
                     case "gamecube_console" -> new double[] {2.35, 2.36, 13.65, 15.2, 9.35};
                     case "wii_console" -> new double[] {5.15, 2.1, 10.85, 14.3, 14.39};
-                    case "mame_console", "mame_tetris_console", "mame_space_invaders_console" ->
+                    case "mame_console",
+                                    "mame_tetris_console",
+                                    "mame_space_invaders_console",
+                                    "mame_internal_console" ->
                             new double[] {-4.05, -3.15, 20.05, 19.05, 48};
                     default -> new double[] {1, 2, 15, 14, 5.8};
                 };
@@ -108,8 +116,31 @@ public final class DockedConsoleBlock extends BlockWithEntity {
     }
 
     @Override
+    public ItemStack getPickStack(WorldView world, BlockPos pos, BlockState state) {
+        if (definition.isInternalArcade()
+                && world.getBlockEntity(pos) instanceof DockedConsoleBlockEntity console
+                && !CartridgeItem.gameId(console.cartridge()).isEmpty())
+            return console.arcadeStack();
+        return super.getPickStack(world, pos, state);
+    }
+
+    @Override
+    protected List<ItemStack> getDroppedStacks(
+            BlockState state, LootContextParameterSet.Builder builder) {
+        var drops = super.getDroppedStacks(state, builder);
+        if (definition.isInternalArcade()
+                && builder.getOptional(LootContextParameters.BLOCK_ENTITY)
+                        instanceof DockedConsoleBlockEntity console
+                && !CartridgeItem.gameId(console.cartridge()).isEmpty()) {
+            for (int i = 0; i < drops.size(); i++)
+                if (drops.get(i).isOf(asItem())) drops.set(i, console.arcadeStack());
+        }
+        return drops;
+    }
+
+    @Override
     protected BlockRenderType getRenderType(BlockState state) {
-        return BlockRenderType.MODEL;
+        return definition.isInternalArcade() ? BlockRenderType.INVISIBLE : BlockRenderType.MODEL;
     }
 
     @Override
@@ -139,7 +170,8 @@ public final class DockedConsoleBlock extends BlockWithEntity {
             PlayerEntity player,
             Hand hand,
             BlockHitResult hit) {
-        if (stack.isOf(definition.cartridge())
+        if (!definition.isInternalArcade()
+                && stack.isOf(definition.cartridge())
                 && world.getBlockEntity(pos) instanceof DockedConsoleBlockEntity console
                 && console.instance() == null
                 && console.cartridge().isEmpty()) {
@@ -159,8 +191,13 @@ public final class DockedConsoleBlock extends BlockWithEntity {
                 && world.getBlockEntity(pos) instanceof DockedConsoleBlockEntity console) {
             if (!world.isClient && Retrocraft.instances() != null)
                 Retrocraft.instances().powerOff(console);
-            ItemScatterer.spawn(
-                    world, pos.getX() + .5, pos.getY() + .5, pos.getZ() + .5, console.cartridge());
+            if (!console.hasInternalRom())
+                ItemScatterer.spawn(
+                        world,
+                        pos.getX() + .5,
+                        pos.getY() + .5,
+                        pos.getZ() + .5,
+                        console.cartridge());
         }
         super.onStateReplaced(state, world, pos, newState, moved);
     }

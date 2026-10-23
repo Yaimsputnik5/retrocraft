@@ -44,17 +44,22 @@ public final class CartridgeItem extends Item {
         return stack;
     }
 
-    /** Second tooltip line: which consoles accept this cartridge. */
+    /** Compatibility heading followed by one line per supported console. */
     @Override
     public void appendTooltip(
             ItemStack stack, TooltipContext context, List<Text> tooltip, TooltipType type) {
         List<String> consoles = new ArrayList<>();
         for (var console : ConsoleRegistry.consoles())
-            if (console.cartridge() == this) consoles.add(console.displayName().getString());
-        if (!consoles.isEmpty())
+            if (console.cartridge() == this
+                    && !console.isInternalArcade()
+                    && !console.isLegacyArcade()) consoles.add(console.displayName().getString());
+        if (!consoles.isEmpty()) {
             tooltip.add(
-                    Text.translatable("tooltip.retrocraft.plays_on", String.join(", ", consoles))
+                    Text.translatable("tooltip.retrocraft.compatible_with")
                             .formatted(Formatting.GRAY));
+            for (String console : consoles)
+                tooltip.add(Text.literal("  " + console).formatted(Formatting.GRAY));
+        }
     }
 
     public static String gameId(ItemStack stack) {

@@ -15,6 +15,7 @@ import com.sammwy.retrocraft.server.block.*;
 import com.sammwy.retrocraft.server.config.ConfigKey;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
 import com.sammwy.retrocraft.server.console.*;
+import com.sammwy.retrocraft.server.item.ArcadeItem;
 import com.sammwy.retrocraft.server.item.CartridgeItem;
 import com.sammwy.retrocraft.server.net.HybridPackets;
 import com.sammwy.retrocraft.server.net.Packets;
@@ -42,7 +43,7 @@ public final class Retrocraft implements ModInitializer {
     public static CartridgeItem NES_CARTRIDGE;
     public static ConsoleDefinition NES_HANDHELD, NES_DOCKED;
     public static ScreenHandlerType<ConsoleScreenHandler> CONSOLE_SCREEN;
-    public static ItemGroup CREATIVE_GROUP;
+    public static ItemGroup CREATIVE_GROUP, GAMES_GROUP, ARCADES_GROUP;
     private static InstanceManager instances;
     private static volatile MinecraftServer bootServer;
 
@@ -96,7 +97,7 @@ public final class Retrocraft implements ModInitializer {
                 ConsoleType.DOCKED,
                 megadrive);
         registerSystem("n64", "Nintendo 64", ConsoleType.DOCKED);
-        var arcade = registerSystem("mame", "Pac-Man Arcade Machine", ConsoleType.ARCADE);
+        var arcade = registerSystem("mame", "Arcade Machine", ConsoleType.ARCADE);
         ConsoleRegistry.registerConsole(
                 Identifier.of("retrocraft", "mame_tetris_console"),
                 "Tetris Arcade Machine",
@@ -105,6 +106,11 @@ public final class Retrocraft implements ModInitializer {
         ConsoleRegistry.registerConsole(
                 Identifier.of("retrocraft", "mame_space_invaders_console"),
                 "Space Invaders Arcade Machine",
+                ConsoleType.ARCADE,
+                arcade);
+        ConsoleRegistry.registerConsole(
+                Identifier.of("retrocraft", "mame_internal_console"),
+                "Arcade Machine",
                 ConsoleType.ARCADE,
                 arcade);
         ConsoleRegistry.registerTelevisions();
@@ -118,9 +124,22 @@ public final class Retrocraft implements ModInitializer {
                                 .entries(
                                         (context, entries) -> {
                                             for (var console : ConsoleRegistry.consoles())
-                                                entries.add(Registries.ITEM.get(console.id()));
+                                                if (!console.isInternalArcade()
+                                                        && !console.isLegacyArcade())
+                                                    entries.add(Registries.ITEM.get(console.id()));
                                             for (var tv : ConsoleRegistry.televisions())
                                                 entries.add(tv.asItem());
+                                        })
+                                .build());
+        GAMES_GROUP =
+                Registry.register(
+                        Registries.ITEM_GROUP,
+                        Identifier.of("retrocraft", "games"),
+                        FabricItemGroup.builder()
+                                .displayName(Text.translatable("itemGroup.retrocraft.games"))
+                                .icon(() -> new ItemStack(NES_CARTRIDGE))
+                                .entries(
+                                        (context, entries) -> {
                                             for (var game : RomCatalog.clientEntries()) {
                                                 CartridgeItem cartridge =
                                                         ConsoleRegistry.cartridge(
@@ -130,6 +149,33 @@ public final class Retrocraft implements ModInitializer {
                                                             cartridge.game(
                                                                     game.gameId(), game.name()));
                                             }
+                                        })
+                                .build());
+        ARCADES_GROUP =
+                Registry.register(
+                        Registries.ITEM_GROUP,
+                        Identifier.of("retrocraft", "arcades"),
+                        FabricItemGroup.builder()
+                                .displayName(Text.translatable("itemGroup.retrocraft.arcades"))
+                                .icon(
+                                        () ->
+                                                new ItemStack(
+                                                        Registries.ITEM.get(
+                                                                Identifier.of(
+                                                                        "retrocraft",
+                                                                        "mame_internal_console"))))
+                                .entries(
+                                        (context, entries) -> {
+                                            var item =
+                                                    (ArcadeItem)
+                                                            Registries.ITEM.get(
+                                                                    Identifier.of(
+                                                                            "retrocraft",
+                                                                            "mame_internal_console"));
+                                            for (var game : RomCatalog.clientEntries())
+                                                if (game.cartridge().equals("retrocraft:mame"))
+                                                    entries.add(
+                                                            item.game(game.gameId(), game.name()));
                                         })
                                 .build());
         Packets.register();

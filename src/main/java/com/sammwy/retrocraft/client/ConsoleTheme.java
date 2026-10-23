@@ -42,7 +42,10 @@ record ConsoleTheme(String id, Bezel bezel, int shell, int bezelColor, int accen
             case "megadrive_console" -> tv(console, 0xff232428, 0xff4e8ad0);
             case "genesis_console" -> tv(console, 0xff232428, 0xffd4a947);
             case "n64_console" -> tv(console, 0xff44464c, 0xffc0392b);
-            case "mame_console", "mame_tetris_console", "mame_space_invaders_console" ->
+            case "mame_console",
+                            "mame_tetris_console",
+                            "mame_space_invaders_console",
+                            "mame_internal_console" ->
                     new ConsoleTheme(
                             console, Bezel.ARCADE, 0xff2a2831, 0xff0c0c10, 0xfff0b53a, CRT_OFF);
             case "ps1_console" -> tv(console, 0xffb8b8bc, 0xff4a4a5a);

@@ -11,6 +11,10 @@ import net.minecraft.util.math.Vec3d;
 public interface ConsoleHost {
     ConsoleDefinition definition();
 
+    default boolean hasInternalRom() {
+        return definition() != null && definition().isInternalArcade();
+    }
+
     ItemStack cartridge();
 
     void cartridge(ItemStack stack);

@@ -136,7 +136,10 @@ public record ControllerProfile(String id, List<Button> buttons, int sticks) {
                                 b(Action.R2, "Z")));
                 sticks = 1;
             }
-            case "mame_console", "mame_tetris_console", "mame_space_invaders_console" ->
+            case "mame_console",
+                            "mame_tetris_console",
+                            "mame_space_invaders_console",
+                            "mame_internal_console" ->
                     buttons.addAll(
                             List.of(
                                     b(Action.B, "1"),

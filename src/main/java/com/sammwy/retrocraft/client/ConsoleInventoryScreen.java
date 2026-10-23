@@ -63,7 +63,8 @@ public final class ConsoleInventoryScreen extends HandledScreen<ConsoleScreenHan
                                 ? "screen.retrocraft.power_off"
                                 : "screen.retrocraft.power_on"));
         power.active = handler.powered() || handler.getSlot(0).hasStack();
-        eject.active = handler.getSlot(0).hasStack();
+        eject.visible = !handler.definition().isInternalArcade();
+        eject.active = eject.visible && handler.getSlot(0).hasStack();
     }
 
     @Override
