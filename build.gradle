@@ -31,6 +31,15 @@ dependencies {
     modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
     compileOnly 'net.java.dev.jna:jna:5.15.0'
     workerLibraries 'net.java.dev.jna:jna:5.15.0'
+    // Hidden worker GL context for hardware-only cores such as Citra.
+    for (module in ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl']) {
+        implementation "org.lwjgl:${module}:3.3.3"
+        workerLibraries "org.lwjgl:${module}:3.3.3"
+        for (platform in ['natives-linux', 'natives-linux-arm64', 'natives-windows',
+                          'natives-windows-arm64', 'natives-macos', 'natives-macos-arm64']) {
+            workerLibraries "org.lwjgl:${module}:3.3.3:${platform}"
+        }
+    }
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testImplementation 'net.java.dev.jna:jna:5.15.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

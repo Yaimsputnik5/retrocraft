@@ -99,6 +99,43 @@ public interface Libretro extends Library {
         }
     }
 
+    interface Framebuffer extends Callback {
+        SizeT invoke();
+    }
+
+    interface ProcAddress extends Callback {
+        Pointer invoke(String name);
+    }
+
+    @Structure.FieldOrder({
+        "contextType",
+        "contextReset",
+        "getFramebuffer",
+        "getProcAddress",
+        "depth",
+        "stencil",
+        "bottomLeftOrigin",
+        "versionMajor",
+        "versionMinor",
+        "cacheContext",
+        "contextDestroy",
+        "debugContext"
+    })
+    class HardwareRender extends Structure {
+        public int contextType;
+        public Pointer contextReset, getFramebuffer, getProcAddress;
+        public byte depth, stencil, bottomLeftOrigin;
+        public int versionMajor, versionMinor;
+        public byte cacheContext;
+        public Pointer contextDestroy;
+        public byte debugContext;
+
+        public HardwareRender(Pointer data) {
+            super(data);
+            read();
+        }
+    }
+
     int retro_api_version();
 
     void retro_set_environment(Environment callback);

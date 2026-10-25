@@ -16,7 +16,14 @@ import net.minecraft.util.Identifier;
 public final class Packets {
     private static PadInput readPad(RegistryByteBuf b) {
         return new PadInput(
-                b.readUnsignedShort(), b.readShort(), b.readShort(), b.readShort(), b.readShort());
+                b.readUnsignedShort(),
+                b.readShort(),
+                b.readShort(),
+                b.readShort(),
+                b.readShort(),
+                b.readShort(),
+                b.readShort(),
+                b.readBoolean());
     }
 
     private static void writePad(RegistryByteBuf b, PadInput input) {
@@ -25,6 +32,9 @@ public final class Packets {
         b.writeShort(input.leftY());
         b.writeShort(input.rightX());
         b.writeShort(input.rightY());
+        b.writeShort(input.pointerX());
+        b.writeShort(input.pointerY());
+        b.writeBoolean(input.touching());
     }
 
     public static final int CLOSE = 1,

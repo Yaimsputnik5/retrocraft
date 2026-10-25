@@ -4,6 +4,7 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -94,7 +95,11 @@ public final class WorkerProcess implements AutoCloseable {
             child =
                     new ProcessBuilder(
                                     java.toString(),
-                                    "-Xms16m",
+                                    System.getProperty("os.name")
+                                                    .toLowerCase(Locale.ROOT)
+                                                    .contains("mac")
+                                            ? "-XstartOnFirstThread"
+                                            : "-Xms16m",
                                     "-Xmx96m",
                                     "-jar",
                                     workerJar.toAbsolutePath().toString(),

@@ -78,6 +78,12 @@ public final class KnownCores {
                             "mgba",
                             new Core("mgba", "mgba", true, "Game Boy Advance", false, true)),
                     Map.entry(
+                            "desmume",
+                            new Core("desmume", "desmume", false, "Nintendo DS", false, true)),
+                    Map.entry(
+                            "citra",
+                            new Core("citra", "citra", false, "Nintendo 3DS", false, false)),
+                    Map.entry(
                             "genesis_plus_gx",
                             new Core(
                                     "genesis_plus_gx",
@@ -135,6 +141,8 @@ public final class KnownCores {
                 Map.entry("retrocraft:gb", "gambatte"),
                 Map.entry("retrocraft:gbc", "gambatte"),
                 Map.entry("retrocraft:gba", "mgba"),
+                Map.entry("retrocraft:nds", "desmume"),
+                Map.entry("retrocraft:3ds", "citra"),
                 Map.entry("retrocraft:megadrive", "genesis_plus_gx"),
                 Map.entry("retrocraft:n64", "parallel_n64"),
                 Map.entry("retrocraft:mame", "mame2003"),

@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import tempfile
 from pathlib import Path
 
@@ -1089,6 +1090,289 @@ def handheld(name):
     )
 
 
+def foldable_pose():
+    """Read the renderer's hinge so baked geometry and live LCDs cannot drift apart."""
+    source = (
+        ROOT / "src/main/java/com/sammwy/retrocraft/client/FoldablePose.java"
+    ).read_text()
+    values = {
+        key: float(value)
+        for key, value in re.findall(
+            r"(HINGE_[XYZ]|BASE_ANGLE|LID_ANGLE)\s*=\s*(-?[\d.]+)f", source
+        )
+    }
+    origin = [values["HINGE_" + axis] for axis in "XYZ"]
+    return {
+        half: {"origin": origin, "axis": "x", "angle": values[half.upper() + "_ANGLE"]}
+        for half in ("base", "lid")
+    }
+
+
+def foldable(name):
+    """Open AGS-001, USG-001 and CTR-001, with a raised lid and a forward-tilted base."""
+    m = Model(name + "_handheld", "item", name + "_handheld")
+    m.display = item_display()
+    pose = foldable_pose()
+    sp, ds = name == "gba_sp", name == "nds"
+    shell = "#8294b1" if sp else "#d4d6dc" if ds else "#258e9e"
+    edge = "#647795" if sp else "#a9adb5" if ds else "#176773"
+    inner = "#9caac0" if sp else "#e1e2e4" if ds else "#2b9eaa"
+    bezel = "#30343e" if sp else "#4a4d54" if ds else "#15191e"
+    controls = "#c2c8d0" if sp else "#a9adb6" if ds else "#1a444e"
+    x0, x1 = (3.5, 12.5) if sp else (1.1, 14.9)
+    # The seam is a separate recessed strip, not a texture painted on the face.
+    m.box("lower rear housing", [x0, 0.8, 7.1], [x1, 7.8, 8.1], edge)
+    m.box("lower shell seam", [x0 - 0.04, 1, 8.1], [x1 + 0.04, 7.7, 8.22], DARK)
+    m.box("lower front housing", [x0, 0.8, 8.22], [x1, 7.8, 8.95], inner)
+    m.box("lower stepped edge", [x0 + 0.25, 0.55, 7.25], [x1 - 0.25, 0.8, 8.8], shell)
+    m.box("left shoulder", [x0 - 0.12, 7.1, 7.3], [x0 + 1.75, 7.9, 8.45], controls)
+    m.box("right shoulder", [x1 - 1.75, 7.1, 7.3], [x1 + 0.12, 7.9, 8.45], controls)
+    hinge_start = len(m.elements)
+    for hx0, hx1 in ((x0 + 0.25, x0 + 2), (x1 - 2, x1 - 0.25)):
+        m.box("hinge barrel", [hx0, 7.6, 7.35], [hx1, 8.45, 8.85], shell)
+        m.box(
+            "hinge highlight", [hx0 + 0.15, 8.15, 8.2], [hx1 - 0.15, 8.35, 8.9], inner
+        )
+        m.box(
+            "hinge end seam", [hx0 + 0.18, 7.65, 8.85], [hx0 + 0.28, 8.25, 8.92], edge
+        )
+    m.box("center hinge", [x0 + 2.1, 7.8, 7.6], [x1 - 2.1, 8.2, 8.65], edge)
+    # Model and live video use the same pivot. All lid parts are rotated as one assembly.
+    lid_start = len(m.elements)
+    m.box("lid back shell", [x0, 8.25, 7.4], [x1, 15.5, 8.05], shell)
+    m.box("lid outer seam", [x0 + 0.05, 8.3, 8.05], [x1 - 0.05, 15.45, 8.15], edge)
+    m.box(
+        "lid inner shell",
+        [x0 + 0.12, 8.38, 8.15],
+        [x1 - 0.12, 15.38, 8.45],
+        inner if ds else bezel if not sp else shell,
+    )
+    m.box("lid top step", [x0 + 0.3, 15.5, 7.55], [x1 - 0.3, 15.7, 8.25], shell)
+    top = (
+        (4.4, 11.6, 9.4, 14.2, 8.72)
+        if sp
+        else (4.4, 11.6, 9.15, 14.55, 8.72) if ds else (3, 13, 8.95, 14.95, 8.72)
+    )
+    m.box(
+        "upper display bezel",
+        [top[0] - 0.45, top[2] - 0.65, 8.45],
+        [top[1] + 0.45, top[3] + 0.35, 8.6],
+        bezel,
+    )
+    m.box(
+        "LCD glass",
+        [top[0], top[2], 8.6],
+        [top[1], top[3], top[4]],
+        "#screen",
+        shade=False,
+    )
+    if sp:
+        m.south(
+            "SP wordmark",
+            4.1,
+            11.9,
+            8.65,
+            9.22,
+            8.73,
+            label(7.8, 0.57, "GAME BOY ADVANCE SP", bezel, "#d5d8df"),
+            bezel,
+        )
+    else:
+        # Stereo speaker pinholes on the DS; the 3DS has black upper glass and an inner camera.
+        for sx in (x0 + 0.65, x1 - 1.45):
+            speaker = tile(0.8, 2, inner if ds else bezel)
+            d = ImageDraw.Draw(speaker)
+            for yy in range(1, speaker.height - 1, 2):
+                for xx in (1, 3):
+                    if xx < speaker.width:
+                        d.point((xx, yy), fill="#343840" if ds else "#42464e")
+            m.south(
+                "stereo speaker",
+                sx,
+                sx + 0.8,
+                11,
+                13,
+                8.49,
+                speaker,
+                inner if ds else bezel,
+            )
+        if not ds:
+            button(m, "inner camera", 8, 15.18, 8.48, 0.15, BLACK)
+            m.south("3D slider rail", 14.25, 14.45, 12.8, 14.1, 8.51, BLACK, bezel)
+            m.box("3D slider", [14.2, 13.45, 8.52], [14.5, 13.75, 8.7], "#68c2c9")
+            m.south(
+                "3D mark",
+                13.8,
+                14.65,
+                14.25,
+                14.7,
+                8.51,
+                label(0.85, 0.45, "3D", bezel, "#6cbfc4"),
+                bezel,
+            )
+    for sx, sy in (
+        (x0 + 0.35, 8.7),
+        (x1 - 0.6, 8.7),
+        (x0 + 0.35, 15.02),
+        (x1 - 0.6, 15.02),
+    ):
+        m.box("lid rubber bumper", [sx, sy, 8.46], [sx + 0.24, sy + 0.24, 8.57], edge)
+    for element in m.elements[lid_start:]:
+        element["rotation"] = pose["lid"]
+    lid_end = len(m.elements)
+    if sp:
+        dpad(m, 5.5, 5.9, 9, 1.85, controls)
+        button(m, "B button", 9.4, 5.45, 9, 0.48, controls)
+        button(m, "A button", 11, 6.2, 9, 0.48, controls)
+        button(m, "backlight button", 8, 7.1, 9, 0.22, controls)
+        for x, title in ((6.9, "SELECT"), (9.1, "START")):
+            button(m, title, x, 2.2, 9, 0.25, controls)
+            m.south(
+                title + " mark",
+                x - 0.8,
+                x + 0.8,
+                1.4,
+                1.85,
+                9,
+                label(1.6, 0.45, title, inner, "#4b5b73"),
+                inner,
+            )
+        for i in range(4):
+            m.south(
+                "speaker slot", 7 + i * 0.5, 7.2 + i * 0.5, 3.4, 4.4, 9, edge, inner
+            )
+    else:
+        bottom = (4.4, 11.6, 1.9, 7.3, 9.18) if ds else (4, 12, 1.35, 7.35, 9.18)
+        m.box(
+            "touchscreen border",
+            [bottom[0] - 0.32, bottom[2] - 0.32, 8.95],
+            [bottom[1] + 0.32, bottom[3] + 0.32, 9.1],
+            bezel,
+        )
+        m.box(
+            "touch LCD glass",
+            [bottom[0], bottom[2], 9.1],
+            [bottom[1], bottom[3], bottom[4]],
+            "#screen",
+            shade=False,
+        )
+        dpad(m, 2.65, 4.9 if ds else 3.3, 9, 1.65, controls)
+        if not ds:
+            button(m, "circle pad well", 2.65, 6.4, 8.98, 0.78, edge)
+            button(m, "circle pad", 2.65, 6.4, 9.03, 0.61, "#b4c1c6")
+        for title, x, y in (
+            ("Y", 12.75, 5.5),
+            ("A", 14.05, 5.5),
+            ("X", 13.4, 6.2),
+            ("B", 13.4, 4.8),
+        ):
+            button(m, title + " button", x, y, 9, 0.34, controls)
+            m.south(
+                title + " glyph",
+                x - 0.17,
+                x + 0.17,
+                y - 0.22,
+                y + 0.22,
+                9.3,
+                label(0.34, 0.44, title, controls, "#e2e5e6"),
+                controls,
+            )
+        if ds:
+            for y, title in ((3.3, "START"), (2.35, "SELECT")):
+                button(m, title, 12.65, y, 9, 0.22, controls)
+                m.south(
+                    title + " mark",
+                    13,
+                    14.55,
+                    y - 0.2,
+                    y + 0.2,
+                    9,
+                    label(1.55, 0.4, title, inner, "#656975"),
+                    inner,
+                )
+            m.south("microphone", 3.3, 3.65, 7.25, 7.45, 9, BLACK, inner)
+        else:
+            for x, title in ((5.1, "SELECT"), (8, "HOME"), (10.9, "START")):
+                m.box(
+                    title + " button", [x - 0.72, 0.72, 9], [x + 0.72, 1.06, 9.16], edge
+                )
+                m.south(
+                    title + " mark",
+                    x - 0.7,
+                    x + 0.7,
+                    0.73,
+                    1.04,
+                    9.18,
+                    label(1.4, 0.31, title, edge, "#9cd1d4"),
+                    edge,
+                )
+            m.box("wireless slider", [14.87, 2.25, 7.65], [15.06, 3.1, 8.1], edge)
+    m.led([x1 - 0.4, 7.8, 8.86], [x1 - 0.15, 8.1, 8.94], "green")
+    # Recognizable underside: battery panel, four screws, cartridge and stylus slots.
+    m.box("battery panel", [x0 + 0.7, 1.5, 7.03], [x1 - 0.7, 6.55, 7.12], shell)
+    for x in (x0 + 0.9, x1 - 1.1):
+        for y in (1.75, 6.1):
+            m.box("rear screw", [x, y, 6.99], [x + 0.18, y + 0.18, 7.04], DARK)
+    m.box("game slot opening", [5.1, 0.48, 7.45], [10.9, 0.62, 8.35], BLACK)
+    for x in range(6, 10):
+        m.box("game slot contacts", [x, 0.46, 7.75], [x + 0.3, 0.5, 8.15], GOLD)
+    m.box("charging socket", [7.4, 7.72, 7.05], [8.6, 7.95, 7.38], BLACK)
+    if not sp:
+        m.box("stylus slot", [x1 - 0.35, 1.5, 7.02], [x1 - 0.13, 6.7, 7.12], BLACK)
+        m.box("stylus cap", [x1 - 0.4, 6.65, 7], [x1 - 0.08, 7.05, 7.2], edge)
+    # The hinge stays on its axis; every base part, including its LCD, moves together.
+    for element in m.elements[:hinge_start] + m.elements[lid_end:]:
+        element["rotation"] = pose["base"]
+    m.textures["screen"] = "retrocraft:block/console/lcd_color_off"
+    m.overrides = [
+        {
+            "predicate": {"retrocraft:powered": 1},
+            "model": f"retrocraft:item/{name}_handheld_on",
+        }
+    ]
+    m.save()
+    write_json(
+        f"models/item/{name}_handheld_on.json",
+        {
+            "parent": f"retrocraft:item/{name}_handheld",
+            "textures": {
+                "screen": "retrocraft:block/console/lcd_color_on",
+                "indicator": "retrocraft:block/console/led_green_on",
+            },
+        },
+    )
+
+
+def ds_cartridge(name):
+    m = Model(name, "item", "media_" + name)
+    m.display = item_display()
+    shell = "#3a3d44" if name == "nds" else "#e0e2e4"
+    m.box("game card shell", [4.2, 3.5, 7.5], [11.8, 12, 8.5], shell)
+    m.box("card top step", [4.5, 12, 7.5], [11.8, 12.3, 8.5], shell)
+    if name == "3ds":
+        m.box("3DS identification tab", [11.8, 10.9, 7.5], [12.45, 12.3, 8.5], shell)
+    m.south("label recess", 4.65, 11.35, 5.7, 11.65, 8.52, DARK, shell)
+    m.south(
+        "game label",
+        4.85,
+        11.15,
+        5.9,
+        11.45,
+        8.56,
+        game_label(
+            6.3,
+            5.55,
+            "DS" if name == "nds" else "3DS",
+            "#4e596b" if name == "nds" else "#b13b44",
+        ),
+        shell,
+    )
+    for x in range(5, 12):
+        m.box("gold contact", [x, 3.8, 7.45], [x + 0.55, 5.8, 7.51], GOLD)
+        m.box("contact divider", [x - 0.12, 3.55, 7.38], [x, 5.85, 7.52], shell)
+    m.save()
+
+
 def game_label(w, h, platform, accent):
     im = tile(w, h, "#e6dfc8")
     d = ImageDraw.Draw(im)
@@ -1718,12 +2002,16 @@ def generate():
     })
     for name in ("gb", "gbc", "gba", "nes"):
         handheld(name)
+    for name in ("gba_sp", "nds", "3ds"):
+        foldable(name)
+    for name in ("nds", "3ds"):
+        ds_cartridge(name)
     for name in ("nes", "snes", "gb", "gbc", "gba", "n64", "megadrive", "mame"):
         cartridge(name)
     for name in ("ps1", "ps2", "dreamcast", "gamecube", "wii"):
         optical_disc(name)
     print(
-        "Generated 10 home consoles, 10 arcade skins, 4 handhelds and 13 game media models."
+        "Generated 10 home consoles, 10 arcade skins, 7 handhelds and 15 game media models."
     )
 
 

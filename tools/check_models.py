@@ -7,6 +7,8 @@ from pathlib import Path
 
 from PIL import Image, ImageColor
 
+from generate_models import foldable_pose
+
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "src/main/resources/assets"
 MODELS = ASSETS / "retrocraft/models"
@@ -81,12 +83,20 @@ def main():
         ROOT / "src/main/java/com/sammwy/retrocraft/client/Thumbnails.java"
     ).read_text()
     screens = re.findall(r'"(\w+_handheld)", new float\[\] \{([^}]+)\}', java)
-    if len(screens) != 4:
-        raise ValueError("Could not find all four live LCD rectangles")
-    for name, values in screens:
+    if len(screens) != 9:
+        raise ValueError("Could not find all nine live LCD rectangles")
+    pose = foldable_pose()
+    opening = 180 - abs(pose["lid"]["angle"] - pose["base"]["angle"])
+    if not 110 <= opening <= 135 or not pose["base"]["angle"] < 0 < pose["lid"]["angle"]:
+        raise ValueError("Foldable pose must form a natural opening toward the viewer")
+    for i, (name, values) in enumerate(screens):
         rect = [float(v.strip().removesuffix("f")) for v in values.split(",")]
         d = resolve("retrocraft:item/" + name)
-        glass = next(e for e in d["elements"] if e.get("name") == "LCD glass")
+        glass = next(e for e in d["elements"] if e.get("name") == ("LCD glass" if i < 7 else "touch LCD glass"))
+        if name in ("gba_sp_handheld", "nds_handheld", "3ds_handheld"):
+            half = "lid" if i < 7 else "base"
+            if glass.get("rotation") != pose[half]:
+                raise ValueError(f"{name}: live {half} rotation does not match its glass")
         a, b = glass["from"], glass["to"]
         expected = [a[0], b[0], a[1], b[1], b[2]]
         if any(abs(x - y) > 0.0001 for x, y in zip(rect, expected)):
@@ -229,7 +239,7 @@ def main():
         if loot["pools"][0]["entries"][0]["name"] != "retrocraft:" + name:
             raise ValueError(f"{name}: breaking the skin drops a different cabinet")
     print(
-        f"Validated {count} models, all blockstates and textures, 4 live LCDs, 14 outlines, 5 colored disc rings and 3 arcade CRTs/joysticks/loot tables."
+        f"Validated {count} models, all blockstates and textures, 9 live LCDs (including 3 tilted lids and 2 touch screens at a {opening:g}-degree opening), 14 outlines, 5 colored disc rings and 3 arcade CRTs/joysticks/loot tables."
     )
 
 

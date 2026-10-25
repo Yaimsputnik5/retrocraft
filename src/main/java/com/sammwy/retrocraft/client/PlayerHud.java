@@ -159,14 +159,17 @@ public final class PlayerHud {
                 cols = 5;
                 rows = 3;
             }
-            case "snes_console" -> {
+            case "snes_console", "nds_handheld", "3ds_handheld" -> {
                 face.add(new Cell(by.get(1 << 9), 1, 0));
                 face.add(new Cell(by.get(1 << 1), 0, 1));
                 face.add(new Cell(by.get(1 << 8), 2, 1));
                 face.add(new Cell(by.get(1 << 0), 1, 2));
                 face.add(new Cell(by.get(1 << 10), 3, 0));
                 face.add(new Cell(by.get(1 << 11), 3, 2));
-                cols = 4;
+                face.add(new Cell(by.get(1 << 12), 4, 0));
+                face.add(new Cell(by.get(1 << 13), 4, 2));
+                face.add(new Cell(by.get(1 << 14), 4, 1));
+                cols = theme.id().equals("snes_console") ? 4 : 5;
                 rows = 3;
             }
             case "megadrive_console", "genesis_console" -> {
@@ -188,7 +191,7 @@ public final class PlayerHud {
                 cols = 2;
                 rows = 3;
             }
-            case "gba_handheld" -> {
+            case "gba_handheld", "gba_sp_handheld" -> {
                 face.add(new Cell(by.get(1 << 10), 0, 0));
                 face.add(new Cell(by.get(1 << 11), 1, 0));
                 face.add(new Cell(by.get(1 << 0), 0, 1));

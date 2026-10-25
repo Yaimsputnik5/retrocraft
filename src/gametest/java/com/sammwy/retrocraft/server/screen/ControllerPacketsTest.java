@@ -17,14 +17,15 @@ public class ControllerPacketsTest implements FabricGameTest {
     @GameTest(templateName = EMPTY_STRUCTURE)
     public void virtualInputsRoundTripWithoutKeyboardAssignments(TestContext context) {
         var input =
-                new PadInput(0xf001, (short) -32767, (short) 1234, (short) 32767, (short) -4321);
+                new PadInput(0xf001, (short) -32767, (short) 1234, (short) 32767, (short) -4321)
+                        .withTouch((short) -12345, (short) 23456, true);
         var request = new Packets.Request(Packets.INPUT, UUID.randomUUID(), input, 42);
         var buffer = new RegistryByteBuf(Unpooled.buffer(), DynamicRegistryManager.EMPTY);
         try {
             Packets.Request.CODEC.encode(buffer, request);
             context.assertTrue(
-                    buffer.readableBytes() == 28,
-                    "Input sends only action, instance, virtual buttons/axes and video acknowledgement");
+                    buffer.readableBytes() == 33,
+                    "Input sends only action, instance, virtual buttons/axes/stylus and video acknowledgement");
             context.assertTrue(
                     request.equals(Packets.Request.CODEC.decode(buffer)),
                     "All buttons and both sticks must survive the client/server codec");

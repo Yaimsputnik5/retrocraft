@@ -15,6 +15,8 @@ public final class RomFormats {
         formats.put("gb", DiscoveryStrategy.extension("gb", "dmg"));
         formats.put("gbc", DiscoveryStrategy.extension("gbc", "cgb"));
         formats.put("gba", DiscoveryStrategy.extension("gba", "agb"));
+        formats.put("nds", DiscoveryStrategy.extension("nds", "ids"));
+        formats.put("3ds", DiscoveryStrategy.extension("3ds", "3dsx", "cci", "cxi", "app"));
         formats.put(
                 "megadrive",
                 DiscoveryStrategy.extension("md", "gen", "smd")

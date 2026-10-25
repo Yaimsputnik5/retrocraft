@@ -21,7 +21,7 @@ public final class WorkerMain {
     private final PadInput[] input = new PadInput[WorkerProtocol.PORTS];
     private final int[] controllerDevices = {1, 1, 1, 1};
     private boolean shutdown;
-    private boolean hardwareRequested;
+    private final HardwareVideo hardware = new HardwareVideo();
     private boolean captureVideo = true, captureAudio = true;
     private FrameCodec.Frame frame = new FrameCodec.Frame(256, 240, new byte[256 * 240 * 3]);
     private final VideoConverter converter = new VideoConverter();
@@ -130,6 +130,9 @@ public final class WorkerMain {
             }
             if (core.retro_load_game(game) == 0) throw new IOException("Core rejected ROM");
             loaded = true;
+            Libretro.AvInfo initialAv = new Libretro.AvInfo();
+            core.retro_get_system_av_info(initialAv);
+            hardware.start(initialAv.geometry.baseWidth, initialAv.geometry.baseHeight);
             for (int port = 0; port < input.length; port++)
                 core.retro_set_controller_port_device(port, controllerDevices[port]);
             if (forceAspect > 0 || arcade) {
@@ -203,6 +206,7 @@ public final class WorkerMain {
             }
         } finally {
             if (loaded) core.retro_unload_game();
+            hardware.close();
             if (initialized) core.retro_deinit();
             if (content != null) content.close();
         }
@@ -238,12 +242,10 @@ public final class WorkerMain {
             case 7 -> shutdown = true;
             case 9 -> data.setPointer(0, systemDir); // GET_SYSTEM_DIRECTORY: BIOS/firmware tree
             case 14 -> {
-                if (!hardwareRequested)
-                    System.err.println(
-                            "Hardware rendering requested but not supported by the worker");
-                hardwareRequested = true;
-                return 0;
+                return (byte) (hardware.configure(data) ? 1 : 0);
             }
+            case 44 -> {} // SET_HW_SHARED_CONTEXT: the worker context is private to this core
+            case 56 -> data.setInt(0, 3); // Prefer desktop OpenGL core
             case 31 -> data.setPointer(0, directory); // GET_SAVE_DIRECTORY
             case 10 -> {
                 int format = data.getInt(0);
@@ -251,7 +253,8 @@ public final class WorkerMain {
                 pixelFormat = format;
             }
             case 11, 18, 37 -> {}
-            case 24 -> data.setLong(0, (1L << 1) | (1L << 5)); // joypad + analog
+            case 24 ->
+                    data.setLong(0, (1L << 1) | (1L << 5) | (1L << 6)); // joypad, analog, pointer
             case 35 -> controllerInfo(data);
             case 27 -> data.setPointer(0, logPointer); // RETRO_ENVIRONMENT_GET_LOG_INTERFACE
             case 15 -> {
@@ -280,6 +283,18 @@ public final class WorkerMain {
                                     case "parallel-n64-aspectratiohint" -> "normal";
                                     case "parallel-n64-screensize" -> "640x480";
                                     case "pcsx2_renderer" -> "Software (SW)";
+                                    case "desmume_opengl_mode" -> "disabled";
+                                    case "desmume_screens_layout" -> "top/bottom";
+                                    case "desmume_screens_gap" -> "0";
+                                    case "desmume_internal_resolution" -> "256x192";
+                                    case "desmume_pointer_mouse" -> "enabled";
+                                    case "desmume_pointer_type" -> "touch";
+                                    case "citra_layout_option" -> "Default Top-Bottom Screen";
+                                    case "citra_swap_screen" -> "Top";
+                                    case "citra_resolution_factor" -> "1x (Native)";
+                                    case "citra_analog_function" -> "C-Stick";
+                                    case "citra_touch_touchscreen" -> "enabled";
+                                    case "citra_mouse_touchscreen" -> "disabled";
                                     default -> choices.split("\\|", 2)[0];
                                 };
                         if (!Arrays.asList(choices.split("\\|")).contains(selected))
@@ -331,8 +346,10 @@ public final class WorkerMain {
 
     private void video(Pointer pixels, int width, int height, Libretro.SizeT pitch) {
         if (!captureVideo || pixels == null) return; // libretro frame duplication
-        if (Pointer.nativeValue(pixels) == -1L)
-            throw new IllegalStateException("Hardware frame requires a graphics context");
+        if (Pointer.nativeValue(pixels) == -1L) {
+            frame = hardware.read(width, height);
+            return;
+        }
         frame =
                 converter.convert(
                         pixels, width, height, pitch.longValue(), pixelFormat, aspectRatio);

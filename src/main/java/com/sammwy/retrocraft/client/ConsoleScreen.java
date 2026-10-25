@@ -4,6 +4,9 @@ import java.util.UUID;
 
 import org.lwjgl.glfw.GLFW;
 
+import com.sammwy.retrocraft.Retrocraft;
+import com.sammwy.retrocraft.client.config.DualScreenLayout;
+import com.sammwy.retrocraft.cores.stream.DualScreen;
 import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.server.net.Packets;
 
@@ -27,6 +30,10 @@ public final class ConsoleScreen extends AnimatedScreen {
     private final ItemStack consoleStack;
     private boolean hudWasHidden, hudHiddenByUs;
     private IconButton zoomOut, zoomIn;
+    private final DualScreen dualScreen;
+    private DualScreenLayout layout;
+    private boolean touchHeld;
+    private double touchX, touchY;
 
     ConsoleScreen(Packets.Ui packet) {
         super(Text.literal(packet.title()));
@@ -36,6 +43,16 @@ public final class ConsoleScreen extends AnimatedScreen {
         inWorld = packet.inWorld();
         screen = packet.screen();
         theme = ConsoleTheme.of(packet.console());
+        dualScreen = DualScreen.of(packet.console());
+        if (dualScreen != null) {
+            layout =
+                    DualScreenLayout.parse(
+                            dualScreen == DualScreen.NDS
+                                    ? ClientPreferences.get().ndsLayout
+                                    : ClientPreferences.get().threedsLayout);
+            frameWidth = dualScreen.width;
+            frameHeight = dualScreen.screenHeight * 2;
+        }
         consoleName = Text.translatable("console.retrocraft." + packet.console());
         displayTitle = Text.empty().append(consoleName).append(" · ").append(title);
         consoleStack =
@@ -57,6 +74,7 @@ public final class ConsoleScreen extends AnimatedScreen {
 
     @Override
     protected void init() {
+        touchHeld = false;
         if (client != null && !hudHiddenByUs) {
             hudWasHidden = client.options.hudHidden;
             client.options.hudHidden = true;
@@ -90,6 +108,31 @@ public final class ConsoleScreen extends AnimatedScreen {
                                                 Packets.Request.of(Packets.EJECT, instance)),
                                 Text.translatable("screen.retrocraft.eject")));
             }
+        }
+        if (dualScreen != null) {
+            x -= 132;
+            addDrawableChild(
+                    new SettingsWidgets.Flat(
+                            x,
+                            4,
+                            128,
+                            14,
+                            Text.translatable("screen.retrocraft.layout." + layout.id()),
+                            () -> {
+                                touchHeld = false;
+                                layout = layout.next();
+                                try {
+                                    ClientPreferences.apply(
+                                            java.util.Map.of(
+                                                    dualScreen == DualScreen.NDS
+                                                            ? "ndsLayout"
+                                                            : "threedsLayout",
+                                                    layout.id()));
+                                } catch (java.io.IOException ex) {
+                                    Retrocraft.LOG.warn("Cannot save screen layout", ex);
+                                }
+                                clearAndInit();
+                            }));
         }
         if (focused) {
             // Camera zoom group: [-] pct [+], sitting left of the power/eject cluster.
@@ -225,39 +268,180 @@ public final class ConsoleScreen extends AnimatedScreen {
                     17,
                     0xffa8b0c0);
 
-        // The video takes all the room between the top strip and the key legend, keeping its aspect
-        // ratio, inside a slim console bezel.
-        Bezel bezel = Bezel.of(theme.bezel());
-        int areaTop = HEADER + MARGIN,
-                areaHeight = height - PlayerHud.reservedHeight(theme) - MARGIN - areaTop;
-        int availW = width - 2 * MARGIN - bezel.left - bezel.right,
-                availH = areaHeight - bezel.top - bezel.bottom;
-        float fit = Math.min((float) availW / frameWidth, (float) availH / frameHeight);
-        int w = Math.max(1, Math.round(frameWidth * fit)),
-                h = Math.max(1, Math.round(frameHeight * fit));
-        int x = (width - bezel.left - bezel.right - w) / 2 + bezel.left,
-                y = areaTop + (areaHeight - bezel.top - bezel.bottom - h) / 2 + bezel.top;
-        drawBezel(context, bezel, x, y, w, h);
-        if (textureId != null)
-            context.drawTexture(
-                    textureId, x, y, w, h, 0, 0, frameWidth, frameHeight, frameWidth, frameHeight);
-        else {
-            context.fill(x, y, x + w, y + h, theme.screenOff());
-            context.drawCenteredTextWithShadow(
-                    textRenderer,
-                    Text.translatable("screen.retrocraft.connecting"),
-                    x + w / 2,
-                    y + h / 2 - 4,
-                    theme.handheld() ? 0xff1f2e1a : 0xffd8dde6);
+        if (dualScreen != null) {
+            var pair = dualRects();
+            drawDualScreen(context, pair.top(), false);
+            drawDualScreen(context, pair.bottom(), true);
+            if (controller && pair.bottom().contains(mouseX, mouseY)) {
+                int color = touchHeld ? 0xff72e5d4 : 0xffe9eef2;
+                context.fill(mouseX - 3, mouseY, mouseX + 4, mouseY + 1, color);
+                context.fill(mouseX, mouseY - 3, mouseX + 1, mouseY + 4, color);
+            }
+        } else {
+            // The video takes all the room between the top strip and the key legend, keeping its
+            // aspect
+            // ratio, inside a slim console bezel.
+            Bezel bezel = Bezel.of(theme.bezel());
+            int areaTop = HEADER + MARGIN,
+                    areaHeight = height - PlayerHud.reservedHeight(theme) - MARGIN - areaTop;
+            int availW = width - 2 * MARGIN - bezel.left - bezel.right,
+                    availH = areaHeight - bezel.top - bezel.bottom;
+            float fit = Math.min((float) availW / frameWidth, (float) availH / frameHeight);
+            int w = Math.max(1, Math.round(frameWidth * fit)),
+                    h = Math.max(1, Math.round(frameHeight * fit));
+            int x = (width - bezel.left - bezel.right - w) / 2 + bezel.left,
+                    y = areaTop + (areaHeight - bezel.top - bezel.bottom - h) / 2 + bezel.top;
+            drawBezel(context, bezel, x, y, w, h);
+            if (textureId != null)
+                context.drawTexture(
+                        textureId,
+                        x,
+                        y,
+                        w,
+                        h,
+                        0,
+                        0,
+                        frameWidth,
+                        frameHeight,
+                        frameWidth,
+                        frameHeight);
+            else {
+                context.fill(x, y, x + w, y + h, theme.screenOff());
+                context.drawCenteredTextWithShadow(
+                        textRenderer,
+                        Text.translatable("screen.retrocraft.connecting"),
+                        x + w / 2,
+                        y + h / 2 - 4,
+                        theme.handheld() ? 0xff1f2e1a : 0xffd8dde6);
+            }
         }
         PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
         zoomLabel(context);
         renderWidgets(context, mouseX, mouseY, delta);
     }
 
+    private DualScreenLayout.Pair dualRects() {
+        int top = HEADER + MARGIN;
+        return layout.fit(
+                dualScreen,
+                MARGIN,
+                top,
+                width - 2 * MARGIN,
+                Math.max(1, height - PlayerHud.reservedHeight(theme) - MARGIN - top),
+                14);
+    }
+
+    private void drawDualScreen(DrawContext context, DualScreenLayout.Rect rect, boolean bottom) {
+        int x = rect.x(), y = rect.y(), w = rect.width(), h = rect.height();
+        drawBezel(context, Bezel.of(theme.bezel()), x, y, w, h);
+        if (bottom) {
+            context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    Text.translatable("screen.retrocraft.touch"),
+                    x + w / 2,
+                    y + h + 4,
+                    theme.accent());
+        } else if (theme.bezel() == ConsoleTheme.Bezel.NDS) {
+            for (int side : new int[] {x - 10, x + w + 6})
+                for (int i = 0; i < 3; i++)
+                    context.fill(
+                            side,
+                            y + h / 2 - 4 + i * 3,
+                            side + 4,
+                            y + h / 2 - 3 + i * 3,
+                            0xff25282e);
+        } else {
+            context.fill(x + w / 2 - 1, y - 10, x + w / 2 + 2, y - 7, 0xff06080c);
+            context.fill(x + w + 6, y + 2, x + w + 8, y + Math.max(4, h / 2), theme.accent());
+        }
+        var crop = dualScreen.crop(bottom);
+        if (textureId != null) {
+            int sw = Math.max(1, Math.round((crop.u1() - crop.u0()) * frameWidth));
+            int sh = Math.max(1, Math.round((crop.v1() - crop.v0()) * frameHeight));
+            context.drawTexture(
+                    textureId,
+                    x,
+                    y,
+                    w,
+                    h,
+                    crop.u0() * frameWidth,
+                    crop.v0() * frameHeight,
+                    sw,
+                    sh,
+                    frameWidth,
+                    frameHeight);
+        } else {
+            context.fill(x, y, x + w, y + h, theme.screenOff());
+            if (!bottom)
+                context.drawCenteredTextWithShadow(
+                        textRenderer,
+                        Text.translatable("screen.retrocraft.connecting"),
+                        x + w / 2,
+                        y + h / 2 - 4,
+                        0xffd8dde6);
+        }
+    }
+
+    PadInput withTouch(PadInput input) {
+        if (dualScreen == null
+                || !controller
+                || !touchHeld
+                || !acceptingInput()
+                || !client.isWindowFocused()) return input;
+        if (GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT)
+                != GLFW.GLFW_PRESS) {
+            touchHeld = false;
+            return input;
+        }
+        var rect = dualRects().bottom();
+        if (!rect.contains(touchX, touchY)) return input;
+        return input.withTouch(
+                dualScreen.pointerX((touchX - rect.x()) / rect.width()),
+                dualScreen.pointerY((touchY - rect.y()) / rect.height()),
+                true);
+    }
+
+    @Override
+    public boolean mouseClicked(double x, double y, int button) {
+        if (super.mouseClicked(x, y, button)) return true;
+        if (dualScreen != null
+                && button == 0
+                && controller
+                && acceptingInput()
+                && dualRects().bottom().contains(x, y)) {
+            touchHeld = true;
+            touchX = x;
+            touchY = y;
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
+        if (touchHeld && button == 0) {
+            touchX = x;
+            touchY = y;
+            return true;
+        }
+        return super.mouseDragged(x, y, button, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(double x, double y, int button) {
+        if (button == 0 && touchHeld) {
+            touchHeld = false;
+            return true;
+        }
+        return super.mouseReleased(x, y, button);
+    }
+
     /** Pixels the top-right button cluster needs, so the title never runs underneath it. */
     private int titleReserve() {
-        return (canManage ? 32 : 0) + (controller ? 0 : 74) + (focusActive() ? 56 : 0);
+        return (canManage ? 32 : 0)
+                + (controller ? 0 : 74)
+                + (focusActive() ? 56 : 0)
+                + (dualScreen == null ? 0 : 132);
     }
 
     /** Zoom percentage between the [-] and [+] buttons, matching the header text. */
@@ -279,6 +463,8 @@ public final class ConsoleScreen extends AnimatedScreen {
         static Bezel of(ConsoleTheme.Bezel kind) {
             return switch (kind) {
                 case GB, GBC -> new Bezel(22, 14, 12, 12, 4, 8);
+                case GBA_SP -> new Bezel(14, 16, 14, 20, 4, 8);
+                case NDS, THREEDS -> new Bezel(14, 14, 14, 14, 4, 8);
                 case GBA -> new Bezel(12, 14, 12, 14, 4, 8);
                 case NES_HANDHELD -> new Bezel(12, 12, 12, 14, 4, 8);
                 case TV -> new Bezel(14, 12, 14, 22, 6, 8);
@@ -312,6 +498,19 @@ public final class ConsoleScreen extends AnimatedScreen {
                 led(context, ix + 2, iy + ih - 5, 0xff3ab064);
                 context.fill(
                         ix + 8, iy + ih - 4, ix + Math.min(iw - 4, 48), iy + ih - 3, 0xff777788);
+            }
+            case GBA_SP -> {
+                rounded(context, ox + 4, oy + 4, ow - 8, oh - 10, dark, 2);
+                context.drawCenteredTextWithShadow(
+                        textRenderer, "GAME BOY ADVANCE SP", ox + ow / 2, oy + oh - 12, 0xffc8ced6);
+                for (int hx : new int[] {ox + 5, ox + ow - 22}) {
+                    context.fill(
+                            hx, oy + oh - 1, hx + 17, oy + oh + 3, ConsoleTheme.shade(shell, .7f));
+                    context.fill(hx + 1, oy + oh - 1, hx + 16, oy + oh, accent);
+                }
+            }
+            case NDS, THREEDS -> {
+                rounded(context, ox + 4, oy + 4, ow - 8, oh - 8, dark, 2);
             }
             case NES_HANDHELD -> {
                 context.fill(ox + 2, oy + 2, ox + ow - 2, oy + oh - 2, 0xff2d2d31);

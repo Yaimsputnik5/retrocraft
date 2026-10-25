@@ -16,6 +16,7 @@ import com.sammwy.retrocraft.roms.SaveStates;
 public final class ClientConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     public Map<String, Map<String, Integer>> controls = new LinkedHashMap<>();
+    public String ndsLayout = "vertical", threedsLayout = "vertical";
     public int volume = 100;
     public int maxVideoFps = 60;
     public boolean renderWorldScreens = true;
@@ -41,6 +42,8 @@ public final class ClientConfig {
         changes.forEach(
                 (key, value) -> {
                     switch (key) {
+                        case "ndsLayout" -> copy.ndsLayout = value;
+                        case "threedsLayout" -> copy.threedsLayout = value;
                         case "volume" -> copy.volume = Integer.parseInt(value);
                         case "maxVideoFps" -> copy.maxVideoFps = Integer.parseInt(value);
                         case "renderWorldScreens" -> copy.renderWorldScreens = bool(value);
@@ -77,6 +80,8 @@ public final class ClientConfig {
     }
 
     private void validate() {
+        DualScreenLayout.parse(ndsLayout);
+        DualScreenLayout.parse(threedsLayout);
         if (controls == null || controls.size() > 128)
             throw new IllegalArgumentException("Invalid controller bindings");
         controls.forEach(

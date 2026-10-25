@@ -15,12 +15,14 @@ final class InputControls {
                 || !screen.acceptingInput()) return PadInput.IDLE;
         var profile = ControllerProfile.of(screen.consoleId());
         long window = client.getWindow().getHandle();
-        return profile.sample(
-                ClientPreferences.get().controls(profile.id()),
-                key ->
-                        key >= 0
-                                ? InputUtil.isKeyPressed(window, key)
-                                : GLFW.glfwGetMouseButton(window, -key - 2) == GLFW.GLFW_PRESS);
+        return screen.withTouch(
+                profile.sample(
+                        ClientPreferences.get().controls(profile.id()),
+                        key ->
+                                key >= 0
+                                        ? InputUtil.isKeyPressed(window, key)
+                                        : GLFW.glfwGetMouseButton(window, -key - 2)
+                                                == GLFW.GLFW_PRESS));
     }
 
     static String keyName(int key) {

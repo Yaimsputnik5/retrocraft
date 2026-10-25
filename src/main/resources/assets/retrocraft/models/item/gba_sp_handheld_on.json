@@ -1,0 +1,7 @@
+{
+  "parent": "retrocraft:item/gba_sp_handheld",
+  "textures": {
+    "screen": "retrocraft:block/console/lcd_color_on",
+    "indicator": "retrocraft:block/console/led_green_on"
+  }
+}

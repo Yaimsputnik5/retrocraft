@@ -73,6 +73,8 @@ def render(ref, size=400, view="front", powered=False):
         eye[2] *= -1
     if view == "straight":
         eye = np.array([0, 0, 1 if south else -1], dtype=float)
+    if view == "side":
+        eye = np.array([1, 0, 0], dtype=float)
     eye /= np.linalg.norm(eye)
     right = np.cross([0, 1, 0], eye)
     right /= np.linalg.norm(right)
@@ -173,7 +175,7 @@ def render(ref, size=400, view="front", powered=False):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, default=ROOT / "tmp/model-previews")
-    p.add_argument("--view", choices=["front", "back", "straight"], default="front")
+    p.add_argument("--view", choices=["front", "back", "straight", "side"], default="front")
     p.add_argument("--powered", action="store_true")
     a = p.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
@@ -206,7 +208,7 @@ def main():
             ("Space Invaders", "item/mame_space_invaders_console"),
         ],
         "handhelds": [
-            (s.upper(), "item/" + s + "_handheld") for s in ("gb", "gbc", "gba", "nes")
+            (s.upper(), "item/" + s + "_handheld") for s in ("gb", "gbc", "gba", "gba_sp", "nds", "3ds", "nes")
         ],
         "games": [
             (s.upper(), "item/" + s)
@@ -216,6 +218,8 @@ def main():
                 "gb",
                 "gbc",
                 "gba",
+                "nds",
+                "3ds",
                 "megadrive",
                 "n64",
                 "mame",

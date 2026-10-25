@@ -222,5 +222,18 @@
   "tooltip.retrocraft.compatible_with": "Compatible with:",
   "item.retrocraft.arcade_game": "%s Arcade Machine",
   "block.retrocraft.mame_internal_console": "Arcade Machine",
-  "console.retrocraft.mame_internal_console": "Arcade Machine"
+  "console.retrocraft.mame_internal_console": "Arcade Machine",
+  "console.retrocraft.nds_handheld": "Nintendo DS",
+  "console.retrocraft.3ds_handheld": "Nintendo 3DS",
+  "console.retrocraft.gba_sp_handheld": "Game Boy Advance SP",
+  "item.retrocraft.nds_handheld": "Nintendo DS",
+  "item.retrocraft.3ds_handheld": "Nintendo 3DS",
+  "item.retrocraft.gba_sp_handheld": "Game Boy Advance SP",
+  "item.retrocraft.nds": "Nintendo DS Game Card",
+  "item.retrocraft.3ds": "Nintendo 3DS Game Card",
+  "screen.retrocraft.layout.vertical": "Screens: Vertical",
+  "screen.retrocraft.layout.horizontal": "Screens: Horizontal",
+  "screen.retrocraft.layout.top_large": "Screens: Large top",
+  "screen.retrocraft.layout.bottom_large": "Screens: Large touch",
+  "screen.retrocraft.touch": "TOUCH"
 }

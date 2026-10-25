@@ -14,7 +14,9 @@ Retrocraft adds handhelds, home consoles, arcade cabinets and CRT televisions to
 | NES | NES Handheld, NES Console | fceumm |
 | SNES | SNES Console | snes9x |
 | Game Boy / Game Boy Color | Game Boy, Game Boy Color | gambatte |
-| Game Boy Advance | Game Boy Advance | mgba |
+| Game Boy Advance | Game Boy Advance, Game Boy Advance SP | mgba |
+| Nintendo DS | Nintendo DS | desmume |
+| Nintendo 3DS | Nintendo 3DS | citra |
 | Mega Drive / Genesis | Mega Drive, Genesis | genesis_plus_gx |
 | Nintendo 64 | Nintendo 64 | parallel_n64 |
 | PlayStation | PlayStation Console | beetle_psx |
@@ -23,6 +25,10 @@ Retrocraft adds handhelds, home consoles, arcade cabinets and CRT televisions to
 | GameCube | GameCube Console | dolphin |
 | Wii | Wii Console | dolphin |
 | Arcade | Generic machine with swappable ROMs; one permanent-ROM cabinet per catalog game | mame2003 |
+
+DS and 3DS show both LCDs in their item models, live previews and thumbnails. Their play screen has a **Screens** button to cycle through **Vertical**, **Horizontal**, **Large top** and **Large touch**; the choice is saved separately for each system. Click and drag inside the lower screen to use the stylus in any layout. GBA SP uses the existing GBA cartridges, core and saves.
+
+3DS uses Citra with a private OpenGL 3.3 context. Desktop clients use an invisible window; dedicated Linux servers can use surfaceless Mesa/EGL. Supply decrypted `.3ds` / `.cci` / `.cxi` / `.app` files or `.3dsx` homebrew; CIA installers are not launchable cartridges. NDS accepts `.nds` and `.ids`. Large ROM files already placed in the server library run directly on the server when they exceed the configured client transfer budget.
 
 Plus three televisions to hook your consoles up to: a **Portable TV** (1 block), a **CRT Television** (2×1.5) and a big **Console Television** (3×2).
 
@@ -95,7 +101,7 @@ Cores are downloaded on demand from the [official libretro buildbot](https://bui
 
 2. Install `build/libs/retrocraft-0.1.0.jar` together with Fabric API on the server and on every client.
 
-3. Put your ROMs in `config/retrocraft/roms/` on the server (or upload them in-game via **F8 → Server → ROM Library** by picking files or dragging and dropping them onto the window). Detection uses deterministic file extensions and, for shared formats, platform folders (`megadrive`/`genesis`, `ps1`/`psx`/`playstation`, `ps2`/`playstation2`, `dreamcast`/`dc`, `wii`, `gamecube`/`ngc`). Console-unique formats (`.nes`, `.sfc`/`.smc`, `.gb`, `.gbc`, `.gba`, `.md`/`.gen`/`.smd`, `.z64`/`.n64`/`.v64`, `.pbp`, `.cso`/`.zso`, `.cdi`/`.gdi`, `.wbfs`/`.rvz`/`.wad`/`.dol`, `.gcm`/`.gcz`/`.nkit`) match anywhere; shared disc images (`.iso`, `.chd`, `.cue`, `.img`) match inside their platform folder. ROM headers and archive contents are never inspected during discovery. Known MAME ZIP basenames stay intact and resolve to their full arcade titles. Games use content hashes for identity.
+3. Put your ROMs in `config/retrocraft/roms/` on the server (or upload them in-game via **F8 → Server → ROM Library** by picking files or dragging and dropping them onto the window). Detection uses deterministic file extensions and, for shared formats, platform folders (`megadrive`/`genesis`, `ps1`/`psx`/`playstation`, `ps2`/`playstation2`, `dreamcast`/`dc`, `wii`, `gamecube`/`ngc`). Console-unique formats (`.nes`, `.sfc`/`.smc`, `.gb`, `.gbc`, `.gba`, `.nds`/`.ids`, `.3ds`/`.3dsx`/`.cci`/`.cxi`/`.app`, `.md`/`.gen`/`.smd`, `.z64`/`.n64`/`.v64`, `.pbp`, `.cso`/`.zso`, `.cdi`/`.gdi`, `.wbfs`/`.rvz`/`.wad`/`.dol`, `.gcm`/`.gcz`/`.nkit`) match anywhere; shared disc images (`.iso`, `.chd`, `.cue`, `.img`) match inside their platform folder. ROM headers and archive contents are never inspected during discovery. Known MAME ZIP basenames stay intact and resolve to their full arcade titles. Games use content hashes for identity.
 
 4. Start the world. Cartridges and discs for every ROM found appear in **RetroCraft - Games**, arcade variants in **RetroCraft - Arcades**, and consoles and TVs in **RetroCraft - Consoles**.
 

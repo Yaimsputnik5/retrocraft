@@ -85,9 +85,21 @@ public record ControllerProfile(String id, List<Button> buttons, int sticks) {
                 buttons.addAll(PLAYSTATION);
                 sticks = 2;
             }
-            case "gba_handheld" -> {
+            case "gba_handheld", "gba_sp_handheld" -> {
                 buttons.addAll(TWO);
                 buttons.addAll(SHOULDERS);
+            }
+            case "3ds_handheld" -> {
+                buttons.addAll(FOUR);
+                buttons.addAll(SHOULDERS);
+                buttons.add(b(Action.L2, "ZL"));
+                buttons.add(b(Action.R2, "ZR"));
+                sticks = 2;
+            }
+            case "nds_handheld" -> {
+                buttons.addAll(FOUR);
+                buttons.addAll(SHOULDERS);
+                buttons.add(b(Action.L3, "Mic"));
             }
             case "snes_console" -> {
                 buttons.addAll(FOUR);

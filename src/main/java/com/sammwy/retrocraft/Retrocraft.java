@@ -84,7 +84,14 @@ public final class Retrocraft implements ModInitializer {
                 snes);
         registerSystem("gb", "Game Boy", ConsoleType.HANDHELD);
         registerSystem("gbc", "Game Boy Color", ConsoleType.HANDHELD);
-        registerSystem("gba", "Game Boy Advance", ConsoleType.HANDHELD);
+        var gba = registerSystem("gba", "Game Boy Advance", ConsoleType.HANDHELD);
+        ConsoleRegistry.registerConsole(
+                Identifier.of("retrocraft", "gba_sp_handheld"),
+                "Game Boy Advance SP",
+                ConsoleType.HANDHELD,
+                gba);
+        registerSystem("nds", "Nintendo DS", ConsoleType.HANDHELD);
+        registerSystem("3ds", "Nintendo 3DS", ConsoleType.HANDHELD);
         registerSystem("ps1", "PlayStation", ConsoleType.DOCKED);
         registerSystem("ps2", "PlayStation 2", ConsoleType.DOCKED);
         registerSystem("dreamcast", "Dreamcast", ConsoleType.DOCKED);

@@ -16,6 +16,26 @@ class RomDiscoveryTest {
     @TempDir Path root;
 
     @Test
+    void dsAndDecrypted3dsFormatsAreDiscoveredWithoutAPlatformFolder() throws Exception {
+        String[] names = {
+            "touch.NDS",
+            "demo.ids",
+            "adventure.3DS",
+            "homebrew.3dsx",
+            "cart.cci",
+            "title.cxi",
+            "title.app"
+        };
+        for (int i = 0; i < names.length; i++)
+            Files.write(root.resolve(names[i]), new byte[] {(byte) i});
+        Files.write(root.resolve("installer.cia"), new byte[] {100});
+        var games = new RomScanner(RomFormats.ALL, 1024).scan(root, failWarning());
+        assertEquals(7, games.size());
+        assertEquals(2, games.stream().filter(g -> g.cartridge().equals("nds")).count());
+        assertEquals(5, games.stream().filter(g -> g.cartridge().equals("3ds")).count());
+    }
+
+    @Test
     void extensionsAreCaseInsensitiveAndDoNotValidateHeaders() throws Exception {
         Files.write(root.resolve("game.NeSv2"), new byte[] {8, 15, 1});
         var games = new RomScanner(RomFormats.ALL, 1024).scan(root, failWarning());

@@ -5,8 +5,24 @@ import java.io.DataOutput;
 import java.io.IOException;
 
 /** Virtual controller state only. Keyboard and mouse assignments never leave the client. */
-public record PadInput(int buttons, short leftX, short leftY, short rightX, short rightY) {
+public record PadInput(
+        int buttons,
+        short leftX,
+        short leftY,
+        short rightX,
+        short rightY,
+        short pointerX,
+        short pointerY,
+        boolean touching) {
     public static final PadInput IDLE = new PadInput(0, (short) 0, (short) 0, (short) 0, (short) 0);
+
+    public PadInput(int buttons, short leftX, short leftY, short rightX, short rightY) {
+        this(buttons, leftX, leftY, rightX, rightY, (short) 0, (short) 0, false);
+    }
+
+    public PadInput withTouch(short x, short y, boolean pressed) {
+        return new PadInput(buttons, leftX, leftY, rightX, rightY, x, y, pressed);
+    }
 
     public PadInput {
         buttons &= 0xffff;
@@ -25,6 +41,14 @@ public record PadInput(int buttons, short leftX, short leftY, short rightX, shor
             if (index == 0) return id == 0 ? leftX : leftY;
             if (index == 1) return id == 0 ? rightX : rightY;
         }
+        if ((device & 255) == 6 && index == 0) {
+            return switch (id) {
+                case 0 -> pointerX;
+                case 1 -> pointerY;
+                case 2, 3 -> (short) (touching ? 1 : 0);
+                default -> 0;
+            };
+        }
         return 0;
     }
 
@@ -34,6 +58,9 @@ public record PadInput(int buttons, short leftX, short leftY, short rightX, shor
         out.writeShort(leftY);
         out.writeShort(rightX);
         out.writeShort(rightY);
+        out.writeShort(pointerX);
+        out.writeShort(pointerY);
+        out.writeBoolean(touching);
     }
 
     public static PadInput read(DataInput in) throws IOException {
@@ -42,6 +69,9 @@ public record PadInput(int buttons, short leftX, short leftY, short rightX, shor
                 in.readShort(),
                 in.readShort(),
                 in.readShort(),
-                in.readShort());
+                in.readShort(),
+                in.readShort(),
+                in.readShort(),
+                in.readBoolean());
     }
 }

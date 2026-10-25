@@ -32,10 +32,30 @@ class PadInputTest {
                 new PadInput(0xffff, Short.MIN_VALUE, Short.MAX_VALUE, (short) 321, (short) -456);
         var bytes = new ByteArrayOutputStream();
         state.write(new DataOutputStream(bytes));
-        assertEquals(10, bytes.size());
+        assertEquals(15, bytes.size());
         assertEquals(
                 state,
                 PadInput.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()))));
         assertEquals(0xffff, PadInput.digital(-1).buttons());
+    }
+
+    @Test
+    void stylusUsesAbsoluteFramebufferCoordinatesWithoutChangingPadAxes() throws Exception {
+        var input =
+                new PadInput(0x101, (short) 42, (short) -42, (short) 5, (short) 6)
+                        .withTouch((short) -20000, (short) 12000, true);
+        assertEquals(-20000, input.state(6, 0, 0));
+        assertEquals(12000, input.state(6, 0, 1));
+        assertEquals(1, input.state(6, 0, 2));
+        assertEquals(1, input.state(6, 0, 3));
+        assertEquals(0, input.state(6, 1, 2));
+        assertEquals(42, input.state(5, 0, 0));
+        assertEquals(1, input.state(1, 0, 8));
+        assertEquals(0, PadInput.IDLE.state(6, 0, 2));
+        var bytes = new ByteArrayOutputStream();
+        input.write(new DataOutputStream(bytes));
+        assertEquals(
+                input,
+                PadInput.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()))));
     }
 }

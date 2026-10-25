@@ -5,6 +5,7 @@ import java.util.*;
 
 import org.joml.Matrix4f;
 
+import com.sammwy.retrocraft.cores.stream.DualScreen;
 import com.sammwy.retrocraft.cores.stream.ThumbnailCodec;
 import com.sammwy.retrocraft.server.item.HandheldConsoleItem;
 import com.sammwy.retrocraft.server.net.Packets;
@@ -15,6 +16,7 @@ import net.minecraft.client.texture.*;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.RotationAxis;
 
 /**
  * Pocket-size copies of a handheld's live picture; the server refreshes them for whoever can see
@@ -29,7 +31,15 @@ public final class Thumbnails {
                     "gb_handheld", new float[] {5.2f, 10.8f, 9, 14.04f, 9.22f},
                     "gbc_handheld", new float[] {5.2f, 10.8f, 9.35f, 14.39f, 9.22f},
                     "gba_handheld", new float[] {4.9f, 11.1f, 6.3f, 10.44f, 9.22f},
-                    "nes_handheld", new float[] {5.15f, 10.85f, 6.2f, 10.55f, 9.22f});
+                    "nes_handheld", new float[] {5.15f, 10.85f, 6.2f, 10.55f, 9.22f},
+                    "gba_sp_handheld", new float[] {4.4f, 11.6f, 9.4f, 14.2f, 8.72f},
+                    "nds_handheld", new float[] {4.4f, 11.6f, 9.15f, 14.55f, 8.72f},
+                    "3ds_handheld", new float[] {3, 13, 8.95f, 14.95f, 8.72f});
+
+    private static final Map<String, float[]> TOUCH_SCREENS =
+            Map.of(
+                    "nds_handheld", new float[] {4.4f, 11.6f, 1.9f, 7.3f, 9.18f},
+                    "3ds_handheld", new float[] {4, 12, 1.35f, 7.35f, 9.18f});
 
     private record Entry(Identifier id, int width, int height, long at, byte[] png) {}
 
@@ -114,15 +124,73 @@ public final class Thumbnails {
         Identifier texture = live != null ? live.id() : thumb.id();
         int w = live != null ? live.width() : thumb.width(),
                 h = live != null ? live.height() : thumb.height();
+        String console = item.definition().id().getPath();
+        DualScreen dual = DualScreen.of(console);
+        if (dual != null || console.equals("gba_sp_handheld")) {
+            matrices.push();
+            fold(matrices, FoldablePose.LID_ANGLE);
+            drawScreen(
+                    rect,
+                    texture,
+                    w,
+                    h,
+                    dual == null ? null : dual.crop(false),
+                    matrices,
+                    vertices);
+            matrices.pop();
+        } else drawScreen(rect, texture, w, h, null, matrices, vertices);
+        if (dual != null) {
+            matrices.push();
+            fold(matrices, FoldablePose.BASE_ANGLE);
+            drawScreen(
+                    TOUCH_SCREENS.get(console), texture, w, h, dual.crop(true), matrices, vertices);
+            matrices.pop();
+        }
+    }
+
+    private static void fold(MatrixStack matrices, float angle) {
+        float x = FoldablePose.HINGE_X / 16,
+                y = FoldablePose.HINGE_Y / 16,
+                z = FoldablePose.HINGE_Z / 16;
+        matrices.translate(x, y, z);
+        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(angle));
+        matrices.translate(-x, -y, -z);
+    }
+
+    private static void drawScreen(
+            float[] rect,
+            Identifier texture,
+            int w,
+            int h,
+            DualScreen.Crop crop,
+            MatrixStack matrices,
+            VertexConsumerProvider vertices) {
+        float u0 = crop == null ? 0 : crop.u0(),
+                v0 = crop == null ? 0 : crop.v0(),
+                u1 = crop == null ? 1 : crop.u1(),
+                v1 = crop == null ? 1 : crop.v1();
         float x0 = rect[0] / 16,
                 x1 = rect[1] / 16,
                 y0 = rect[2] / 16,
                 y1 = rect[3] / 16,
                 z = rect[4] / 16 + .002f;
-        float fit = Math.min((x1 - x0) / w, (y1 - y0) / h), fw = w * fit, fh = h * fit;
+        float sw = w * (u1 - u0), sh = h * (v1 - v0);
+        float fit = Math.min((x1 - x0) / sw, (y1 - y0) / sh), fw = sw * fit, fh = sh * fit;
         float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
         Matrix4f matrix = matrices.peek().getPositionMatrix();
-        quad(vertices.getBuffer(RenderLayer.getEntitySolid(texture)), matrix, x0, y0, x1, y1, z, 0);
+        quad(
+                vertices.getBuffer(RenderLayer.getEntitySolid(texture)),
+                matrix,
+                x0,
+                y0,
+                x1,
+                y1,
+                z,
+                0,
+                u0,
+                v0,
+                u1,
+                v1);
         quad(
                 vertices.getBuffer(RenderLayer.getEntityCutoutNoCull(texture)),
                 matrix,
@@ -131,7 +199,11 @@ public final class Thumbnails {
                 cx + fw / 2,
                 cy + fh / 2,
                 z + .001f,
-                255);
+                255,
+                u0,
+                v0,
+                u1,
+                v1);
     }
 
     /**
@@ -146,29 +218,33 @@ public final class Thumbnails {
             float x1,
             float y1,
             float z,
-            int rgb) {
+            int rgb,
+            float u0,
+            float v0,
+            float u1,
+            float v1) {
         int light = 0xf000f0, overlay = OverlayTexture.DEFAULT_UV;
         buffer.vertex(matrix, x0, y1, z)
                 .color(rgb, rgb, rgb, 255)
-                .texture(0, 0)
+                .texture(u0, v0)
                 .overlay(overlay)
                 .light(light)
                 .normal(0, 0, 1);
         buffer.vertex(matrix, x0, y0, z)
                 .color(rgb, rgb, rgb, 255)
-                .texture(0, 1)
+                .texture(u0, v1)
                 .overlay(overlay)
                 .light(light)
                 .normal(0, 0, 1);
         buffer.vertex(matrix, x1, y0, z)
                 .color(rgb, rgb, rgb, 255)
-                .texture(1, 1)
+                .texture(u1, v1)
                 .overlay(overlay)
                 .light(light)
                 .normal(0, 0, 1);
         buffer.vertex(matrix, x1, y1, z)
                 .color(rgb, rgb, rgb, 255)
-                .texture(1, 0)
+                .texture(u1, v0)
                 .overlay(overlay)
                 .light(light)
                 .normal(0, 0, 1);
