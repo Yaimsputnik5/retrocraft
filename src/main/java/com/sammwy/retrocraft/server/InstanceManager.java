@@ -292,7 +292,7 @@ public final class InstanceManager implements AutoCloseable {
                                 .map(
                                         g ->
                                                 new RomScanner.Game(
-                                                        g.cartridge().id().toString(),
+                                                        g.cartridge().system().id().toString(),
                                                         g.id(),
                                                         g.name(),
                                                         g.filename(),
@@ -441,9 +441,7 @@ public final class InstanceManager implements AutoCloseable {
             }
         }
         Set<String> needed =
-                roms.games().stream()
-                        .map(game -> config.coreId(game.cartridge().id().toString()))
-                        .collect(Collectors.toUnmodifiableSet());
+                roms.games().stream().map(this::coreId).collect(Collectors.toUnmodifiableSet());
         boolean coresChanged = coreGeneration == 0 || !requiredCores.equals(needed);
         boolean catalogChanged = !publishedCatalog.equals(roms.catalog());
         requiredCores = needed;
@@ -877,7 +875,7 @@ public final class InstanceManager implements AutoCloseable {
                 return;
             }
         }
-        String coreId = config.coreId(game.cartridge().id().toString());
+        String coreId = coreId(game);
         CoreManager.Prepared prepared = preparedCores.get(coreId);
         if (prepared == null) {
             error(player, "core_preparing");
@@ -901,7 +899,7 @@ public final class InstanceManager implements AutoCloseable {
                                                 consoleId,
                                                 game.id(),
                                                 game.name(),
-                                                prepared.path());
+                                                prepared.identity().sha256());
                                 pending.created = data.id();
                                 restoreSave(data);
                                 if (stopping) {
@@ -1369,8 +1367,7 @@ public final class InstanceManager implements AutoCloseable {
                     && session.failure == null
                     && session.ownership.serverMayRun()
                     && serverMayEmulate(session)
-                    && preparedCores.containsKey(
-                            config.coreId(session.game.cartridge().id().toString()))
+                    && preparedCores.containsKey(coreId(session.game))
                     && activeCount() < config.maxActiveInstances) start(session);
             coordinateOwnership(session, now);
             if (session.thread == null
@@ -1574,11 +1571,14 @@ public final class InstanceManager implements AutoCloseable {
                 .name("retrocraft-video-encode")
                 .start(
                         () -> {
+                            // Delivered as soon as the server thread is free, not on the next tick.
                             try {
                                 var frame = encoder.encode(picture, key);
-                                callbacks.add(
+                                var packet = new Packets.Video(session.data.id(), frame);
+                                server.execute(
                                         () -> {
-                                            if (generation != session.videoGeneration) return;
+                                            if (stopping || generation != session.videoGeneration)
+                                                return;
                                             session.encodingVideo = false;
                                             for (UUID id : targets) {
                                                 VideoWatcher watcher =
@@ -1588,18 +1588,16 @@ public final class InstanceManager implements AutoCloseable {
                                                 if (watcher == null
                                                         || player == null
                                                         || watcher.needsKeyframe && !key) continue;
-                                                send(
-                                                        player,
-                                                        new Packets.Video(
-                                                                session.data.id(), frame));
+                                                send(player, packet);
                                                 watcher.lastSent = frame.sequence();
                                                 watcher.needsKeyframe = false;
                                             }
                                         });
-                            } catch (IOException ex) {
-                                callbacks.add(
+                            } catch (RuntimeException ex) {
+                                server.execute(
                                         () -> {
-                                            if (generation == session.videoGeneration) {
+                                            if (!stopping
+                                                    && generation == session.videoGeneration) {
                                                 session.encodingVideo = false;
                                                 session.forceKeyframe = true;
                                                 Retrocraft.LOG.error(
@@ -1623,8 +1621,11 @@ public final class InstanceManager implements AutoCloseable {
 
     /** These cores cannot provide a bounded checkpoint for client handoff. */
     private boolean serverOnly(Session session) {
-        String id = config.coreId(session.game.cartridge().id().toString());
-        return id.equals("mame2003") || id.equals("ppsspp");
+        return KnownCores.get(coreId(session.game)).serverOnly();
+    }
+
+    private String coreId(RomIndex.Game game) {
+        return config.coreId(game.cartridge().system().id().toString());
     }
 
     private boolean serverMayEmulate(Session session) {
@@ -1775,21 +1776,21 @@ public final class InstanceManager implements AutoCloseable {
                                 () -> {
                                     Path state = store.snapshot(session.data.id());
                                     try {
-                                        String coreId =
-                                                config.coreId(game.cartridge().id().toString());
+                                        String coreId = coreId(game);
                                         CoreManager.Prepared prepared = preparedCores.get(coreId);
                                         if (prepared == null)
                                             throw new IOException("Core not prepared");
                                         requireBios(coreId, game);
                                         Path core = prepared.path();
-                                        Path rom = game.materialize();
-                                        if (!RomSource.matches(
-                                                        rom, session.data.gameId(), game.maxBytes())
+                                        // The core hash is pinned at preparation and
+                                        // materialize() re-verifies the ROM against its GameID.
+                                        if (!game.id().equals(session.data.gameId())
                                                 || !session.data
                                                         .coreSha256()
-                                                        .equals(InstanceStore.sha256(core)))
+                                                        .equals(prepared.identity().sha256()))
                                             throw new IOException(
                                                     "ROM/core changed since snapshot");
+                                        Path rom = game.materialize();
                                         try (var saveIo =
                                                         Executors.newSingleThreadExecutor(
                                                                 Thread.ofVirtual()
@@ -1914,7 +1915,7 @@ public final class InstanceManager implements AutoCloseable {
         // id.
         Path bios = RetrocraftConfig.systemDir(core.getParent().getFileName().toString());
         Path nativeSaves =
-                config.coreId(session.game.cartridge().id().toString()).equals("ppsspp")
+                coreId(session.game).equals("ppsspp")
                                 && config.saveMode != RetrocraftConfig.SaveMode.NONE
                         ? saves.nativeDirectory(
                                 session.data.owner(),
@@ -2272,7 +2273,7 @@ public final class InstanceManager implements AutoCloseable {
                                                         id,
                                                         file.name(),
                                                         file.size(),
-                                                        InstanceStore.sha256(path)));
+                                                        FileHashes.sha256(path)));
                                     }
                                 } catch (IOException ex) {
                                     Retrocraft.LOG.warn("Cannot list BIOS for {}", id, ex);
@@ -2538,11 +2539,7 @@ public final class InstanceManager implements AutoCloseable {
                                                             session.data.id(),
                                                             epoch,
                                                             HybridPackets.Action.OFFER,
-                                                            config.coreId(
-                                                                    session.game
-                                                                            .cartridge()
-                                                                            .id()
-                                                                            .toString()),
+                                                            coreId(session.game),
                                                             session.data.gameId(),
                                                             session.game.name(),
                                                             session.game.filename(),

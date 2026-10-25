@@ -12,6 +12,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
+from generate_models import media_id
+
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "src/main/resources/assets"
 
@@ -57,8 +59,14 @@ def faces(e):
     }
 
 
+def cabinet(ref):
+    """Arcade cabinet item models are blocks; every other item model faces south."""
+    name = ref.rsplit("/", 1)[-1]
+    return ":item/" in ref and name.startswith("arcade") and name != "arcade_board"
+
+
 def render(ref, size=400, view="front", powered=False):
-    if powered and ref.startswith("retrocraft:item/mame") and ref.endswith("_console"):
+    if powered and cabinet(ref):
         d = load_model(ref)
         d["textures"].update(
             load_model(ref.replace(":item/", ":block/") + "_on")["textures"]
@@ -67,7 +75,7 @@ def render(ref, size=400, view="front", powered=False):
         d = load_model(ref + ("_on" if powered else ""))
     if not d.get("elements"):
         raise ValueError(f"No cuboids: {ref}")
-    south = ":item/" in ref and not ref.endswith("_console")
+    south = ":item/" in ref and not cabinet(ref)
     eye = np.array([0.35, 0.2, 1.0] if south else [0.75, 0.85, -1.0])
     if view == "back":
         eye[2] *= -1
@@ -181,37 +189,38 @@ def main():
     a.output.mkdir(parents=True, exist_ok=True)
     groups = {
         "consoles": [
-            ("NES", "block/nes_console"),
-            ("SNES", "block/snes_console"),
-            ("Mega Drive", "block/megadrive_console"),
-            ("Genesis", "block/genesis_console"),
-            ("Nintendo 64", "block/n64_console"),
-            ("PlayStation", "block/ps1_console"),
-            ("PlayStation 2", "block/ps2_console"),
-            ("Dreamcast", "block/dreamcast_console"),
-            ("GameCube", "block/gamecube_console"),
-            ("Wii", "block/wii_console"),
-            ("Generic arcade", "item/mame_console"),
-            ("Tetris arcade", "item/mame_tetris_console"),
-            ("Space Invaders arcade", "item/mame_space_invaders_console"),
+            ("NES", "block/nes"),
+            ("SNES", "block/snes"),
+            ("Mega Drive", "block/megadrive"),
+            ("Genesis", "block/genesis"),
+            ("Nintendo 64", "block/n64"),
+            ("PlayStation", "block/ps1"),
+            ("PlayStation 2", "block/ps2"),
+            ("Dreamcast", "block/dreamcast"),
+            ("GameCube", "block/gamecube"),
+            ("Wii", "block/wii"),
+            ("Generic arcade", "item/arcade"),
+            ("Tetris arcade", "item/arcade_tetris"),
+            ("Space Invaders arcade", "item/arcade_space_invaders"),
         ],
         "arcades": [
-            ("Generic", "item/mame_console"),
-            ("Pac-Man", "item/mame_pacman_console"),
-            ("Donkey Kong", "item/mame_donkey_kong_console"),
-            ("Galaga", "item/mame_galaga_console"),
-            ("Street Fighter", "item/mame_street_fighter_console"),
-            ("Metal Slug", "item/mame_metal_slug_console"),
-            ("Mortal Kombat", "item/mame_mortal_kombat_console"),
-            ("Bubble Bobble", "item/mame_bubble_bobble_console"),
-            ("Tetris", "item/mame_tetris_console"),
-            ("Space Invaders", "item/mame_space_invaders_console"),
+            ("Generic", "item/arcade"),
+            ("Pac-Man", "item/arcade_pacman"),
+            ("Donkey Kong", "item/arcade_donkey_kong"),
+            ("Galaga", "item/arcade_galaga"),
+            ("Street Fighter", "item/arcade_street_fighter"),
+            ("Metal Slug", "item/arcade_metal_slug"),
+            ("Mortal Kombat", "item/arcade_mortal_kombat"),
+            ("Bubble Bobble", "item/arcade_bubble_bobble"),
+            ("Tetris", "item/arcade_tetris"),
+            ("Space Invaders", "item/arcade_space_invaders"),
         ],
         "handhelds": [
-            (s.upper(), "item/" + s + "_handheld") for s in ("gb", "gbc", "gba", "gba_sp", "nds", "3ds", "psp", "nes")
+            (s.upper(), "item/" + s)
+            for s in ("gb", "gbc", "gba", "gba_sp", "nds", "3ds", "psp", "nes_handheld")
         ],
         "games": [
-            (s.upper(), "item/" + s)
+            (s.upper(), "item/" + media_id(s))
             for s in (
                 "nes",
                 "snes",
@@ -223,7 +232,7 @@ def main():
                 "psp",
                 "megadrive",
                 "n64",
-                "mame",
+                "arcade",
                 "ps1",
                 "ps2",
                 "dreamcast",

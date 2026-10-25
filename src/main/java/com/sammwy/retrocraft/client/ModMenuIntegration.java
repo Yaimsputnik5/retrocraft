@@ -1,5 +1,6 @@
 package com.sammwy.retrocraft.client;
 
+import com.sammwy.retrocraft.client.ui.SettingsScreen;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
 

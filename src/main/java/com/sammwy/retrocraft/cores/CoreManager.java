@@ -63,17 +63,20 @@ public final class CoreManager {
             Files.createDirectories(directory);
             Path core = directory.resolve(filename),
                     receipt = directory.resolve("receipt.properties");
+            String sha256;
             if (Files.exists(core) && Files.exists(receipt)) {
                 Properties properties = new Properties();
                 try (Reader reader = Files.newBufferedReader(receipt)) {
                     properties.load(reader);
                 }
-                if (!InstanceStore.sha256(core).equals(properties.getProperty("sha256")))
+                sha256 = InstanceStore.sha256(core);
+                if (!sha256.equals(properties.getProperty("sha256")))
                     throw new IOException("Cached core checksum mismatch: " + id);
             } else {
                 download(id, core, downloads);
+                sha256 = InstanceStore.sha256(core);
                 Properties properties = new Properties();
-                properties.setProperty("sha256", InstanceStore.sha256(core));
+                properties.setProperty("sha256", sha256);
                 properties.setProperty("source", KnownCores.uri(id, platform).toString());
                 StringWriter writer = new StringWriter();
                 properties.store(
@@ -84,12 +87,7 @@ public final class CoreManager {
             if (id.equals("ppsspp")) CoreSystemAssets.prepare(directory, downloads);
             return new Prepared(
                     core,
-                    new CoreIdentity(
-                            id,
-                            probe.name(),
-                            probe.version(),
-                            platform.key(),
-                            InstanceStore.sha256(core)));
+                    new CoreIdentity(id, probe.name(), probe.version(), platform.key(), sha256));
         } finally {
             lock.unlock();
         }

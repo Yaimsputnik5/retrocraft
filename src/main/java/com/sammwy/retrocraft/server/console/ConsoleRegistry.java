@@ -2,7 +2,6 @@ package com.sammwy.retrocraft.server.console;
 
 import java.util.*;
 
-import com.sammwy.retrocraft.roms.discovery.DiscoveryStrategy;
 import com.sammwy.retrocraft.server.block.*;
 import com.sammwy.retrocraft.server.item.*;
 
@@ -13,34 +12,28 @@ import net.minecraft.registry.*;
 import net.minecraft.util.Identifier;
 
 public final class ConsoleRegistry {
-    private static final Map<Identifier, CartridgeItem> CARTRIDGES = new LinkedHashMap<>();
+    private static final Map<Identifier, CartridgeItem> MEDIA = new LinkedHashMap<>();
     private static final Map<Identifier, ConsoleDefinition> CONSOLES = new LinkedHashMap<>();
     private static final List<TvBlock> TELEVISIONS = new ArrayList<>();
 
-    public static CartridgeItem registerCartridge(Identifier id, DiscoveryStrategy discovery) {
-        Objects.requireNonNull(id);
-        Objects.requireNonNull(discovery);
-        if (CARTRIDGES.containsKey(id) || CONSOLES.containsKey(id))
-            throw new IllegalArgumentException("Duplicate/invalid cartridge " + id);
+    public static CartridgeItem registerSystem(GameSystem system) {
+        Objects.requireNonNull(system);
+        if (MEDIA.containsKey(system.id()))
+            throw new IllegalArgumentException("Duplicate system " + system.id());
         CartridgeItem item =
-                Registry.register(Registries.ITEM, id, new CartridgeItem(id, discovery));
-        CARTRIDGES.put(id, item);
+                Registry.register(Registries.ITEM, system.mediaId(), new CartridgeItem(system));
+        MEDIA.put(system.id(), item);
         return item;
     }
 
-    public static ConsoleDefinition registerConsole(
-            Identifier id, String name, ConsoleType type, CartridgeItem cartridge) {
-        Objects.requireNonNull(id);
-        Objects.requireNonNull(name);
-        Objects.requireNonNull(type);
-        Objects.requireNonNull(cartridge);
-        if (name.isBlank()
+    public static ConsoleDefinition registerConsole(ConsoleDefinition definition) {
+        Objects.requireNonNull(definition);
+        Identifier id = definition.id();
+        if (definition.name().isBlank()
                 || CONSOLES.containsKey(id)
-                || CARTRIDGES.containsKey(id)
-                || !CARTRIDGES.containsValue(cartridge))
-            throw new IllegalArgumentException("Register a unique console and its cartridge first");
-        ConsoleDefinition definition = new ConsoleDefinition(id, name, type, cartridge);
-        if (type == ConsoleType.HANDHELD)
+                || !MEDIA.containsValue(definition.cartridge()))
+            throw new IllegalArgumentException("Register a unique console and its system first");
+        if (definition.type() == ConsoleType.HANDHELD)
             Registry.register(Registries.ITEM, id, new HandheldConsoleItem(definition));
         else {
             DockedConsoleBlock block =
@@ -60,7 +53,7 @@ public final class ConsoleRegistry {
             Registry.register(
                     Registries.ITEM,
                     id,
-                    definition.isInternalArcade()
+                    definition.internalRom()
                             ? new ArcadeItem(block, new Item.Settings())
                             : new BlockItem(block, new Item.Settings()));
         }
@@ -92,8 +85,8 @@ public final class ConsoleRegistry {
         return Collections.unmodifiableList(TELEVISIONS);
     }
 
-    public static Collection<CartridgeItem> cartridges() {
-        return Collections.unmodifiableCollection(CARTRIDGES.values());
+    public static Collection<CartridgeItem> media() {
+        return Collections.unmodifiableCollection(MEDIA.values());
     }
 
     public static Collection<ConsoleDefinition> consoles() {
@@ -104,8 +97,9 @@ public final class ConsoleRegistry {
         return CONSOLES.get(id);
     }
 
-    public static CartridgeItem cartridge(Identifier id) {
-        return CARTRIDGES.get(id);
+    /** The media item of a system, looked up by system ID (e.g. {@code retrocraft:ps2}). */
+    public static CartridgeItem media(Identifier system) {
+        return system == null ? null : MEDIA.get(system);
     }
 
     private ConsoleRegistry() {}

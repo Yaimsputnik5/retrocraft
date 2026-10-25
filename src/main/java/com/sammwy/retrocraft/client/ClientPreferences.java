@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.client.config.ClientConfig;
+import com.sammwy.retrocraft.client.render.Thumbnails;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
 import com.sammwy.retrocraft.server.net.Packets;
 import com.sammwy.retrocraft.server.net.SettingsPackets;
@@ -13,10 +14,10 @@ import com.sammwy.retrocraft.server.net.SettingsPackets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 /** Client-thread owner of the persistent personal settings. */
-final class ClientPreferences {
+public final class ClientPreferences {
     private static ClientConfig config = new ClientConfig();
 
-    static ClientConfig get() {
+    public static ClientConfig get() {
         return config;
     }
 
@@ -28,7 +29,7 @@ final class ClientPreferences {
         }
     }
 
-    static void apply(Map<String, String> changes) throws IOException {
+    public static void apply(Map<String, String> changes) throws IOException {
         ClientConfig next = config.changed(changes);
         next.save(RetrocraftConfig.root().resolve("client.json"));
         config = next;
@@ -38,13 +39,14 @@ final class ClientPreferences {
         if (!config.renderHandheldScreens) Thumbnails.close();
     }
 
-    static void applyControls(Map<String, Map<String, Integer>> bindings) throws IOException {
+    public static void applyControls(Map<String, Map<String, Integer>> bindings)
+            throws IOException {
         ClientConfig next = config.withControls(bindings);
         next.save(RetrocraftConfig.root().resolve("client.json"));
         config = next;
     }
 
-    static void applyHudLayout(
+    public static void applyHudLayout(
             String key, com.sammwy.retrocraft.client.config.DualScreenLayout layout)
             throws IOException {
         ClientConfig next = config.withHudLayout(key, layout);
@@ -61,7 +63,7 @@ final class ClientPreferences {
                             config.renderHandheldScreens));
     }
 
-    static List<SettingsPackets.GuiOpen.Entry> schema() {
+    public static List<SettingsPackets.GuiOpen.Entry> schema() {
         return List.of(
                 number("volume", config.volume, 0, 100),
                 number("maxVideoFps", config.maxVideoFps, 1, 144),

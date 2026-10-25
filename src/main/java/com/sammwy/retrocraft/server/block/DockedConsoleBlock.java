@@ -1,6 +1,8 @@
 package com.sammwy.retrocraft.server.block;
 
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 import com.mojang.serialization.MapCodec;
 import com.sammwy.retrocraft.Retrocraft;
@@ -31,11 +33,17 @@ public final class DockedConsoleBlock extends BlockWithEntity {
     public static final DirectionProperty FACING = Properties.HORIZONTAL_FACING;
     public static final BooleanProperty POWERED = Properties.POWERED;
     private final ConsoleDefinition definition;
+    private final Map<Direction, VoxelShape> shapes = new EnumMap<>(Direction.class);
     private BlockEntityType<DockedConsoleBlockEntity> entityType;
 
     public DockedConsoleBlock(ConsoleDefinition definition, Settings settings) {
         super(settings);
         this.definition = definition;
+        var bounds =
+                definition.bounds() == null
+                        ? ConsoleDefinition.Bounds.DEFAULT
+                        : definition.bounds();
+        for (Direction facing : Direction.Type.HORIZONTAL) shapes.put(facing, bounds.shape(facing));
         setDefaultState(
                 getStateManager()
                         .getDefaultState()
@@ -56,32 +64,7 @@ public final class DockedConsoleBlock extends BlockWithEntity {
     @Override
     protected VoxelShape getOutlineShape(
             BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        double[] bounds =
-                switch (definition.id().getPath()) {
-                    case "nes_console" -> new double[] {1, 1.79, 15, 14, 5.85};
-                    case "snes_console" -> new double[] {1, 2.43, 15, 13.5, 5.74};
-                    case "genesis_console", "megadrive_console" ->
-                            new double[] {1, 2.43, 15, 13.5, 4.39};
-                    case "n64_console" -> new double[] {1, 2.43, 15, 13.5, 5.24};
-                    case "ps1_console" -> new double[] {1, 2.42, 15, 13.5, 3.94};
-                    case "ps2_console" -> new double[] {1, 2.01, 15, 13.5, 4.69};
-                    case "dreamcast_console" -> new double[] {1.35, 2.42, 14.4, 13.5, 4.22};
-                    case "gamecube_console" -> new double[] {2.35, 2.36, 13.65, 15.2, 9.35};
-                    case "wii_console" -> new double[] {5.15, 2.1, 10.85, 14.3, 14.39};
-                    case "mame_console",
-                                    "mame_tetris_console",
-                                    "mame_space_invaders_console",
-                                    "mame_internal_console" ->
-                            new double[] {-4.05, -3.15, 20.05, 19.05, 48};
-                    default -> new double[] {1, 2, 15, 14, 5.8};
-                };
-        double x0 = bounds[0], z0 = bounds[1], x1 = bounds[2], z1 = bounds[3], height = bounds[4];
-        return switch (state.get(FACING)) {
-            case EAST -> Block.createCuboidShape(16 - z1, 0, x0, 16 - z0, height, x1);
-            case SOUTH -> Block.createCuboidShape(16 - x1, 0, 16 - z1, 16 - x0, height, 16 - z0);
-            case WEST -> Block.createCuboidShape(z0, 0, 16 - x1, z1, height, 16 - x0);
-            default -> Block.createCuboidShape(x0, 0, z0, x1, height, z1);
-        };
+        return shapes.get(state.get(FACING));
     }
 
     /** The arcade cabinets are three blocks tall, so both blocks above must be free. */
@@ -117,7 +100,7 @@ public final class DockedConsoleBlock extends BlockWithEntity {
 
     @Override
     public ItemStack getPickStack(WorldView world, BlockPos pos, BlockState state) {
-        if (definition.isInternalArcade()
+        if (definition.internalRom()
                 && world.getBlockEntity(pos) instanceof DockedConsoleBlockEntity console
                 && !CartridgeItem.gameId(console.cartridge()).isEmpty())
             return console.arcadeStack();
@@ -128,7 +111,7 @@ public final class DockedConsoleBlock extends BlockWithEntity {
     protected List<ItemStack> getDroppedStacks(
             BlockState state, LootContextParameterSet.Builder builder) {
         var drops = super.getDroppedStacks(state, builder);
-        if (definition.isInternalArcade()
+        if (definition.internalRom()
                 && builder.getOptional(LootContextParameters.BLOCK_ENTITY)
                         instanceof DockedConsoleBlockEntity console
                 && !CartridgeItem.gameId(console.cartridge()).isEmpty()) {
@@ -140,7 +123,7 @@ public final class DockedConsoleBlock extends BlockWithEntity {
 
     @Override
     protected BlockRenderType getRenderType(BlockState state) {
-        return definition.isInternalArcade() ? BlockRenderType.INVISIBLE : BlockRenderType.MODEL;
+        return definition.internalRom() ? BlockRenderType.INVISIBLE : BlockRenderType.MODEL;
     }
 
     @Override
@@ -170,7 +153,7 @@ public final class DockedConsoleBlock extends BlockWithEntity {
             PlayerEntity player,
             Hand hand,
             BlockHitResult hit) {
-        if (!definition.isInternalArcade()
+        if (!definition.internalRom()
                 && stack.isOf(definition.cartridge())
                 && world.getBlockEntity(pos) instanceof DockedConsoleBlockEntity console
                 && console.instance() == null

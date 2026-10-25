@@ -6,7 +6,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import com.sammwy.retrocraft.client.CameraRigAccess;
+import com.sammwy.retrocraft.client.render.CameraRig;
 
 import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;
@@ -38,7 +38,7 @@ abstract class CameraMixin {
             boolean inverseView,
             float tickDelta,
             CallbackInfo ci) {
-        double[] pose = CameraRigAccess.pose(getPos(), getYaw(), getPitch());
+        double[] pose = CameraRig.pose(getPos(), getYaw(), getPitch());
         if (pose == null) return;
         setRotation((float) pose[3], (float) pose[4]);
         setPos(new Vec3d(pose[0], pose[1], pose[2]));

@@ -153,9 +153,7 @@ def swirl(im, x, y, r, ink="#dc653c"):
 class Model:
     def __init__(self, name, folder="block", texture=None):
         self.name, self.folder = name, folder
-        self.texture = texture or name.removesuffix("_console").removesuffix(
-            "_handheld"
-        )
+        self.texture = texture or name
         self.atlas = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
         self.x = self.y = self.row = 1
         self.regions = {}
@@ -362,16 +360,16 @@ def controller_port(m, x, y, z, w=1.7, h=0.85, rim=MID, pins=5):
 def rear_details(m):
     # Rear sockets are pixel art on existing shell faces, not tiny extra cuboids.
     config = {
-        "nes_console": ("dark lower shell", "#888882"),
-        "snes_console": ("lower shell", "#979598"),
-        "megadrive_console": ("rear bevel step", DARK),
-        "genesis_console": ("rear bevel step", DARK),
-        "n64_console": ("back shoulder", DARK),
-        "ps1_console": ("middle shell", "#b4b5b0"),
-        "ps2_console": ("upper overhanging slab", "#24262e"),
-        "dreamcast_console": ("back shell", WHITE),
-        "gamecube_console": ("indigo shell", "#50477e"),
-        "wii_console": ("white chassis", WHITE),
+        "nes": ("dark lower shell", "#888882"),
+        "snes": ("lower shell", "#979598"),
+        "megadrive": ("rear bevel step", DARK),
+        "genesis": ("rear bevel step", DARK),
+        "n64": ("back shoulder", DARK),
+        "ps1": ("middle shell", "#b4b5b0"),
+        "ps2": ("upper overhanging slab", "#24262e"),
+        "dreamcast": ("back shell", WHITE),
+        "gamecube": ("indigo shell", "#50477e"),
+        "wii": ("white chassis", WHITE),
     }
     if m.name not in config:
         return
@@ -380,7 +378,7 @@ def rear_details(m):
     im = tile(e["to"][0] - e["from"][0], e["to"][1] - e["from"][1], color)
     d = ImageDraw.Draw(im)
     w, h = im.size
-    if m.name == "wii_console":
+    if m.name == "wii":
         for y in range(4, 24, 3):
             d.line((2, y, w - 3, y), fill=MID)
         for y in (29, 34):
@@ -396,13 +394,13 @@ def rear_details(m):
         )
         d.line((w // 2 - 2, port_y + 1, w // 2 + 3, port_y + 1), fill=MID)
         d.rectangle((w - 8, port_y, w - 5, min(h - 2, port_y + 2)), fill=MID)
-        if m.name == "n64_console":
+        if m.name == "n64":
             d.rectangle((w - 15, 0, w - 2, h - 1), fill=BLACK)
             d.line((w - 14, 1, w - 3, 1), fill="#3f4148")
-        if m.name == "ps1_console":
+        if m.name == "ps1":
             d.rectangle((w // 2 - 8, 1, w // 2 + 7, min(h - 2, 4)), fill=MID)
             d.line((w // 2 - 7, 2, w // 2 + 6, 2), fill=BLACK)
-        if m.name in ("ps2_console", "gamecube_console"):
+        if m.name in ("ps2", "gamecube"):
             for y in range(1, max(2, h - 6), 2):
                 d.line((w // 3, y, 2 * w // 3, y), fill=BLACK)
     e["faces"]["south"] = {"texture": "#atlas", "uv": m.region(im)}
@@ -422,7 +420,7 @@ def powered(m, color="red"):
 
 
 def nes():
-    m = Model("nes_console")
+    m = Model("nes")
     feet(m)
     # NES-001 front loader: the lid occupies the left 2/3, the charcoal stripe the right.
     m.box("dark lower shell", [1, 0.5, 2], [15, 2.8, 14], "#888882")
@@ -474,7 +472,7 @@ def nes():
 
 
 def snes():
-    m = Model("snes_console")
+    m = Model("snes")
     feet(m)
     m.box("lower shell", [1, 0.5, 2.5], [15, 2.7, 13.5], "#979598")
     m.box("wide front shell", [1, 2.7, 2.5], [15, 4.1, 8.2], "#c4c0c5")
@@ -515,7 +513,7 @@ def snes():
 
 
 def sega(name):
-    m = Model(name + "_console")
+    m = Model(name)
     feet(m, 2, 14, 3, 13)
     m.box("lower plinth", [1.3, 0.5, 2.8], [14.7, 2.1, 13.2], BLACK)
     m.box("wide upper case", [1, 2.1, 3], [15, 3.7, 12.8], "#25262c")
@@ -567,7 +565,7 @@ def sega(name):
 
 
 def n64():
-    m = Model("n64_console")
+    m = Model("n64")
     feet(m)
     m.box("lower waist", [2, 0.5, 3], [14, 2.4, 13], BLACK)
     m.box("wide middle", [1, 1.4, 4], [15, 3.4, 12.2], DARK)
@@ -647,7 +645,7 @@ def disc_lid(m, style, y, radius=4.1, color=LIGHT):
 
 
 def ps1():
-    m = Model("ps1_console")
+    m = Model("ps1")
     feet(m)
     m.box("lower shell", [1.2, 0.5, 2.5], [14.8, 1.9, 13.5], "#949591")
     m.box("middle shell", [1, 1.5, 2.5], [15, 3.1, 13.5], "#b4b5b0")
@@ -674,7 +672,7 @@ def ps1():
 
 
 def ps2():
-    m = Model("ps2_console")
+    m = Model("ps2")
     feet(m)
     # Original fat PS2: asymmetric stacked slabs and a recessed horizontal disc tray.
     m.box("lower offset slab", [1.8, 0.5, 2.7], [15, 2.1, 13.5], BLACK)
@@ -733,14 +731,14 @@ def ps2():
         shade=False,
     )
     powered(m, "green")
-    p = ASSETS / "models/block/ps2_console_on.json"
+    p = ASSETS / "models/block/ps2_on.json"
     d = json.loads(p.read_text())
     d["textures"]["eject"] = "retrocraft:block/console/led_blue_on"
-    write_json("models/block/ps2_console_on.json", d)
+    write_json("models/block/ps2_on.json", d)
 
 
 def dreamcast():
-    m = Model("dreamcast_console")
+    m = Model("dreamcast")
     feet(m)
     m.box("base", [2, 0.5, 2.5], [14, 1.6, 13.5], "#b5b5ad")
     m.box("wide center shell", [1.6, 1.6, 3.5], [14.4, 3.65, 12.5], WHITE)
@@ -764,7 +762,7 @@ def dreamcast():
 
 
 def gamecube():
-    m = Model("gamecube_console")
+    m = Model("gamecube")
     feet(m, 3, 13, 3, 13)
     m.display = console_display(0.85)
     m.display["gui"]["translation"] = [0, 0, 0]
@@ -825,7 +823,7 @@ def gamecube():
 
 
 def wii():
-    m = Model("wii_console")
+    m = Model("wii")
     m.display = console_display(0.9)
     m.display["gui"]["translation"] = [0, 0, 0]
     m.box("silver stand", [5.15, 0, 2.1], [10.85, 0.65, 14.3], "#9a9fa4")
@@ -856,10 +854,10 @@ def wii():
     m.top("top flap seam", 6.55, 9.45, 8, 8.12, 14.35, MID, MID)
     m.led([8.65, 13.05, 2.92], [8.95, 13.3, 3.03], "green")
     powered(m, "green")
-    p = ASSETS / "models/block/wii_console_on.json"
+    p = ASSETS / "models/block/wii_on.json"
     d = json.loads(p.read_text())
     d["textures"]["eject"] = "retrocraft:block/console/led_blue_on"
-    write_json("models/block/wii_console_on.json", d)
+    write_json("models/block/wii_on.json", d)
 
 
 def dpad(m, x, y, z, size=2.2, color=BLACK):
@@ -901,8 +899,21 @@ def button(m, name, x, y, z, r=0.55, color=RED):
     )
 
 
+def handheld_id(name):
+    """Each system's own handheld is named after it; alternative hardware keeps a suffix."""
+    return "nes_handheld" if name == "nes" else name
+
+
+def media_id(system):
+    """Game media item IDs follow the in-game media kind: cartridge, card, disc, UMD or board."""
+    kinds = {"nds": "card", "3ds": "card", "psp": "umd", "arcade": "board"}
+    kinds.update(dict.fromkeys(("ps1", "ps2", "dreamcast", "gamecube", "wii"), "disc"))
+    return system + "_" + kinds.get(system, "cartridge")
+
+
 def handheld(name):
-    m = Model(name + "_handheld", "item", name + "_handheld")
+    model = handheld_id(name)
+    m = Model(model, "item", model)
     m.display = item_display()
     shell = {"gb": "#d1cfc5", "gbc": "#268c91", "gba": "#514783", "nes": "#d1cfc5"}[
         name
@@ -1074,14 +1085,14 @@ def handheld(name):
     m.overrides = [
         {
             "predicate": {"retrocraft:powered": 1},
-            "model": f"retrocraft:item/{name}_handheld_on",
+            "model": f"retrocraft:item/{model}_on",
         }
     ]
     m.save()
     write_json(
-        f"models/item/{name}_handheld_on.json",
+        f"models/item/{model}_on.json",
         {
-            "parent": f"retrocraft:item/{name}_handheld",
+            "parent": f"retrocraft:item/{model}",
             "textures": {
                 "screen": f'retrocraft:block/console/lcd_{"dmg" if name=="gb" else "color"}_on',
                 "indicator": f'retrocraft:block/console/led_{"green" if name in ("gba","nes") else "red"}_on',
@@ -1107,7 +1118,7 @@ def psp_symbol(symbol, color="#e2e5e9", background="#363a42"):
 
 def psp():
     """Classic black PSP: wide glass, one analog nub, silver seam and rear UMD ring."""
-    m = Model("psp_handheld", "item", "psp_handheld")
+    m = Model("psp", "item", "psp")
     m.display = item_display()
     shell, rear, trim, glass = "#393d45", "#282c33", "#8d959e", "#16191f"
     # Continuous horizontal bands round both ends and keep the silver seam attached to the shell.
@@ -1283,14 +1294,14 @@ def psp():
     m.overrides = [
         {
             "predicate": {"retrocraft:powered": 1},
-            "model": "retrocraft:item/psp_handheld_on",
+            "model": "retrocraft:item/psp_on",
         }
     ]
     m.save()
     write_json(
-        "models/item/psp_handheld_on.json",
+        "models/item/psp_on.json",
         {
-            "parent": "retrocraft:item/psp_handheld",
+            "parent": "retrocraft:item/psp",
             "textures": {
                 "screen": "retrocraft:block/console/lcd_color_on",
                 "indicator": "retrocraft:block/console/led_green_on",
@@ -1301,7 +1312,7 @@ def psp():
 
 def umd():
     """Thin round-topped UMD shell, printed annulus and enclosed metal spindle."""
-    m = Model("psp", "item", "media_psp")
+    m = Model("psp_umd", "item", "psp_umd")
     m.display = item_display()
     shell, edge = "#eceee8", "#b5bcbf"
     # A round upper half and broad lower corners, not a square cartridge.
@@ -1354,7 +1365,7 @@ def umd():
 def foldable_pose():
     """Read the renderer's hinge so baked geometry and live LCDs cannot drift apart."""
     source = (
-        ROOT / "src/main/java/com/sammwy/retrocraft/client/FoldablePose.java"
+        ROOT / "src/main/java/com/sammwy/retrocraft/client/render/FoldablePose.java"
     ).read_text()
     values = {
         key: float(value)
@@ -1371,7 +1382,7 @@ def foldable_pose():
 
 def foldable(name):
     """Open AGS-001, USG-001 and CTR-001, with a raised lid and a forward-tilted base."""
-    m = Model(name + "_handheld", "item", name + "_handheld")
+    m = Model(name, "item", name)
     m.display = item_display()
     pose = foldable_pose()
     sp, ds = name == "gba_sp", name == "nds"
@@ -1588,14 +1599,14 @@ def foldable(name):
     m.overrides = [
         {
             "predicate": {"retrocraft:powered": 1},
-            "model": f"retrocraft:item/{name}_handheld_on",
+            "model": f"retrocraft:item/{name}_on",
         }
     ]
     m.save()
     write_json(
-        f"models/item/{name}_handheld_on.json",
+        f"models/item/{name}_on.json",
         {
-            "parent": f"retrocraft:item/{name}_handheld",
+            "parent": f"retrocraft:item/{name}",
             "textures": {
                 "screen": "retrocraft:block/console/lcd_color_on",
                 "indicator": "retrocraft:block/console/led_green_on",
@@ -1605,7 +1616,7 @@ def foldable(name):
 
 
 def ds_cartridge(name):
-    m = Model(name, "item", "media_" + name)
+    m = Model(media_id(name), "item", media_id(name))
     m.display = item_display()
     shell = "#3a3d44" if name == "nds" else "#e0e2e4"
     m.box("game card shell", [4.2, 3.5, 7.5], [11.8, 12, 8.5], shell)
@@ -1666,7 +1677,7 @@ def game_label(w, h, platform, accent):
 
 
 def cartridge(name):
-    m = Model(name, "item", "media_" + name)
+    m = Model(media_id(name), "item", media_id(name))
     m.display = item_display()
     shell = {
         "nes": "#aaa9a4",
@@ -1676,7 +1687,7 @@ def cartridge(name):
         "gba": "#30323d",
         "n64": "#a9aaa4",
         "megadrive": "#26282e",
-        "mame": "#276b51",
+        "arcade": "#276b51",
     }[name]
     if name == "nes":
         m.box("NES cartridge body", [3, 2.1, 7.15], [13, 13.4, 8.85], shell)
@@ -1896,7 +1907,7 @@ def cartridge(name):
             shell,
         )
     # A simple rear molding, not a duplicate of the illustrated label.
-    if name != "mame":
+    if name != "arcade":
         m.front(
             "rear molding",
             5.4,
@@ -1911,7 +1922,7 @@ def cartridge(name):
 
 
 def optical_disc(name):
-    m = Model(name, "item", "media_" + name)
+    m = Model(media_id(name), "item", media_id(name))
     m.display = item_display()
     radius = 4.3 if name == "gamecube" else 6.1
     body = {
@@ -2243,23 +2254,23 @@ def generate():
     wii()
     for theme in THEMES:
         arcade(theme)
-    write_json("models/item/mame_internal_console.json", {
-        "parent": "retrocraft:item/mame_console",
+    write_json("models/item/arcade_cabinet.json", {
+        "parent": "retrocraft:item/arcade",
         "overrides": [
             {"predicate": {"custom_model_data": i}, "model": "retrocraft:item/" + name}
             for i, name in enumerate([
-                "mame_pacman_console", "mame_tetris_console", "mame_space_invaders_console",
-                "mame_donkey_kong_console", "mame_galaga_console", "mame_street_fighter_console",
-                "mame_metal_slug_console", "mame_mortal_kombat_console", "mame_bubble_bobble_console"
+                "arcade_pacman", "arcade_tetris", "arcade_space_invaders",
+                "arcade_donkey_kong", "arcade_galaga", "arcade_street_fighter",
+                "arcade_metal_slug", "arcade_mortal_kombat", "arcade_bubble_bobble"
             ], 1)
         ]
     })
     for suffix in ("", "_on", "_top"):
-        write_json("models/block/mame_internal_console" + suffix + ".json", {
-            "parent": "retrocraft:block/mame_console" + suffix
+        write_json("models/block/arcade_cabinet" + suffix + ".json", {
+            "parent": "retrocraft:block/arcade" + suffix
         })
-    write_json("blockstates/mame_internal_console.json", {
-        "variants": {"": {"model": "retrocraft:block/mame_console"}}
+    write_json("blockstates/arcade_cabinet.json", {
+        "variants": {"": {"model": "retrocraft:block/arcade"}}
     })
     for name in ("gb", "gbc", "gba", "nes"):
         handheld(name)
@@ -2269,7 +2280,7 @@ def generate():
         foldable(name)
     for name in ("nds", "3ds"):
         ds_cartridge(name)
-    for name in ("nes", "snes", "gb", "gbc", "gba", "n64", "megadrive", "mame"):
+    for name in ("nes", "snes", "gb", "gbc", "gba", "n64", "megadrive", "arcade"):
         cartridge(name)
     for name in ("ps1", "ps2", "dreamcast", "gamecube", "wii"):
         optical_disc(name)

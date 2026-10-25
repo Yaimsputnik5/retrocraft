@@ -45,11 +45,11 @@ public final class ClientConfig {
                     switch (key) {
                         case "ndsLayout" -> {
                             copy.ndsLayout = value;
-                            copy.handheldLayouts.remove("retrocraft:nds_handheld");
+                            copy.handheldLayouts.remove("retrocraft:nds");
                         }
                         case "threedsLayout" -> {
                             copy.threedsLayout = value;
-                            copy.handheldLayouts.remove("retrocraft:3ds_handheld");
+                            copy.handheldLayouts.remove("retrocraft:3ds");
                         }
                         case "volume" -> copy.volume = Integer.parseInt(value);
                         case "maxVideoFps" -> copy.maxVideoFps = Integer.parseInt(value);
@@ -73,8 +73,8 @@ public final class ClientConfig {
     public DualScreenLayout hudLayout(String key) {
         String legacy =
                 switch (key) {
-                    case "retrocraft:nds_handheld" -> ndsLayout;
-                    case "retrocraft:3ds_handheld" -> threedsLayout;
+                    case "retrocraft:nds" -> ndsLayout;
+                    case "retrocraft:3ds" -> threedsLayout;
                     default -> "vertical";
                 };
         return DualScreenLayout.parse(handheldLayouts.getOrDefault(key, legacy));

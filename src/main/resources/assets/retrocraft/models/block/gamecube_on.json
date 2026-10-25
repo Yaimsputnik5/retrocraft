@@ -1,0 +1,6 @@
+{
+  "parent": "retrocraft:block/gamecube",
+  "textures": {
+    "indicator": "retrocraft:block/console/led_orange_on"
+  }
+}

@@ -3,13 +3,14 @@ package com.sammwy.retrocraft.client;
 import org.lwjgl.glfw.GLFW;
 
 import com.sammwy.retrocraft.client.config.ControllerProfile;
+import com.sammwy.retrocraft.client.ui.ConsoleScreen;
 import com.sammwy.retrocraft.cores.worker.PadInput;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.InputUtil;
 
-final class InputControls {
-    static PadInput sample(MinecraftClient client) {
+public final class InputControls {
+    public static PadInput sample(MinecraftClient client) {
         if (!client.isWindowFocused()
                 || !(client.currentScreen instanceof ConsoleScreen screen)
                 || !screen.acceptingInput()) return PadInput.IDLE;
@@ -25,7 +26,7 @@ final class InputControls {
                                                 == GLFW.GLFW_PRESS));
     }
 
-    static String keyName(int key) {
+    public static String keyName(int key) {
         if (key == -1) return "—";
         if (key <= -2)
             return InputUtil.Type.MOUSE.createFromCode(-key - 2).getLocalizedText().getString();
@@ -42,7 +43,7 @@ final class InputControls {
         };
     }
 
-    static String keyName(String console, ControllerProfile.Action action) {
+    public static String keyName(String console, ControllerProfile.Action action) {
         var profile = ControllerProfile.of(console);
         return keyName(profile.key(ClientPreferences.get().controls(console), action));
     }

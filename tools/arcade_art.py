@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw
 
 THEMES = {
     "pacman": {
-        "id": "mame_pacman_console",
+        "id": "arcade_pacman",
         "title": "PAC-MAN",
         "shell": "#e5bb32",
         "trim": "#171b29",
@@ -15,7 +15,7 @@ THEMES = {
         "ink": "#182e4a",
     },
     "tetris": {
-        "id": "mame_tetris_console",
+        "id": "arcade_tetris",
         "title": "TETRIS",
         "shell": "#234c85",
         "trim": "#172132",
@@ -23,7 +23,7 @@ THEMES = {
         "ink": "#e3e7e8",
     },
     "space_invaders": {
-        "id": "mame_space_invaders_console",
+        "id": "arcade_space_invaders",
         "title": "SPACE INVADERS",
         "shell": "#182b37",
         "trim": "#101821",
@@ -42,7 +42,7 @@ for key, title, shell, accent in [
     ("mortal_kombat", "MORTAL KOMBAT", "#2c2430", "#d6ab51"),
     ("bubble_bobble", "BUBBLE BOBBLE", "#25827e", "#9cde76"),
 ]:
-    THEMES[key] = {"id": "mame_console" if key == "generic" else "mame_" + key + "_console",
+    THEMES[key] = {"id": "arcade" if key == "generic" else "arcade_" + key,
                    "title": title, "shell": shell, "trim": "#141923",
                    "accent": accent, "ink": "#e5e6df"}
 

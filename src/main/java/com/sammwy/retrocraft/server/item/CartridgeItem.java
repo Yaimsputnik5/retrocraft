@@ -2,8 +2,8 @@ package com.sammwy.retrocraft.server.item;
 
 import java.util.*;
 
-import com.sammwy.retrocraft.roms.discovery.DiscoveryStrategy;
 import com.sammwy.retrocraft.server.console.ConsoleRegistry;
+import com.sammwy.retrocraft.server.console.GameSystem;
 
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.NbtComponent;
@@ -12,25 +12,18 @@ import net.minecraft.item.tooltip.TooltipType;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-import net.minecraft.util.Identifier;
 
-/** A registered cartridge item fixes the console family; NBT identifies only the ROM. */
+/** Game media of one system (cartridge, card, disc, UMD or board); NBT identifies only the ROM. */
 public final class CartridgeItem extends Item {
-    private final Identifier id;
-    private final DiscoveryStrategy discovery;
+    private final GameSystem system;
 
-    public CartridgeItem(Identifier id, DiscoveryStrategy discovery) {
+    public CartridgeItem(GameSystem system) {
         super(new Settings().maxCount(1));
-        this.id = id;
-        this.discovery = discovery;
+        this.system = system;
     }
 
-    public Identifier id() {
-        return id;
-    }
-
-    public DiscoveryStrategy discovery() {
-        return discovery;
+    public GameSystem system() {
+        return system;
     }
 
     public ItemStack game(String hash, String name) {
@@ -50,9 +43,8 @@ public final class CartridgeItem extends Item {
             ItemStack stack, TooltipContext context, List<Text> tooltip, TooltipType type) {
         List<String> consoles = new ArrayList<>();
         for (var console : ConsoleRegistry.consoles())
-            if (console.cartridge() == this
-                    && !console.isInternalArcade()
-                    && !console.isLegacyArcade()) consoles.add(console.displayName().getString());
+            if (console.cartridge() == this && console.listed())
+                consoles.add(console.displayName().getString());
         if (!consoles.isEmpty()) {
             tooltip.add(
                     Text.translatable("tooltip.retrocraft.compatible_with")

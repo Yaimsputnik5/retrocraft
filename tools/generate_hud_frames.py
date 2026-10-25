@@ -14,19 +14,19 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'src/main/resources/assets/retrocraft/textures/gui/console_hud'
 # shell / recess / accent. Keep the artwork limited to the screen surround.
 PALETTES = {
-    'gb_handheld': ('#c8c4b8', '#4a4a5a', '#9b2d5f'),
-    'gbc_handheld': ('#1f8d8a', '#2d2d35', '#4b3a7a'),
-    'gba_handheld': ('#584c9e', '#1c1b23', '#8d85c4'),
-    'gba_sp_handheld': ('#8193ad', '#282c34', '#c0c9d4'),
-    'nds_handheld': ('#d4d6dc', '#45484f', '#8e969e'),
-    '3ds_handheld': ('#258f9e', '#15191e', '#68c4cc'),
-    'psp_handheld': ('#24262d', '#101216', '#bdc2c9'),
+    'gb': ('#c8c4b8', '#4a4a5a', '#9b2d5f'),
+    'gbc': ('#1f8d8a', '#2d2d35', '#4b3a7a'),
+    'gba': ('#584c9e', '#1c1b23', '#8d85c4'),
+    'gba_sp': ('#8193ad', '#282c34', '#c0c9d4'),
+    'nds': ('#d4d6dc', '#45484f', '#8e969e'),
+    '3ds': ('#258f9e', '#15191e', '#68c4cc'),
+    'psp': ('#24262d', '#101216', '#bdc2c9'),
     'nes_handheld': ('#c7c5c0', '#141417', '#c1392b'),
 }
 
 
 def margins():
-    source = (ROOT / 'src/main/java/com/sammwy/retrocraft/client/hud/DefaultConsoleHuds.java').read_text()
+    source = (ROOT / 'src/main/java/com/sammwy/retrocraft/client/ui/hud/DefaultConsoleHuds.java').read_text()
     values = {name: tuple(map(int, border.split(','))) for name, border in re.findall(
         r'single\(\s*"(\w+)"\s*,.*?new HudInsets\(([^)]+)\)\)', source, re.S)}
     for name in re.findall(r'dual\(\s*"(\w+)"\s*,', source):
@@ -57,10 +57,10 @@ def generate(output):
         d.line((3,62,60,62),fill=shade(shell,.6))
         rounded(d,(4,4,59,59),recess)
         d.rectangle((left-1,top-1,64-right,64-bottom),fill='#080a0e')
-        if name == 'gb_handheld':
+        if name == 'gb':
             for y,color in ((5,'#7a2a7c'),(7,'#2f3c8f'),(9,'#9b2d5f')):
                 d.line((left-4,y,58,y),fill=color)
-        elif name in ('gba_handheld','nes_handheld'):
+        elif name in ('gba','nes_handheld'):
             d.line((left,64-bottom+3,63-right,64-bottom+3),fill=accent)
         overlay = Image.new('RGBA',(64,64),(0,0,0,0))
         d = ImageDraw.Draw(overlay)

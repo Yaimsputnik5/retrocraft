@@ -1,6 +1,0 @@
-{
-  "parent": "retrocraft:block/genesis_console",
-  "textures": {
-    "indicator": "retrocraft:block/console/led_red_on"
-  }
-}

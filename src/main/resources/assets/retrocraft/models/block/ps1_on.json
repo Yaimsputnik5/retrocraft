@@ -1,0 +1,6 @@
+{
+  "parent": "retrocraft:block/ps1",
+  "textures": {
+    "indicator": "retrocraft:block/console/led_green_on"
+  }
+}

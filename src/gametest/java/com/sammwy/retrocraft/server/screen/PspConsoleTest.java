@@ -13,15 +13,14 @@ import net.minecraft.util.Identifier;
 public class PspConsoleTest implements FabricGameTest {
     @GameTest(templateName = EMPTY_STRUCTURE)
     public void pspUsesItsOwnUmdAndPortableCore(TestContext context) {
-        var id = Identifier.of("retrocraft", "psp_handheld");
+        var id = Identifier.of("retrocraft", "psp");
         var console = ConsoleRegistry.get(id);
         context.assertTrue(
                 console != null && console.type() == ConsoleType.HANDHELD, "PSP is a handheld");
         context.assertTrue(
                 Registries.ITEM.get(id) instanceof HandheldConsoleItem, "PSP has a usable item");
         context.assertTrue(
-                console.cartridge()
-                        == ConsoleRegistry.cartridge(Identifier.of("retrocraft", "psp")),
+                console.cartridge() == ConsoleRegistry.media(Identifier.of("retrocraft", "psp")),
                 "PSP accepts UMD games");
         context.assertTrue(!console.usesTelevision(), "PSP uses its own screen");
         context.assertTrue(

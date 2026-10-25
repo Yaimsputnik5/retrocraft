@@ -66,24 +66,24 @@ class ClientConfigTest {
                 new ClientConfig()
                         .withControls(
                                 Map.of(
-                                        "ps2_console", Map.of("b", 70, "left_up", 84, "r2", -3),
-                                        "nes_console", Map.of("a", -1)));
+                                        "ps2", Map.of("b", 70, "left_up", 84, "r2", -3),
+                                        "nes", Map.of("a", -1)));
         config.changed(Map.of("volume", "40")).save(file);
         var restored = ClientConfig.load(file);
-        assertEquals(Map.of("b", 70, "left_up", 84, "r2", -3), restored.controls("ps2_console"));
-        assertEquals(Map.of("a", -1), restored.controls("nes_console"));
-        assertTrue(restored.controls("ps1_console").isEmpty());
+        assertEquals(Map.of("b", 70, "left_up", 84, "r2", -3), restored.controls("ps2"));
+        assertEquals(Map.of("a", -1), restored.controls("nes"));
+        assertTrue(restored.controls("ps1").isEmpty());
         assertEquals("server settings", Files.readString(server));
         assertTrue(restored.withControls(Map.of()).controls.isEmpty());
         assertThrows(
                 IllegalArgumentException.class,
-                () -> config.withControls(Map.of("nes_console", Map.of("left_up", 87))));
+                () -> config.withControls(Map.of("nes", Map.of("left_up", 87))));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> config.withControls(Map.of("ps2_console", Map.of("b", 99999))));
+                () -> config.withControls(Map.of("ps2", Map.of("b", 99999))));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> config.withControls(Map.of("ps2_console", Map.of("b", 297))));
+                () -> config.withControls(Map.of("ps2", Map.of("b", 297))));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> config.withControls(Map.of("../server", Map.of("b", 70))));

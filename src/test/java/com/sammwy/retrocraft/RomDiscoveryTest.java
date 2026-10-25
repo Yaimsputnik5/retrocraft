@@ -111,10 +111,13 @@ class RomDiscoveryTest {
                     new byte[] {4});
         var games = new RomScanner(RomFormats.ALL, 1024).scan(root, failWarning());
         assertEquals(
-                Set.of("mame", "ps2", "ps1", "dreamcast", "wii", "gamecube"),
+                Set.of("arcade", "ps2", "ps1", "dreamcast", "wii", "gamecube"),
                 new HashSet<>(games.stream().map(RomScanner.Game::cartridge).toList()));
         var arcadeGame =
-                games.stream().filter(g -> g.cartridge().equals("mame")).findFirst().orElseThrow();
+                games.stream()
+                        .filter(g -> g.cartridge().equals("arcade"))
+                        .findFirst()
+                        .orElseThrow();
         assertEquals("pacman.zip", arcadeGame.filename());
         assertEquals("Pac-Man (Midway)", arcadeGame.name());
         assertEquals("neogeo", ArcadeSets.requiredBios("mslug.zip").id());

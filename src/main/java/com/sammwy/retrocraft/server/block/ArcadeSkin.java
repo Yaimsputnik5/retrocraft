@@ -6,16 +6,16 @@ import com.sammwy.retrocraft.roms.discovery.ArcadeSets;
 
 /** Resolves MAME short set IDs and readable names to shared cabinet artwork. */
 public enum ArcadeSkin {
-    GENERIC("mame_console"),
-    PACMAN("mame_pacman_console"),
-    TETRIS("mame_tetris_console"),
-    SPACE_INVADERS("mame_space_invaders_console"),
-    DONKEY_KONG("mame_donkey_kong_console"),
-    GALAGA("mame_galaga_console"),
-    STREET_FIGHTER("mame_street_fighter_console"),
-    METAL_SLUG("mame_metal_slug_console"),
-    MORTAL_KOMBAT("mame_mortal_kombat_console"),
-    BUBBLE_BOBBLE("mame_bubble_bobble_console");
+    GENERIC("arcade"),
+    PACMAN("arcade_pacman"),
+    TETRIS("arcade_tetris"),
+    SPACE_INVADERS("arcade_space_invaders"),
+    DONKEY_KONG("arcade_donkey_kong"),
+    GALAGA("arcade_galaga"),
+    STREET_FIGHTER("arcade_street_fighter"),
+    METAL_SLUG("arcade_metal_slug"),
+    MORTAL_KOMBAT("arcade_mortal_kombat"),
+    BUBBLE_BOBBLE("arcade_bubble_bobble");
 
     private final String model;
 

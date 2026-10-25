@@ -5,11 +5,28 @@ import java.util.*;
 import org.lwjgl.glfw.GLFW;
 
 import com.sammwy.retrocraft.Retrocraft;
+import com.sammwy.retrocraft.client.media.AudioStreams;
+import com.sammwy.retrocraft.client.media.VideoStreams;
+import com.sammwy.retrocraft.client.net.HybridClient;
+import com.sammwy.retrocraft.client.net.SettingsClient;
+import com.sammwy.retrocraft.client.render.CameraRig;
+import com.sammwy.retrocraft.client.render.DockedConsoleRenderer;
+import com.sammwy.retrocraft.client.render.ScreenTextures;
+import com.sammwy.retrocraft.client.render.Thumbnails;
+import com.sammwy.retrocraft.client.render.TvRenderer;
+import com.sammwy.retrocraft.client.ui.BiosRequiredScreen;
+import com.sammwy.retrocraft.client.ui.ConsoleInventoryScreen;
+import com.sammwy.retrocraft.client.ui.ConsoleScreen;
+import com.sammwy.retrocraft.client.ui.DownloadHud;
+import com.sammwy.retrocraft.client.ui.PlayerHud;
+import com.sammwy.retrocraft.client.ui.SettingsScreen;
+import com.sammwy.retrocraft.client.ui.hud.DefaultConsoleHuds;
 import com.sammwy.retrocraft.cores.transfer.Downloads;
 import com.sammwy.retrocraft.roms.RomCatalog;
 import com.sammwy.retrocraft.server.block.DockedConsoleBlock;
 import com.sammwy.retrocraft.server.console.*;
 import com.sammwy.retrocraft.server.item.HandheldConsoleItem;
+import com.sammwy.retrocraft.server.item.RetrocraftItemGroups;
 import com.sammwy.retrocraft.server.net.HybridPackets;
 import com.sammwy.retrocraft.server.net.Packets;
 import com.sammwy.retrocraft.server.net.SettingsPackets;
@@ -34,9 +51,9 @@ import net.minecraft.util.Identifier;
 public final class RetrocraftClient implements ClientModInitializer {
     private final AudioStreams audio = new AudioStreams();
     private final VideoStreams video = new VideoStreams();
-    static VideoStreams VIDEO;
+    public static VideoStreams VIDEO;
     static AudioStreams AUDIO;
-    static KeyBinding SETTINGS_KEY;
+    public static KeyBinding SETTINGS_KEY;
     public static HybridClient EMULATION;
     private final List<RomCatalog.Entry> pendingCatalog = new ArrayList<>();
     private int catalogGeneration;
@@ -45,7 +62,7 @@ public final class RetrocraftClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientPreferences.load();
-        com.sammwy.retrocraft.client.hud.DefaultConsoleHuds.register();
+        DefaultConsoleHuds.register();
         DownloadHud.register();
         SETTINGS_KEY =
                 KeyBindingHelper.registerKeyBinding(
@@ -209,9 +226,9 @@ public final class RetrocraftClient implements ClientModInitializer {
                                     client.world.getEnabledFeatures(),
                                     client.player.hasPermissionLevel(2),
                                     client.world.getRegistryManager());
-                    Retrocraft.CREATIVE_GROUP.updateEntries(display);
-                    Retrocraft.GAMES_GROUP.updateEntries(display);
-                    Retrocraft.ARCADES_GROUP.updateEntries(display);
+                    RetrocraftItemGroups.CONSOLES.updateEntries(display);
+                    RetrocraftItemGroups.GAMES.updateEntries(display);
+                    RetrocraftItemGroups.ARCADES.updateEntries(display);
                     ItemGroups.getSearchGroup().updateEntries(display);
                     if (client.currentScreen instanceof CreativeInventoryScreen screen)
                         screen.init(

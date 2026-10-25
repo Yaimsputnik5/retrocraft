@@ -65,10 +65,10 @@ public final class InstanceStore {
         }
     }
 
-    public Metadata create(UUID owner, String console, String gameId, String rom, Path core)
+    public Metadata create(UUID owner, String console, String gameId, String rom, String coreSha256)
             throws IOException {
         UUID id = UUID.randomUUID();
-        Metadata data = new Metadata(2, id, owner, console, gameId, rom, sha256(core));
+        Metadata data = new Metadata(2, id, owner, console, gameId, rom, coreSha256);
         Files.createDirectories(directory(id));
         Path temporary = directory(id).resolve("instance.json.tmp");
         try (Writer writer = Files.newBufferedWriter(temporary)) {

@@ -1,0 +1,7 @@
+{
+  "parent": "retrocraft:block/arcade_bubble_bobble",
+  "textures": {
+    "indicator": "retrocraft:block/console/led_red_on",
+    "screen": "retrocraft:block/console/crt_on"
+  }
+}

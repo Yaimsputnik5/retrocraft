@@ -1,0 +1,59 @@
+{
+  "parent": "retrocraft:item/arcade",
+  "overrides": [
+    {
+      "predicate": {
+        "custom_model_data": 1
+      },
+      "model": "retrocraft:item/arcade_pacman"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 2
+      },
+      "model": "retrocraft:item/arcade_tetris"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 3
+      },
+      "model": "retrocraft:item/arcade_space_invaders"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 4
+      },
+      "model": "retrocraft:item/arcade_donkey_kong"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 5
+      },
+      "model": "retrocraft:item/arcade_galaga"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 6
+      },
+      "model": "retrocraft:item/arcade_street_fighter"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 7
+      },
+      "model": "retrocraft:item/arcade_metal_slug"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 8
+      },
+      "model": "retrocraft:item/arcade_mortal_kombat"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 9
+      },
+      "model": "retrocraft:item/arcade_bubble_bobble"
+    }
+  ]
+}

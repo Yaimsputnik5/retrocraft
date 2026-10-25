@@ -8,7 +8,6 @@ import com.sammwy.retrocraft.cores.KnownCores;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig.*;
 import com.sammwy.retrocraft.server.console.ConsoleRegistry;
 
-import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
 
 /**
@@ -204,12 +203,11 @@ public enum ConfigKey {
         return Boolean.parseBoolean(raw);
     }
 
-    /** All settable keys, including a {@code cores.<cartridge>} entry per registered cartridge. */
+    /** All settable keys, including a {@code cores.<system>} entry per registered system. */
     public static Stream<String> keys() {
         Stream<String> scalars = Arrays.stream(values()).map(Enum::name);
         Stream<String> mappings =
-                ConsoleRegistry.cartridges().stream()
-                        .map(item -> "cores." + Registries.ITEM.getId(item));
+                ConsoleRegistry.media().stream().map(item -> "cores." + item.system().id());
         return Stream.concat(scalars, mappings);
     }
 
@@ -266,6 +264,6 @@ public enum ConfigKey {
     private static String cartridge(String key) {
         if (!key.startsWith("cores.") || !key.substring(6).contains(":")) return null;
         String cartridge = key.substring(6);
-        return ConsoleRegistry.cartridge(Identifier.tryParse(cartridge)) == null ? null : cartridge;
+        return ConsoleRegistry.media(Identifier.tryParse(cartridge)) == null ? null : cartridge;
     }
 }

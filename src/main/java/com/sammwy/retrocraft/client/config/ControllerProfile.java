@@ -6,8 +6,29 @@ import java.util.function.IntPredicate;
 
 import com.sammwy.retrocraft.cores.worker.PadInput;
 
-/** Console controls and keyboard defaults, independent of networking and rendering. */
-public record ControllerProfile(String id, List<Button> buttons, int sticks) {
+/**
+ * Console controls and keyboard defaults, independent of networking and rendering. {@code id} is
+ * the console ID, so bindings stay per console even when two consoles share a pad.
+ */
+public record ControllerProfile(
+        String id,
+        List<Button> buttons,
+        int sticks,
+        FaceLayout layout,
+        String leftStick,
+        String rightStick) {
+    /** How the player HUD arranges the face and shoulder buttons. */
+    public enum FaceLayout {
+        ROW,
+        GBA,
+        SEGA,
+        N64,
+        ARCADE,
+        DIAMOND,
+        DIAMOND_WIDE,
+        TRIGGERS
+    }
+
     public enum Action {
         B,
         Y,
@@ -70,6 +91,125 @@ public record ControllerProfile(String id, List<Button> buttons, int sticks) {
                     b(Action.L3, "L3"),
                     b(Action.R3, "R3"));
 
+    private static List<Button> concat(List<Button> first, List<Button> second, Button... rest) {
+        var all = new ArrayList<>(first);
+        all.addAll(second);
+        all.addAll(List.of(rest));
+        return List.copyOf(all);
+    }
+
+    /** {@code select} is the label of the Select action, or null when the pad has none. */
+    private record Pad(
+            List<Button> buttons,
+            int sticks,
+            FaceLayout layout,
+            String select,
+            String leftStick,
+            String rightStick) {
+        Pad(List<Button> buttons, FaceLayout layout) {
+            this(buttons, 0, layout, "Select", "L", "R");
+        }
+
+        Pad sticks(int count) {
+            return new Pad(buttons, count, layout, select, leftStick, rightStick);
+        }
+
+        Pad select(String label) {
+            return new Pad(buttons, sticks, layout, label, leftStick, rightStick);
+        }
+
+        Pad stickLabels(String left, String right) {
+            return new Pad(buttons, sticks, layout, select, left, right);
+        }
+    }
+
+    private static final Pad DEFAULT = new Pad(TWO, FaceLayout.ROW);
+    private static final Map<String, Pad> PADS = new HashMap<>();
+
+    static {
+        var gba = new Pad(concat(TWO, SHOULDERS), FaceLayout.GBA);
+        var sega =
+                new Pad(
+                                List.of(
+                                        b(Action.Y, "A"),
+                                        b(Action.B, "B"),
+                                        b(Action.A, "C"),
+                                        b(Action.L, "X"),
+                                        b(Action.X, "Y"),
+                                        b(Action.R, "Z")),
+                                FaceLayout.SEGA)
+                        .select("Mode");
+        var playStation =
+                new Pad(PLAYSTATION, FaceLayout.TRIGGERS).sticks(2).stickLabels("L3", "R3");
+        var arcade =
+                new Pad(
+                                List.of(
+                                        b(Action.B, "1"),
+                                        b(Action.Y, "2"),
+                                        b(Action.A, "3"),
+                                        b(Action.X, "4"),
+                                        b(Action.L, "5"),
+                                        b(Action.R, "6")),
+                                FaceLayout.ARCADE)
+                        .select("Coin");
+        pad(gba, "gba", "gba_sp");
+        pad(sega, "megadrive", "genesis");
+        pad(playStation, "ps1", "ps2");
+        pad(arcade, "arcade", "arcade_tetris", "arcade_space_invaders", "arcade_cabinet");
+        pad(new Pad(concat(FOUR, SHOULDERS), FaceLayout.DIAMOND), "snes");
+        pad(
+                new Pad(concat(PLAYSTATION.subList(0, 4), SHOULDERS), FaceLayout.DIAMOND).sticks(1),
+                "psp");
+        pad(new Pad(concat(FOUR, SHOULDERS, b(Action.L3, "Mic")), FaceLayout.DIAMOND_WIDE), "nds");
+        pad(
+                new Pad(
+                                concat(FOUR, SHOULDERS, b(Action.L2, "ZL"), b(Action.R2, "ZR")),
+                                FaceLayout.DIAMOND_WIDE)
+                        .sticks(2),
+                "3ds");
+        // The core maps the right virtual stick to the four C buttons.
+        pad(
+                new Pad(
+                                List.of(
+                                        b(Action.B, "A"),
+                                        b(Action.Y, "B"),
+                                        b(Action.L, "L"),
+                                        b(Action.R, "R"),
+                                        b(Action.L2, "Z")),
+                                FaceLayout.N64)
+                        .sticks(2)
+                        .select(null)
+                        .stickLabels("L", "C"),
+                "n64");
+        pad(
+                new Pad(concat(FOUR, SHOULDERS), FaceLayout.TRIGGERS).sticks(1).select(null),
+                "dreamcast");
+        pad(
+                new Pad(concat(FOUR, SHOULDERS, b(Action.R2, "Z")), FaceLayout.TRIGGERS)
+                        .sticks(2)
+                        .select(null),
+                "gamecube");
+        pad(
+                new Pad(
+                                List.of(
+                                        b(Action.A, "A"),
+                                        b(Action.B, "B"),
+                                        b(Action.X, "1"),
+                                        b(Action.Y, "2"),
+                                        b(Action.L, "−"),
+                                        b(Action.R, "+"),
+                                        b(Action.L2, "C"),
+                                        b(Action.R2, "Z")),
+                                FaceLayout.TRIGGERS)
+                        .sticks(1)
+                        .select("Home"),
+                "wii");
+    }
+
+    private static void pad(Pad pad, String... consoles) {
+        for (String console : consoles) PADS.put(console, pad);
+    }
+
     private static final Map<String, ControllerProfile> PROFILES = new ConcurrentHashMap<>();
     private static final Map<String, List<Action>> ACTIONS = new ConcurrentHashMap<>();
 
@@ -78,113 +218,17 @@ public record ControllerProfile(String id, List<Button> buttons, int sticks) {
     }
 
     private static ControllerProfile create(String id) {
-        var buttons = new ArrayList<Button>();
-        int sticks = 0;
-        switch (id) {
-            case "ps1_console", "ps2_console" -> {
-                buttons.addAll(PLAYSTATION);
-                sticks = 2;
-            }
-            case "psp_handheld" -> {
-                buttons.addAll(PLAYSTATION.subList(0, 4));
-                buttons.addAll(SHOULDERS);
-                sticks = 1;
-            }
-            case "gba_handheld", "gba_sp_handheld" -> {
-                buttons.addAll(TWO);
-                buttons.addAll(SHOULDERS);
-            }
-            case "3ds_handheld" -> {
-                buttons.addAll(FOUR);
-                buttons.addAll(SHOULDERS);
-                buttons.add(b(Action.L2, "ZL"));
-                buttons.add(b(Action.R2, "ZR"));
-                sticks = 2;
-            }
-            case "nds_handheld" -> {
-                buttons.addAll(FOUR);
-                buttons.addAll(SHOULDERS);
-                buttons.add(b(Action.L3, "Mic"));
-            }
-            case "snes_console" -> {
-                buttons.addAll(FOUR);
-                buttons.addAll(SHOULDERS);
-            }
-            case "megadrive_console", "genesis_console" ->
-                    buttons.addAll(
-                            List.of(
-                                    b(Action.Y, "A"),
-                                    b(Action.B, "B"),
-                                    b(Action.A, "C"),
-                                    b(Action.L, "X"),
-                                    b(Action.X, "Y"),
-                                    b(Action.R, "Z")));
-            case "n64_console" -> {
-                buttons.addAll(
-                        List.of(
-                                b(Action.B, "A"),
-                                b(Action.Y, "B"),
-                                b(Action.L, "L"),
-                                b(Action.R, "R"),
-                                b(Action.L2, "Z")));
-                sticks = 2; // The core maps the right virtual stick to the four C buttons.
-            }
-            case "dreamcast_console" -> {
-                buttons.addAll(FOUR);
-                buttons.addAll(SHOULDERS);
-                sticks = 1;
-            }
-            case "gamecube_console" -> {
-                buttons.addAll(FOUR);
-                buttons.addAll(SHOULDERS);
-                buttons.add(b(Action.R2, "Z"));
-                sticks = 2;
-            }
-            case "wii_console" -> {
-                buttons.addAll(
-                        List.of(
-                                b(Action.A, "A"),
-                                b(Action.B, "B"),
-                                b(Action.X, "1"),
-                                b(Action.Y, "2"),
-                                b(Action.L, "−"),
-                                b(Action.R, "+"),
-                                b(Action.L2, "C"),
-                                b(Action.R2, "Z")));
-                sticks = 1;
-            }
-            case "mame_console",
-                            "mame_tetris_console",
-                            "mame_space_invaders_console",
-                            "mame_internal_console" ->
-                    buttons.addAll(
-                            List.of(
-                                    b(Action.B, "1"),
-                                    b(Action.Y, "2"),
-                                    b(Action.A, "3"),
-                                    b(Action.X, "4"),
-                                    b(Action.L, "5"),
-                                    b(Action.R, "6")));
-            default -> buttons.addAll(TWO);
-        }
+        Pad pad = PADS.getOrDefault(id, DEFAULT);
+        var buttons = new ArrayList<>(pad.buttons());
         buttons.add(b(Action.START, "Start"));
-        if (!Set.of("n64_console", "dreamcast_console", "gamecube_console").contains(id))
-            buttons.add(
-                    b(
-                            Action.SELECT,
-                            id.startsWith("mame_")
-                                    ? "Coin"
-                                    : id.equals("wii_console")
-                                            ? "Home"
-                                            : id.equals("megadrive_console")
-                                                            || id.equals("genesis_console")
-                                                    ? "Mode"
-                                                    : "Select"));
-        return new ControllerProfile(id, List.copyOf(buttons), sticks);
-    }
-
-    public boolean playStation() {
-        return id.equals("ps1_console") || id.equals("ps2_console") || id.equals("psp_handheld");
+        if (pad.select() != null) buttons.add(b(Action.SELECT, pad.select()));
+        return new ControllerProfile(
+                id,
+                List.copyOf(buttons),
+                pad.sticks(),
+                pad.layout(),
+                pad.leftStick(),
+                pad.rightStick());
     }
 
     public List<Action> actions() {

@@ -29,7 +29,7 @@ public final class RomFormats {
                                 DiscoveryStrategy.extension("bin")
                                         .inDir("megadrive", "mega drive", "genesis")));
         formats.put("n64", DiscoveryStrategy.extension("z64", "n64", "v64"));
-        formats.put("mame", DiscoveryStrategy.extension("zip").require(ArcadeSets::contains));
+        formats.put("arcade", DiscoveryStrategy.extension("zip").require(ArcadeSets::contains));
         // Shared disc formats (.iso/.chd/.cue/...) only match inside a platform-named folder;
         // console-unique ones match anywhere.
         formats.put(

@@ -22,11 +22,11 @@ public final class RomIndex {
             Path cache,
             long maxBytes) {
         public RomCatalog.Entry catalogEntry() {
-            return new RomCatalog.Entry(cartridge.id().toString(), id, name);
+            return new RomCatalog.Entry(cartridge.system().id().toString(), id, name);
         }
 
         public Path materialize() throws IOException {
-            return cartridge.id().toString().equals("retrocraft:mame") && source.ordinal() < 0
+            return cartridge.system().arcade() && source.ordinal() < 0
                     ? source.original(root, id, maxBytes)
                     : source.materialize(root, cache, id, filename, maxBytes);
         }
@@ -48,8 +48,8 @@ public final class RomIndex {
             Consumer<String> warning)
             throws IOException {
         Map<String, DiscoveryStrategy> formats = new LinkedHashMap<>();
-        for (CartridgeItem cartridge : ConsoleRegistry.cartridges())
-            formats.put(cartridge.id().toString(), cartridge.discovery());
+        for (CartridgeItem cartridge : ConsoleRegistry.media())
+            formats.put(cartridge.system().id().toString(), cartridge.system().discovery());
         var repository = new RomRepository(root, cache, formats, maxBytes);
         var found =
                 onlyNew && previous != null
@@ -57,9 +57,9 @@ public final class RomIndex {
                         : forceScan ? repository.scan(warning) : repository.initialize(warning);
         Map<String, Game> games = new LinkedHashMap<>();
         for (var game : found) {
-            var cartridge = ConsoleRegistry.cartridge(Identifier.of(game.cartridge()));
+            var cartridge = ConsoleRegistry.media(Identifier.of(game.cartridge()));
             games.putIfAbsent(
-                    key(cartridge.id(), game.id()),
+                    key(cartridge.system().id(), game.id()),
                     new Game(
                             cartridge,
                             game.id(),
@@ -74,7 +74,7 @@ public final class RomIndex {
     }
 
     public Game find(CartridgeItem cartridge, String hash) {
-        return games.get(key(cartridge.id(), hash));
+        return games.get(key(cartridge.system().id(), hash));
     }
 
     public Collection<Game> games() {

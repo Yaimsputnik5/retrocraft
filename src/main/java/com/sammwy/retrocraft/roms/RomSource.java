@@ -21,7 +21,7 @@ public record RomSource(String file, String member, int ordinal) {
         Path cached = cache.resolve(hash).resolve(filename);
         if (Files.isRegularFile(cached)
                 && Files.size(cached) <= limit
-                && InstanceStore.sha256(cached).equals(hash)) return cached;
+                && FileHashes.romId(cached, limit).equals(hash)) return cached;
         Path root = library.toRealPath(), source = root.resolve(file).normalize().toRealPath();
         if (!source.startsWith(root) || !Files.isRegularFile(source))
             throw new IOException("ROM escaped library");
@@ -29,7 +29,7 @@ public record RomSource(String file, String member, int ordinal) {
         // copying gigabytes.
         long size = Files.size(source);
         if (size > limit) {
-            if (!RomScanner.hash(source, size, limit).equals(hash))
+            if (!FileHashes.romId(source, limit).equals(hash))
                 throw new IOException("ROM changed since it was indexed");
             return source;
         }
@@ -52,7 +52,7 @@ public record RomSource(String file, String member, int ordinal) {
         Path root = library.toRealPath(), source = root.resolve(file).normalize().toRealPath();
         if (!source.startsWith(root)
                 || !Files.isRegularFile(source)
-                || !matches(source, hash, limit))
+                || !FileHashes.romId(source, limit).equals(hash))
             throw new IOException("Arcade ROM changed or escaped library");
         return source;
     }

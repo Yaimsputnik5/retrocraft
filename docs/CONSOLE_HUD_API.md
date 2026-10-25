@@ -1,6 +1,6 @@
 # Handheld HUD renderers
 
-Register cartridges and hardware through `ConsoleRegistry` in the common initializer. Register each handheld's screen presentation through `ConsoleHudRegistry` in a **client initializer**, after its hardware exists. Docked consoles and arcade machines keep their existing world renderers: a nearby television for docked hardware and the cabinet's own screen for arcade machines.
+Register systems and hardware through `ConsoleRegistry` in the common initializer (the built-ins are declared in `Consoles`). Register each handheld's screen presentation through `ConsoleHudRegistry` in a **client initializer**, after its hardware exists. Docked consoles and arcade machines keep their existing world renderers: a nearby television for docked hardware and the cabinet's own screen for arcade machines.
 
 The handheld pipeline is:
 
@@ -27,7 +27,7 @@ ConsoleHudRegistry.register(
                 ConsoleHudConfig.single(240, 160, 0xff101218), frame));
 ```
 
-The classes are public under `com.sammwy.retrocraft.client.hud`. Registering an unknown console or a non-handheld console fails immediately. Registering an existing handheld ID replaces its renderer for the next opened HUD. Built-in defaults preserve any renderer registered earlier by another client initializer. Register renderers on the client thread; these classes are not common/server entry points.
+The classes are public under `com.sammwy.retrocraft.client.ui.hud`. Registering an unknown console or a non-handheld console fails immediately. Registering an existing handheld ID replaces its renderer for the next opened HUD. Built-in defaults preserve any renderer registered earlier by another client initializer. Register renderers on the client thread; these classes are not common/server entry points.
 
 Each frame has exactly two PNG resources. Source width and height describe those PNGs, not the framebuffer. `HudInsets(left, top, right, bottom)` defines both the fixed GUI-pixel space around the video and the source texture's nine-slice borders. The source centre must have positive dimensions.
 

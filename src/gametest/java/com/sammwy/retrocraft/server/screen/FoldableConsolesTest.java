@@ -18,8 +18,7 @@ public class FoldableConsolesTest implements FabricGameTest {
             {"nds", "nds", "desmume"}, {"3ds", "3ds", "citra"}, {"gba_sp", "gba", "mgba"}
         };
         for (String[] system : systems) {
-            var definition =
-                    ConsoleRegistry.get(Identifier.of("retrocraft", system[0] + "_handheld"));
+            var definition = ConsoleRegistry.get(Identifier.of("retrocraft", system[0]));
             context.assertTrue(
                     definition != null && definition.type() == ConsoleType.HANDHELD,
                     system[0] + " is registered as a handheld");
@@ -28,16 +27,15 @@ public class FoldableConsolesTest implements FabricGameTest {
                     system[0] + " has a usable console item");
             context.assertTrue(
                     definition.cartridge()
-                            == ConsoleRegistry.cartridge(Identifier.of("retrocraft", system[1])),
+                            == ConsoleRegistry.media(Identifier.of("retrocraft", system[1])),
                     system[0] + " accepts its system's game cards");
             context.assertTrue(
                     KnownCores.compatible("retrocraft:" + system[1]).contains(system[2]),
                     system[0] + " resolves to a trusted compatible core");
         }
         context.assertTrue(
-                ConsoleRegistry.get(Identifier.of("retrocraft", "gba_handheld")).cartridge()
-                        == ConsoleRegistry.get(Identifier.of("retrocraft", "gba_sp_handheld"))
-                                .cartridge(),
+                ConsoleRegistry.get(Identifier.of("retrocraft", "gba")).cartridge()
+                        == ConsoleRegistry.get(Identifier.of("retrocraft", "gba_sp")).cartridge(),
                 "GBA and GBA SP share existing games and saves");
         context.complete();
     }

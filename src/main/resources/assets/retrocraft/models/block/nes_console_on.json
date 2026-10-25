@@ -1,6 +1,0 @@
-{
-  "parent": "retrocraft:block/nes_console",
-  "textures": {
-    "indicator": "retrocraft:block/console/led_red_on"
-  }
-}

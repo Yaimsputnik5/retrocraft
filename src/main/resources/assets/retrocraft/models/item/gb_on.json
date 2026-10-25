@@ -1,0 +1,7 @@
+{
+  "parent": "retrocraft:item/gb",
+  "textures": {
+    "screen": "retrocraft:block/console/lcd_dmg_on",
+    "indicator": "retrocraft:block/console/led_red_on"
+  }
+}

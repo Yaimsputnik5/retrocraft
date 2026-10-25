@@ -14,8 +14,8 @@ public enum DualScreen {
 
     public static DualScreen of(String console) {
         return switch (console) {
-            case "nds_handheld" -> NDS;
-            case "3ds_handheld" -> THREEDS;
+            case "nds" -> NDS;
+            case "3ds" -> THREEDS;
             default -> null;
         };
     }

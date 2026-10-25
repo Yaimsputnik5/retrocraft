@@ -77,20 +77,19 @@ class DualScreenLayoutTest {
     @Test
     void registeredHudPreferenceKeysPersistAndPreserveLegacyLayouts() throws Exception {
         var original = new ClientConfig().changed(Map.of("ndsLayout", "horizontal"));
-        assertEquals(DualScreenLayout.HORIZONTAL, original.hudLayout("retrocraft:nds_handheld"));
+        assertEquals(DualScreenLayout.HORIZONTAL, original.hudLayout("retrocraft:nds"));
         var config =
                 original.withHudLayout("othermod:portable", DualScreenLayout.BOTTOM_LARGE)
-                        .withHudLayout("retrocraft:nds_handheld", DualScreenLayout.TOP_LARGE);
+                        .withHudLayout("retrocraft:nds", DualScreenLayout.TOP_LARGE);
         var file = root.resolve("registered-huds.json");
         config.save(file);
         var loaded = ClientConfig.load(file);
         assertEquals(DualScreenLayout.BOTTOM_LARGE, loaded.hudLayout("othermod:portable"));
-        assertEquals(DualScreenLayout.TOP_LARGE, loaded.hudLayout("retrocraft:nds_handheld"));
+        assertEquals(DualScreenLayout.TOP_LARGE, loaded.hudLayout("retrocraft:nds"));
         assertEquals(DualScreenLayout.VERTICAL, loaded.hudLayout("othermod:new"));
         assertEquals(
                 DualScreenLayout.VERTICAL,
-                loaded.changed(Map.of("ndsLayout", "vertical"))
-                        .hudLayout("retrocraft:nds_handheld"));
+                loaded.changed(Map.of("ndsLayout", "vertical")).hudLayout("retrocraft:nds"));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> loaded.withHudLayout("../ invalid", DualScreenLayout.VERTICAL));

@@ -102,6 +102,24 @@ class FrameCodecTest {
     }
 
     @Test
+    void reusedBuffersSurviveGeometryChangesInBothDirections() throws Exception {
+        var encoder = new FrameCodec.Encoder();
+        var decoder = new FrameCodec.Decoder();
+        var random = new Random(7);
+        for (int[] size : new int[][] {{8, 8}, {512, 480}, {17, 9}, {512, 480}, {3, 2}}) {
+            byte[] pixels = new byte[size[0] * size[1] * 3];
+            random.nextBytes(pixels);
+            var key = encoder.encode(new FrameCodec.Frame(size[0], size[1], pixels), false);
+            assertTrue(key.keyframe());
+            assertArrayEquals(pixels, decoder.decode(key).rgb());
+            byte[] updated = pixels.clone();
+            updated[updated.length / 2] ^= 1;
+            var delta = encoder.encode(new FrameCodec.Frame(size[0], size[1], updated), false);
+            assertArrayEquals(updated, decoder.decode(delta).rgb());
+        }
+    }
+
+    @Test
     void trailingCompressedBytesAreRejectedWithoutAdvancingTheDecoder() throws Exception {
         var encoded =
                 new FrameCodec.Encoder().encode(new FrameCodec.Frame(8, 8, new byte[192]), false);

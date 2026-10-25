@@ -13,7 +13,8 @@ public final class KnownCores {
             boolean portableSnapshots,
             String display,
             boolean needsBios,
-            boolean defaultEnabled) {}
+            boolean defaultEnabled,
+            boolean serverOnly) {}
 
     public record Platform(String os, String arch) {
         public static Platform current() {
@@ -60,11 +61,18 @@ public final class KnownCores {
             Map.ofEntries(
                     Map.entry(
                             "fceumm",
-                            new Core("fceumm", "fceumm", true, "NES / Famicom", false, true)),
+                            new Core(
+                                    "fceumm", "fceumm", true, "NES / Famicom", false, true, false)),
                     Map.entry(
                             "snes9x",
                             new Core(
-                                    "snes9x", "snes9x", true, "SNES / Super Famicom", false, true)),
+                                    "snes9x",
+                                    "snes9x",
+                                    true,
+                                    "SNES / Super Famicom",
+                                    false,
+                                    true,
+                                    false)),
                     Map.entry(
                             "gambatte",
                             new Core(
@@ -73,16 +81,24 @@ public final class KnownCores {
                                     true,
                                     "Game Boy & Game Boy Color",
                                     false,
-                                    true)),
+                                    true,
+                                    false)),
                     Map.entry(
                             "mgba",
-                            new Core("mgba", "mgba", true, "Game Boy Advance", false, true)),
+                            new Core("mgba", "mgba", true, "Game Boy Advance", false, true, false)),
                     Map.entry(
                             "desmume",
-                            new Core("desmume", "desmume", false, "Nintendo DS", false, true)),
+                            new Core(
+                                    "desmume",
+                                    "desmume",
+                                    false,
+                                    "Nintendo DS",
+                                    false,
+                                    true,
+                                    false)),
                     Map.entry(
                             "citra",
-                            new Core("citra", "citra", false, "Nintendo 3DS", false, false)),
+                            new Core("citra", "citra", false, "Nintendo 3DS", false, false, false)),
                     Map.entry(
                             "ppsspp",
                             new Core(
@@ -91,7 +107,8 @@ public final class KnownCores {
                                     false,
                                     "PlayStation Portable",
                                     false,
-                                    false)),
+                                    false,
+                                    true)),
                     Map.entry(
                             "genesis_plus_gx",
                             new Core(
@@ -100,7 +117,8 @@ public final class KnownCores {
                                     true,
                                     "Genesis / Mega Drive",
                                     false,
-                                    true)),
+                                    true,
+                                    false)),
                     Map.entry(
                             "parallel_n64",
                             new Core(
@@ -108,6 +126,7 @@ public final class KnownCores {
                                     "parallel_n64",
                                     false,
                                     "Nintendo 64",
+                                    false,
                                     false,
                                     false)),
                     Map.entry(
@@ -118,20 +137,34 @@ public final class KnownCores {
                                     false,
                                     "Arcade (MAME 2003)",
                                     true,
+                                    true,
                                     true)),
                     Map.entry(
                             "beetle_psx",
                             new Core(
-                                    "beetle_psx", "beetle_psx", false, "PlayStation", true, false)),
+                                    "beetle_psx",
+                                    "beetle_psx",
+                                    false,
+                                    "PlayStation",
+                                    true,
+                                    false,
+                                    false)),
                     Map.entry(
                             "pcsx2",
-                            new Core("pcsx2", "pcsx2", false, "PlayStation 2", true, false)),
+                            new Core("pcsx2", "pcsx2", false, "PlayStation 2", true, false, false)),
                     Map.entry(
                             "flycast",
-                            new Core("flycast", "flycast", false, "Dreamcast", true, false)),
+                            new Core("flycast", "flycast", false, "Dreamcast", true, false, false)),
                     Map.entry(
                             "dolphin",
-                            new Core("dolphin", "dolphin", false, "Wii & GameCube", true, false)));
+                            new Core(
+                                    "dolphin",
+                                    "dolphin",
+                                    false,
+                                    "Wii & GameCube",
+                                    true,
+                                    false,
+                                    false)));
 
     /** Ordered list for the core library UI. */
     public static List<Core> all() {
@@ -155,7 +188,7 @@ public final class KnownCores {
                 Map.entry("retrocraft:psp", "ppsspp"),
                 Map.entry("retrocraft:megadrive", "genesis_plus_gx"),
                 Map.entry("retrocraft:n64", "parallel_n64"),
-                Map.entry("retrocraft:mame", "mame2003"),
+                Map.entry("retrocraft:arcade", "mame2003"),
                 Map.entry("retrocraft:ps1", "beetle_psx"),
                 Map.entry("retrocraft:ps2", "pcsx2"),
                 Map.entry("retrocraft:dreamcast", "flycast"),

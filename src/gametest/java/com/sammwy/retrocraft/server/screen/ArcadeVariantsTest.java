@@ -4,15 +4,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.roms.RomCatalog;
 import com.sammwy.retrocraft.server.block.ArcadeSkin;
 import com.sammwy.retrocraft.server.block.DockedConsoleBlock;
 import com.sammwy.retrocraft.server.block.DockedConsoleBlockEntity;
 import com.sammwy.retrocraft.server.console.ConsoleRegistry;
 import com.sammwy.retrocraft.server.console.ConsoleType;
+import com.sammwy.retrocraft.server.console.Consoles;
 import com.sammwy.retrocraft.server.item.ArcadeItem;
 import com.sammwy.retrocraft.server.item.CartridgeItem;
+import com.sammwy.retrocraft.server.item.RetrocraftItemGroups;
 
 import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 import net.minecraft.block.Block;
@@ -48,9 +49,7 @@ public class ArcadeVariantsTest implements FabricGameTest {
         world.setBlockState(pos, Blocks.AIR.getDefaultState());
         world.setBlockState(pos.up(), Blocks.AIR.getDefaultState());
         world.setBlockState(pos.up(2), Blocks.AIR.getDefaultState());
-        var item =
-                (ArcadeItem)
-                        Registries.ITEM.get(Identifier.of("retrocraft", "mame_internal_console"));
+        var item = (ArcadeItem) Registries.ITEM.get(Identifier.of("retrocraft", "arcade_cabinet"));
         String hash = "a".repeat(64);
         var stack = item.game(hash, "pacman");
         var player = context.createMockCreativeServerPlayerInWorld();
@@ -154,8 +153,8 @@ public class ArcadeVariantsTest implements FabricGameTest {
         try {
             RomCatalog.clientEntries(
                     List.of(
-                            new RomCatalog.Entry("retrocraft:mame", "a".repeat(64), "pacman"),
-                            new RomCatalog.Entry("retrocraft:mame", "b".repeat(64), "puckman"),
+                            new RomCatalog.Entry("retrocraft:arcade", "a".repeat(64), "pacman"),
+                            new RomCatalog.Entry("retrocraft:arcade", "b".repeat(64), "puckman"),
                             new RomCatalog.Entry("retrocraft:nes", "c".repeat(64), "NES Game")));
             var display =
                     new ItemGroup.DisplayContext(
@@ -163,29 +162,29 @@ public class ArcadeVariantsTest implements FabricGameTest {
                             true,
                             context.getWorld().getRegistryManager());
             ItemGroups.updateDisplayContext(display.enabledFeatures(), true, display.lookup());
-            Retrocraft.CREATIVE_GROUP.updateEntries(display);
-            Retrocraft.GAMES_GROUP.updateEntries(display);
-            Retrocraft.ARCADES_GROUP.updateEntries(display);
-            var generic = Registries.ITEM.get(Identifier.of("retrocraft", "mame_console"));
+            RetrocraftItemGroups.CONSOLES.updateEntries(display);
+            RetrocraftItemGroups.GAMES.updateEntries(display);
+            RetrocraftItemGroups.ARCADES.updateEntries(display);
+            var generic = Registries.ITEM.get(Identifier.of("retrocraft", "arcade"));
             context.assertTrue(
-                    Retrocraft.CREATIVE_GROUP.getDisplayStacks().stream()
+                    RetrocraftItemGroups.CONSOLES.getDisplayStacks().stream()
                             .anyMatch(stack -> stack.isOf(generic)),
                     "Consoles tab must include the generic arcade");
             context.assertTrue(
-                    Retrocraft.CREATIVE_GROUP.getDisplayStacks().stream()
+                    RetrocraftItemGroups.CONSOLES.getDisplayStacks().stream()
                             .noneMatch(
                                     stack ->
                                             stack.getItem() instanceof CartridgeItem
                                                     || stack.getItem() instanceof ArcadeItem),
                     "Consoles tab must contain hardware only");
             context.assertTrue(
-                    Retrocraft.GAMES_GROUP.getDisplayStacks().size() == 3,
+                    RetrocraftItemGroups.GAMES.getDisplayStacks().size() == 3,
                     "Games tab must list every ROM");
             context.assertTrue(
-                    Retrocraft.ARCADES_GROUP.getDisplayStacks().size() == 2,
+                    RetrocraftItemGroups.ARCADES.getDisplayStacks().size() == 2,
                     "Arcades tab must create one variant per arcade ROM, even when art is shared");
             context.assertTrue(
-                    Retrocraft.ARCADES_GROUP.getDisplayStacks().stream()
+                    RetrocraftItemGroups.ARCADES.getDisplayStacks().stream()
                             .allMatch(
                                     stack ->
                                             stack.getOrDefault(
@@ -197,7 +196,7 @@ public class ArcadeVariantsTest implements FabricGameTest {
                                                     == ArcadeSkin.of(ArcadeItem.gameName(stack))
                                                             .ordinal()),
                     "Every variant must bake its skin into custom model data for the item model");
-            var board = ConsoleRegistry.cartridge(Identifier.of("retrocraft", "mame"));
+            var board = ConsoleRegistry.media(Identifier.of("retrocraft", "arcade"));
             List<Text> tooltip = new ArrayList<>();
             board.appendTooltip(
                     board.game("a".repeat(64), "pacman"),
@@ -217,8 +216,8 @@ public class ArcadeVariantsTest implements FabricGameTest {
 
     @GameTest(templateName = EMPTY_STRUCTURE)
     public void allSkinsUseTheSameRomBoardAndKeepTheirOwnBlocks(TestContext context) {
-        var board = ConsoleRegistry.cartridge(Identifier.of("retrocraft", "mame"));
-        String[] ids = {"mame_console", "mame_tetris_console", "mame_space_invaders_console"};
+        var board = ConsoleRegistry.media(Identifier.of("retrocraft", "arcade"));
+        String[] ids = {"arcade", "arcade_tetris", "arcade_space_invaders"};
         for (int i = 0; i < ids.length; i++) {
             var definition = ConsoleRegistry.get(Identifier.of("retrocraft", ids[i]));
             context.assertTrue(definition != null, "Every arcade skin must be registered");
@@ -282,12 +281,10 @@ public class ArcadeVariantsTest implements FabricGameTest {
             world.setBlockState(pos, Blocks.AIR.getDefaultState());
         }
         context.assertTrue(
-                Retrocraft.NES_DOCKED.type() == ConsoleType.DOCKED
-                        && Retrocraft.NES_DOCKED.usesTelevision(),
+                Consoles.NES.type() == ConsoleType.DOCKED && Consoles.NES.usesTelevision(),
                 "Home consoles must still use external televisions");
         context.assertTrue(
-                !Retrocraft.NES_HANDHELD.type().isPlaced()
-                        && !Retrocraft.NES_HANDHELD.usesTelevision(),
+                !Consoles.NES_HANDHELD.type().isPlaced() && !Consoles.NES_HANDHELD.usesTelevision(),
                 "Handhelds must keep their personal screen path");
         context.complete();
     }

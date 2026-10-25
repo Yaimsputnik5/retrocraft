@@ -80,9 +80,9 @@ def main():
                 resolve(variant["model"])
     # The live video quad must be the actual glass bounds, not the old screen position.
     java = (
-        ROOT / "src/main/java/com/sammwy/retrocraft/client/Thumbnails.java"
+        ROOT / "src/main/java/com/sammwy/retrocraft/client/render/Thumbnails.java"
     ).read_text()
-    screens = re.findall(r'"(\w+_handheld)", new float\[\] \{([^}]+)\}', java)
+    screens = re.findall(r'"(\w+)", new float\[\] \{([^}]+)\}', java)
     if len(screens) != 10:
         raise ValueError("Could not find all ten live LCD rectangles")
     pose = foldable_pose()
@@ -96,7 +96,7 @@ def main():
         rect = [float(v.strip().removesuffix("f")) for v in values.split(",")]
         d = resolve("retrocraft:item/" + name)
         glass = next(e for e in d["elements"] if e.get("name") == ("touch LCD glass" if bottom else "LCD glass"))
-        if name in ("gba_sp_handheld", "nds_handheld", "3ds_handheld"):
+        if name in ("gba_sp", "nds", "3ds"):
             half = "base" if bottom else "lid"
             if glass.get("rotation") != pose[half]:
                 raise ValueError(f"{name}: live {half} rotation does not match its glass")
@@ -113,53 +113,54 @@ def main():
             raise ValueError(f"{name}: no powered LCD texture")
     # Check Java selection bounds against the actual model, including its rotation-sensitive depth.
     java = (
-        ROOT
-        / "src/main/java/com/sammwy/retrocraft/server/block/DockedConsoleBlock.java"
+        ROOT / "src/main/java/com/sammwy/retrocraft/server/console/Consoles.java"
     ).read_text()
-    outlines = re.findall(
-        r'case ((?:"\w+"[\s,]*)+) ->\s*new double\[\] \{([^}]+)\}', java
-    )
+    named = dict(re.findall(r"(\w+)\s*=\s*new Bounds\(([^)]+)\)", java))
+    outlines = [
+        (name, inline or named[variable])
+        for name, inline, variable in re.findall(
+            r'docked\(\s*"(\w+)",\s*"[^"]*",\s*(?:\w+|system\("\w+", \w+\)),\s*'
+            r"(?:new Bounds\(([^)]+)\)|(\w+))\)",
+            java,
+        )
+    ]
+    arcades = ("arcade", "arcade_tetris", "arcade_space_invaders", "arcade_cabinet")
+    outlines += [(name, named["CABINET"]) for name in arcades]
     checked = 0
-    for names, values in outlines:
+    for name, values in outlines:
         bounds = [float(v.strip()) for v in values.split(",")]
-        for name in re.findall(r'"(\w+)"', names):
-            d = resolve("retrocraft:block/" + name)
-            es = d["elements"]
-            if name in (
-                "mame_console",
-                "mame_tetris_console",
-                "mame_space_invaders_console",
-                "mame_internal_console",
-            ):
-                roof = resolve("retrocraft:block/" + name + "_top")["elements"]
-                es = es + [
-                    {
-                        **e,
-                        "from": [e["from"][0], e["from"][1] + 32, e["from"][2]],
-                        "to": [e["to"][0], e["to"][1] + 32, e["to"][2]],
-                    }
-                    for e in roof
-                ]
-            x0 = min(e["from"][0] for e in es)
-            z0 = min(e["from"][2] for e in es)
-            x1 = max(e["to"][0] for e in es)
-            z1 = max(e["to"][2] for e in es)
-            y1 = max(e["to"][1] for e in es)
-            if not (
-                bounds[0] <= x0 + 0.0001
-                and bounds[1] <= z0 + 0.0001
-                and bounds[2] >= x1 - 0.0001
-                and bounds[3] >= z1 - 0.0001
-                and bounds[4] >= y1 - 0.0001
-            ):
-                raise ValueError(
-                    f"{name}: selection bounds clip the casing: {bounds} / {[x0,z0,x1,z1,y1]}"
-                )
-            checked += 1
+        d = resolve("retrocraft:block/" + name)
+        es = d["elements"]
+        if name in arcades:
+            roof = resolve("retrocraft:block/" + name + "_top")["elements"]
+            es = es + [
+                {
+                    **e,
+                    "from": [e["from"][0], e["from"][1] + 32, e["from"][2]],
+                    "to": [e["to"][0], e["to"][1] + 32, e["to"][2]],
+                }
+                for e in roof
+            ]
+        x0 = min(e["from"][0] for e in es)
+        z0 = min(e["from"][2] for e in es)
+        x1 = max(e["to"][0] for e in es)
+        z1 = max(e["to"][2] for e in es)
+        y1 = max(e["to"][1] for e in es)
+        if not (
+            bounds[0] <= x0 + 0.0001
+            and bounds[1] <= z0 + 0.0001
+            and bounds[2] >= x1 - 0.0001
+            and bounds[3] >= z1 - 0.0001
+            and bounds[4] >= y1 - 0.0001
+        ):
+            raise ValueError(
+                f"{name}: selection bounds clip the casing: {bounds} / {[x0,z0,x1,z1,y1]}"
+            )
+        checked += 1
     if checked != 14:
         raise ValueError(f"Expected outlines for 14 consoles, found {checked}")
     for name in ("ps1", "ps2", "dreamcast", "gamecube", "wii"):
-        d = resolve("retrocraft:item/" + name)
+        d = resolve("retrocraft:item/" + name + "_disc")
         if any(
             e["from"][0] < 8 < e["to"][0] and e["from"][1] < 8 < e["to"][1]
             for e in d["elements"]
@@ -174,7 +175,7 @@ def main():
         "dreamcast": "#df783e",
     }
     for name, color in families.items():
-        d = resolve("retrocraft:item/" + name)
+        d = resolve("retrocraft:item/" + name + "_disc")
         face = d["elements"][0]["faces"]["north"]
         with Image.open(texture(d, face["texture"])) as im:
             uv = face["uv"]
@@ -198,7 +199,7 @@ def main():
             ).read_text(),
         )
     )
-    for name in ("mame_console", "mame_tetris_console", "mame_space_invaders_console"):
+    for name in ("arcade", "arcade_tetris", "arcade_space_invaders"):
         d = resolve("retrocraft:block/" + name)
         glass = next(e for e in d["elements"] if e.get("name") == "CRT glass")
         expected = [

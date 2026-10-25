@@ -11,7 +11,7 @@ import com.sammwy.retrocraft.client.config.ControllerProfile.Action;
 class ControllerProfileTest {
     @Test
     void pspHasOneIndependentAnalogStickAndOnlyItsPhysicalButtons() {
-        var profile = ControllerProfile.of("psp_handheld");
+        var profile = ControllerProfile.of("psp");
         assertEquals(1, profile.sticks());
         assertEquals("cross", profile.label(Action.B));
         assertEquals("triangle", profile.label(Action.X));
@@ -29,7 +29,7 @@ class ControllerProfileTest {
 
     @Test
     void playStationHasEveryDigitalButtonAndIndependentSticks() {
-        var profile = ControllerProfile.of("ps2_console");
+        var profile = ControllerProfile.of("ps2");
         assertEquals(24, profile.actions().size());
         Set<Integer> keys = Set.of(265, 65, 73, 49, 51, 340, 345);
         var input = profile.sample(Map.of(), keys::contains);
@@ -50,8 +50,8 @@ class ControllerProfileTest {
 
     @Test
     void rebindingIsConsoleSpecificAndOppositeDirectionsCancel() {
-        var ps2 = ControllerProfile.of("ps2_console");
-        var nes = ControllerProfile.of("nes_console");
+        var ps2 = ControllerProfile.of("ps2");
+        var nes = ControllerProfile.of("nes");
         var keys = Set.of(70, 265, 264, 65, 68);
         var input = ps2.sample(Map.of("b", 70), keys::contains);
         assertEquals(Action.B.mask(), input.buttons());
@@ -65,27 +65,27 @@ class ControllerProfileTest {
     void everyConsoleHasDistinctDefaultsAndOnlyRelevantControls() {
         for (String id :
                 List.of(
-                        "nes_console",
+                        "nes",
                         "nes_handheld",
-                        "snes_console",
-                        "gb_handheld",
-                        "gbc_handheld",
-                        "gba_handheld",
-                        "gba_sp_handheld",
-                        "nds_handheld",
-                        "3ds_handheld",
-                        "psp_handheld",
-                        "ps1_console",
-                        "ps2_console",
-                        "dreamcast_console",
-                        "wii_console",
-                        "gamecube_console",
-                        "megadrive_console",
-                        "genesis_console",
-                        "n64_console",
-                        "mame_console",
-                        "mame_tetris_console",
-                        "mame_space_invaders_console")) {
+                        "snes",
+                        "gb",
+                        "gbc",
+                        "gba",
+                        "gba_sp",
+                        "nds",
+                        "3ds",
+                        "psp",
+                        "ps1",
+                        "ps2",
+                        "dreamcast",
+                        "wii",
+                        "gamecube",
+                        "megadrive",
+                        "genesis",
+                        "n64",
+                        "arcade",
+                        "arcade_tetris",
+                        "arcade_space_invaders")) {
             var profile = ControllerProfile.of(id);
             var keys = new HashSet<Integer>();
             for (Action action : profile.actions())
@@ -93,8 +93,8 @@ class ControllerProfileTest {
                         keys.add(profile.defaultKey(action)),
                         id + ": duplicate default for " + action);
         }
-        assertEquals(8, ControllerProfile.of("nes_console").actions().size());
-        assertEquals(0, ControllerProfile.of("nes_console").sticks());
-        assertEquals(2, ControllerProfile.of("ps2_console").sticks());
+        assertEquals(8, ControllerProfile.of("nes").actions().size());
+        assertEquals(0, ControllerProfile.of("nes").sticks());
+        assertEquals(2, ControllerProfile.of("ps2").sticks());
     }
 }

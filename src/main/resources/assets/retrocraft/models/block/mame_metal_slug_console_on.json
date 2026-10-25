@@ -1,7 +1,0 @@
-{
-  "parent": "retrocraft:block/mame_metal_slug_console",
-  "textures": {
-    "indicator": "retrocraft:block/console/led_red_on",
-    "screen": "retrocraft:block/console/crt_on"
-  }
-}

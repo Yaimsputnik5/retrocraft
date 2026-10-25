@@ -1,11 +1,11 @@
 package com.sammwy.retrocraft.cores.stream;
 
-import java.io.*;
+import java.io.EOFException;
+import java.io.IOException;
 import java.util.Arrays;
+import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
-import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
-import java.util.zip.InflaterInputStream;
 
 /** RGB888, 8x8 changed tiles, zlib. A delta always names its exact predecessor. */
 public final class FrameCodec {
@@ -23,7 +23,10 @@ public final class FrameCodec {
 
     public record Encoded(long sequence, long base, boolean keyframe, byte[] data) {}
 
+    /** Not thread-safe: one encode at a time. Scratch buffers and the deflater are reused. */
     public static final class Encoder {
+        private final Deflater deflater = new Deflater(Deflater.BEST_SPEED);
+        private byte[] raw = new byte[0], compressed = new byte[0];
         private Frame previous;
         private volatile long sequence;
 
@@ -37,64 +40,76 @@ public final class FrameCodec {
             return new Encoder(sequence);
         }
 
-        public Encoded encode(Frame frame, boolean forceKeyframe) throws IOException {
+        public Encoded encode(Frame frame, boolean forceKeyframe) {
             boolean key =
                     forceKeyframe
                             || previous == null
                             || previous.width != frame.width
                             || previous.height != frame.height;
-            ByteArrayOutputStream raw = new ByteArrayOutputStream();
-            try (DataOutputStream out = new DataOutputStream(raw)) {
-                out.writeShort(frame.width);
-                out.writeShort(frame.height);
-                if (key) out.write(frame.rgb);
-                else {
-                    int columns = (frame.width + TILE - 1) / TILE;
-                    for (int y = 0; y < frame.height; y += TILE) {
-                        for (int x = 0; x < frame.width; x += TILE) {
-                            int w = Math.min(TILE, frame.width - x),
-                                    h = Math.min(TILE, frame.height - y);
-                            boolean changed = false;
-                            for (int row = 0; row < h && !changed; row++) {
-                                int start = ((y + row) * frame.width + x) * 3;
-                                changed =
-                                        !Arrays.equals(
-                                                frame.rgb,
-                                                start,
-                                                start + w * 3,
-                                                previous.rgb,
-                                                start,
-                                                start + w * 3);
-                            }
-                            if (!changed) continue;
-                            out.writeShort((y / TILE) * columns + x / TILE);
-                            for (int row = 0; row < h; row++)
-                                out.write(frame.rgb, ((y + row) * frame.width + x) * 3, w * 3);
-                        }
-                    }
-                }
-            }
-            // Dense tile changes cost more than a full RGB frame; switch without a second tile
-            // scan.
-            if (!key && raw.size() >= frame.rgb.length + 4) {
+            int columns = (frame.width + TILE - 1) / TILE, rows = (frame.height + TILE - 1) / TILE;
+            int capacity = 4 + frame.rgb.length + columns * rows * 2;
+            if (raw.length < capacity) raw = new byte[capacity];
+            raw[0] = (byte) (frame.width >>> 8);
+            raw[1] = (byte) frame.width;
+            raw[2] = (byte) (frame.height >>> 8);
+            raw[3] = (byte) frame.height;
+            int length = key ? 0 : delta(frame, columns);
+            // Dense tile changes cost more than a full RGB frame.
+            if (key || length >= frame.rgb.length + 4) {
                 key = true;
-                raw.reset();
-                try (DataOutputStream out = new DataOutputStream(raw)) {
-                    out.writeShort(frame.width);
-                    out.writeShort(frame.height);
-                    out.write(frame.rgb);
-                }
-            }
-            ByteArrayOutputStream compressed = new ByteArrayOutputStream();
-            Deflater deflater = new Deflater(Deflater.BEST_SPEED);
-            try (DeflaterOutputStream out = new DeflaterOutputStream(compressed, deflater)) {
-                raw.writeTo(out);
-            } finally {
-                deflater.end();
+                System.arraycopy(frame.rgb, 0, raw, 4, frame.rgb.length);
+                length = 4 + frame.rgb.length;
             }
             long base = key ? -1 : sequence;
             previous = frame;
-            return new Encoded(++sequence, base, key, compressed.toByteArray());
+            return new Encoded(++sequence, base, key, deflate(length));
+        }
+
+        private int delta(Frame frame, int columns) {
+            int position = 4;
+            for (int y = 0; y < frame.height; y += TILE) {
+                int h = Math.min(TILE, frame.height - y);
+                for (int x = 0; x < frame.width; x += TILE) {
+                    int span = Math.min(TILE, frame.width - x) * 3;
+                    boolean changed = false;
+                    for (int row = 0; row < h && !changed; row++) {
+                        int start = ((y + row) * frame.width + x) * 3;
+                        changed =
+                                Arrays.mismatch(
+                                                frame.rgb,
+                                                start,
+                                                start + span,
+                                                previous.rgb,
+                                                start,
+                                                start + span)
+                                        >= 0;
+                    }
+                    if (!changed) continue;
+                    int tile = (y / TILE) * columns + x / TILE;
+                    raw[position++] = (byte) (tile >>> 8);
+                    raw[position++] = (byte) tile;
+                    for (int row = 0; row < h; row++) {
+                        System.arraycopy(
+                                frame.rgb, ((y + row) * frame.width + x) * 3, raw, position, span);
+                        position += span;
+                    }
+                }
+            }
+            return position;
+        }
+
+        private byte[] deflate(int length) {
+            deflater.reset();
+            deflater.setInput(raw, 0, length);
+            deflater.finish();
+            if (compressed.length < 1024) compressed = new byte[Math.max(1024, length / 4)];
+            int size = 0;
+            while (!deflater.finished()) {
+                if (size == compressed.length)
+                    compressed = Arrays.copyOf(compressed, compressed.length * 2);
+                size += deflater.deflate(compressed, size, compressed.length - size);
+            }
+            return Arrays.copyOf(compressed, size);
         }
 
         public void clear() {
@@ -102,7 +117,12 @@ public final class FrameCodec {
         }
     }
 
+    /** Not thread-safe: decode one stream in order. */
     public static final class Decoder {
+        private static final int LIMIT =
+                MAX_WIDTH * MAX_HEIGHT * 3 + (MAX_WIDTH / TILE) * (MAX_HEIGHT / TILE) * 2 + 4;
+        private final Inflater inflater = new Inflater();
+        private byte[] raw = new byte[64 * 1024];
         private Frame frame;
         private long sequence = -1;
 
@@ -114,60 +134,76 @@ public final class FrameCodec {
             if (packet.data.length > MAX_PACKET) throw new IOException("Oversized frame packet");
             if (packet.sequence <= sequence) return null;
             if (!packet.keyframe && (frame == null || packet.base != sequence)) return null;
-            // Bounded decompression prevents compressed packets from allocating arbitrary memory.
-            byte[] raw;
-            int limit =
-                    MAX_WIDTH * MAX_HEIGHT * 3 + (MAX_WIDTH / TILE) * (MAX_HEIGHT / TILE) * 2 + 4;
-            Inflater inflater = new Inflater();
-            var compressed = new ByteArrayInputStream(packet.data);
-            try (InflaterInputStream in = new InflaterInputStream(compressed, inflater)) {
-                raw = in.readNBytes(limit + 1);
-                if (raw.length > limit) throw new IOException("Frame expands beyond limit");
-                if (!inflater.finished()
-                        || inflater.getRemaining() != 0
-                        || compressed.available() != 0)
-                    throw new IOException("Trailing or incomplete compressed frame");
-            } finally {
-                inflater.end();
+            int length = inflate(packet.data);
+            if (length < 4) throw new EOFException("Truncated frame header");
+            int width = (raw[0] & 255) << 8 | raw[1] & 255,
+                    height = (raw[2] & 255) << 8 | raw[3] & 255;
+            try {
+                checkSize(width, height);
+            } catch (IllegalArgumentException ex) {
+                throw new IOException(ex);
             }
-            try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(raw))) {
-                int width = in.readUnsignedShort(), height = in.readUnsignedShort();
-                try {
-                    checkSize(width, height);
-                } catch (IllegalArgumentException ex) {
-                    throw new IOException(ex);
-                }
-                if (!packet.keyframe && (width != frame.width || height != frame.height))
-                    throw new IOException("Delta geometry changed");
-                if (!packet.keyframe && in.available() == 0) {
-                    sequence = packet.sequence;
-                    return frame; // Empty delta: preserve the immutable picture and avoid a
-                    // clone/GPU upload.
-                }
-                byte[] rgb = packet.keyframe ? new byte[width * height * 3] : frame.rgb.clone();
-                if (packet.keyframe) in.readFully(rgb);
-                else {
-                    int columns = (width + TILE - 1) / TILE, rows = (height + TILE - 1) / TILE;
-                    int last = -1;
-                    while (in.available() > 0) {
-                        int tile = in.readUnsignedShort();
-                        if (tile <= last || tile >= columns * rows)
-                            throw new IOException("Invalid delta tile");
-                        last = tile;
-                        int x = tile % columns * TILE, y = tile / columns * TILE;
-                        for (int row = 0; row < Math.min(TILE, height - y); row++) {
-                            in.readFully(
-                                    rgb,
-                                    ((y + row) * width + x) * 3,
-                                    Math.min(TILE, width - x) * 3);
-                        }
-                    }
-                }
-                if (in.available() != 0) throw new IOException("Trailing frame data");
-                frame = new Frame(width, height, rgb);
+            if (!packet.keyframe && (width != frame.width || height != frame.height))
+                throw new IOException("Delta geometry changed");
+            if (!packet.keyframe && length == 4) {
                 sequence = packet.sequence;
-                return frame;
+                return frame; // Empty delta: keep the immutable picture, no clone or GPU upload.
             }
+            byte[] rgb;
+            if (packet.keyframe) {
+                if (length != 4 + width * height * 3)
+                    throw new IOException("Keyframe size does not match its geometry");
+                rgb = Arrays.copyOfRange(raw, 4, length);
+            } else rgb = patch(frame.rgb.clone(), width, height, length);
+            frame = new Frame(width, height, rgb);
+            sequence = packet.sequence;
+            return frame;
+        }
+
+        /** Bounded decompression prevents compressed packets from allocating arbitrary memory. */
+        private int inflate(byte[] data) throws IOException {
+            inflater.reset();
+            inflater.setInput(data);
+            int length = 0;
+            try {
+                while (!inflater.finished()) {
+                    if (length == raw.length) {
+                        if (raw.length > LIMIT) throw new IOException("Frame expands beyond limit");
+                        raw = Arrays.copyOf(raw, Math.min(LIMIT + 1, raw.length * 2));
+                    }
+                    int read = inflater.inflate(raw, length, raw.length - length);
+                    if (read == 0 && length < raw.length)
+                        throw new IOException("Incomplete compressed frame");
+                    length += read;
+                }
+            } catch (DataFormatException ex) {
+                throw new IOException("Corrupt compressed frame", ex);
+            }
+            if (length > LIMIT) throw new IOException("Frame expands beyond limit");
+            if (inflater.getRemaining() != 0)
+                throw new IOException("Trailing compressed frame data");
+            return length;
+        }
+
+        private byte[] patch(byte[] rgb, int width, int height, int length) throws IOException {
+            int columns = (width + TILE - 1) / TILE, rows = (height + TILE - 1) / TILE;
+            int position = 4, last = -1;
+            while (position < length) {
+                if (position + 2 > length) throw new EOFException("Truncated delta tile");
+                int tile = (raw[position] & 255) << 8 | raw[position + 1] & 255;
+                position += 2;
+                if (tile <= last || tile >= columns * rows)
+                    throw new IOException("Invalid delta tile");
+                last = tile;
+                int x = tile % columns * TILE, y = tile / columns * TILE;
+                int span = Math.min(TILE, width - x) * 3, h = Math.min(TILE, height - y);
+                if (position + span * h > length) throw new EOFException("Truncated delta tile");
+                for (int row = 0; row < h; row++) {
+                    System.arraycopy(raw, position, rgb, ((y + row) * width + x) * 3, span);
+                    position += span;
+                }
+            }
+            return rgb;
         }
     }
 

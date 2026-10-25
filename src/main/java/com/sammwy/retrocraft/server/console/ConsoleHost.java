@@ -12,7 +12,7 @@ public interface ConsoleHost {
     ConsoleDefinition definition();
 
     default boolean hasInternalRom() {
-        return definition() != null && definition().isInternalArcade();
+        return definition() != null && definition().internalRom();
     }
 
     ItemStack cartridge();
