@@ -26,17 +26,13 @@ Retrocraft adds handhelds, home consoles, arcade cabinets and CRT televisions to
 | Wii | Wii Console | dolphin |
 | Arcade | Generic machine with swappable ROMs; one permanent-ROM cabinet per catalog game | mame2003 |
 
-DS and 3DS show both LCDs in their item models, live previews and thumbnails. Their play screen has a **Screens** button to cycle through **Vertical**, **Horizontal**, **Large top** and **Large touch**; the choice is saved separately for each system. Click and drag inside the lower screen to use the stylus in any layout. GBA SP uses the existing GBA cartridges, core and saves.
-
-3DS uses Citra with a private OpenGL 3.3 context. Desktop clients use an invisible window; dedicated Linux servers can use surfaceless Mesa/EGL. Supply decrypted `.3ds` / `.cci` / `.cxi` / `.app` files or `.3dsx` homebrew; CIA installers are not launchable cartridges. NDS accepts `.nds` and `.ids`. Large ROM files already placed in the server library run directly on the server when they exceed the configured client transfer budget.
-
 Plus three televisions to hook your consoles up to: a **Portable TV** (1 block), a **CRT Television** (2×1.5) and a big **Console Television** (3×2).
 
 Every console, cartridge and TV has its own pixel-art model and texture. Top-loading consoles show the cartridge sitting in its slot; the NES front loader encloses it behind the door. Handheld screens and power indicators change when switched on. Disc-based systems have 3D game discs, including the smaller GameCube format. Disc colors identify the system: black GameCube, light blue Wii, blue/purple PS2, white PlayStation and orange Dreamcast.
 
 ## Handhelds
 
-Hold a Game Boy, Game Boy Color, GBA or NES Handheld in your hand and right-click:
+Hold a Game Boy, Game Boy Color, Game Boy Advance, Game Boy Advance SP, Nintendo DS, Nintendo 3DS or NES Handheld in your hand and right-click:
 
 - Powered off → opens the console inventory with a single cartridge slot.
 - Insert a cartridge, hit **Power on**, and the game HUD opens right away.
@@ -45,6 +41,12 @@ Hold a Game Boy, Game Boy Color, GBA or NES Handheld in your hand and right-clic
 - Other players nearby hear your game's audio coming from you — even with the HUD closed, even if you drop the handheld on the ground.
 
 Stash it in a chest and the game is suspended; take it back out and it resumes.
+
+Nintendo DS and Nintendo 3DS have hinged models with two LCDs, each showing its own live preview or thumbnail. Their play screen has a **Screens** button to cycle through **Vertical**, **Horizontal**, **Large top** and **Large touch**; the choice is saved separately for each system. Click and drag inside the lower screen to use the stylus in any layout.
+
+Game Boy Advance SP has its own hinged model, gameplay bezel and single-screen preview. It uses the same GBA cartridges, mGBA core and game saves as Game Boy Advance.
+
+Nintendo DS uses DeSmuME and accepts `.nds` and `.ids`. Nintendo 3DS uses Citra with a private OpenGL 3.3 context. Desktop clients use an invisible window; dedicated Linux servers can use surfaceless Mesa/EGL. Supply decrypted `.3ds` / `.cci` / `.cxi` / `.app` files or `.3dsx` homebrew; CIA installers are not launchable cartridges. Large ROM files already placed in the server library run directly on the server when they exceed the configured client transfer budget.
 
 ## Home consoles and TVs
 
@@ -99,7 +101,7 @@ Cores are downloaded on demand from the [official libretro buildbot](https://bui
    ./gradlew build
    ```
 
-2. Install `build/libs/retrocraft-0.1.0.jar` together with Fabric API on the server and on every client.
+2. Install `build/libs/retrocraft-0.1.1.jar` together with Fabric API on the server and on every client.
 
 3. Put your ROMs in `config/retrocraft/roms/` on the server (or upload them in-game via **F8 → Server → ROM Library** by picking files or dragging and dropping them onto the window). Detection uses deterministic file extensions and, for shared formats, platform folders (`megadrive`/`genesis`, `ps1`/`psx`/`playstation`, `ps2`/`playstation2`, `dreamcast`/`dc`, `wii`, `gamecube`/`ngc`). Console-unique formats (`.nes`, `.sfc`/`.smc`, `.gb`, `.gbc`, `.gba`, `.nds`/`.ids`, `.3ds`/`.3dsx`/`.cci`/`.cxi`/`.app`, `.md`/`.gen`/`.smd`, `.z64`/`.n64`/`.v64`, `.pbp`, `.cso`/`.zso`, `.cdi`/`.gdi`, `.wbfs`/`.rvz`/`.wad`/`.dol`, `.gcm`/`.gcz`/`.nkit`) match anywhere; shared disc images (`.iso`, `.chd`, `.cue`, `.img`) match inside their platform folder. ROM headers and archive contents are never inspected during discovery. Known MAME ZIP basenames stay intact and resolve to their full arcade titles. Games use content hashes for identity.
 
