@@ -10,6 +10,24 @@ import com.sammwy.retrocraft.client.config.ControllerProfile.Action;
 
 class ControllerProfileTest {
     @Test
+    void pspHasOneIndependentAnalogStickAndOnlyItsPhysicalButtons() {
+        var profile = ControllerProfile.of("psp_handheld");
+        assertEquals(1, profile.sticks());
+        assertEquals("cross", profile.label(Action.B));
+        assertEquals("triangle", profile.label(Action.X));
+        assertEquals("L", profile.label(Action.L));
+        assertFalse(profile.actions().contains(Action.L2));
+        assertFalse(profile.actions().contains(Action.L3));
+        assertFalse(profile.actions().contains(Action.RIGHT_UP));
+        var input = profile.sample(Map.of(), Set.of(265, 68, 90, 69)::contains);
+        assertEquals(Action.UP.mask() | Action.B.mask() | Action.R.mask(), input.buttons());
+        assertEquals(32767, input.leftX());
+        assertEquals(0, input.leftY());
+        assertEquals(0, input.rightX());
+        assertEquals(0, input.rightY());
+    }
+
+    @Test
     void playStationHasEveryDigitalButtonAndIndependentSticks() {
         var profile = ControllerProfile.of("ps2_console");
         assertEquals(24, profile.actions().size());
@@ -53,6 +71,10 @@ class ControllerProfileTest {
                         "gb_handheld",
                         "gbc_handheld",
                         "gba_handheld",
+                        "gba_sp_handheld",
+                        "nds_handheld",
+                        "3ds_handheld",
+                        "psp_handheld",
                         "ps1_console",
                         "ps2_console",
                         "dreamcast_console",

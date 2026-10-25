@@ -9,7 +9,8 @@
       "com.sammwy.retrocraft.server.screen.ConsoleInventoryTest",
       "com.sammwy.retrocraft.server.screen.ArcadeVariantsTest",
       "com.sammwy.retrocraft.server.screen.ControllerPacketsTest",
-      "com.sammwy.retrocraft.server.screen.FoldableConsolesTest"
+      "com.sammwy.retrocraft.server.screen.FoldableConsolesTest",
+      "com.sammwy.retrocraft.server.screen.PspConsoleTest"
     ]
   },
   "depends": {

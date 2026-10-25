@@ -9,6 +9,7 @@ record ConsoleTheme(String id, Bezel bezel, int shell, int bezelColor, int accen
         GBC,
         GBA,
         GBA_SP,
+        PSP,
         NDS,
         THREEDS,
         NES_HANDHELD,
@@ -42,6 +43,9 @@ record ConsoleTheme(String id, Bezel bezel, int shell, int bezelColor, int accen
             case "3ds_handheld" ->
                     new ConsoleTheme(
                             console, Bezel.THREEDS, 0xff258f9e, 0xff15191e, 0xff68c4cc, CRT_OFF);
+            case "psp_handheld" ->
+                    new ConsoleTheme(
+                            console, Bezel.PSP, 0xff24262d, 0xff101216, 0xffbdc2c9, CRT_OFF);
             case "nes_handheld" ->
                     new ConsoleTheme(
                             console,

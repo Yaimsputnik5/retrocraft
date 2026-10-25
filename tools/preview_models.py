@@ -208,7 +208,7 @@ def main():
             ("Space Invaders", "item/mame_space_invaders_console"),
         ],
         "handhelds": [
-            (s.upper(), "item/" + s + "_handheld") for s in ("gb", "gbc", "gba", "gba_sp", "nds", "3ds", "nes")
+            (s.upper(), "item/" + s + "_handheld") for s in ("gb", "gbc", "gba", "gba_sp", "nds", "3ds", "psp", "nes")
         ],
         "games": [
             (s.upper(), "item/" + s)
@@ -220,6 +220,7 @@ def main():
                 "gba",
                 "nds",
                 "3ds",
+                "psp",
                 "megadrive",
                 "n64",
                 "mame",

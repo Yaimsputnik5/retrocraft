@@ -1090,6 +1090,267 @@ def handheld(name):
     )
 
 
+def psp_symbol(symbol, color="#e2e5e9", background="#363a42"):
+    im = Image.new("RGBA", (9, 9), background)
+    d = ImageDraw.Draw(im)
+    if symbol == "cross":
+        d.line((2, 2, 6, 6), fill=color)
+        d.line((6, 2, 2, 6), fill=color)
+    elif symbol == "circle":
+        d.ellipse((1, 1, 7, 7), outline=color)
+    elif symbol == "square":
+        d.rectangle((1, 1, 7, 7), outline=color)
+    else:
+        d.line([(4, 1), (7, 7), (1, 7), (4, 1)], fill=color)
+    return im
+
+
+def psp():
+    """Classic black PSP: wide glass, one analog nub, silver seam and rear UMD ring."""
+    m = Model("psp_handheld", "item", "psp_handheld")
+    m.display = item_display()
+    shell, rear, trim, glass = "#393d45", "#282c33", "#8d959e", "#16191f"
+    # Continuous horizontal bands round both ends and keep the silver seam attached to the shell.
+    profile = ((4.5, 4.75, 1.45), (4.75, 5.1, 0.9), (5.1, 5.65, 0.45),
+               (5.65, 10.45, 0.2), (10.45, 11, 0.45), (11, 11.35, 0.9),
+               (11.35, 11.6, 1.45))
+    for y0, y1, inset in profile:
+        m.box("rounded rear shell", [inset + 0.12, y0, 6.8], [15.88 - inset, y1, 7.85], rear)
+        m.box("silver perimeter seam", [inset, y0, 7.85], [16 - inset, y1, 8.03], trim)
+        m.box("rounded front shell", [inset + 0.08, y0, 8.03], [15.92 - inset, y1, 8.91], "#292d35")
+        m.box("inset faceplate", [inset + 0.18, y0, 8.91], [15.82 - inset, y1, 9.02], shell)
+    m.box("wide display surround", [3.28, 5.42, 9.02], [12.72, 10.99, 9.12], glass)
+    # 480:272 native panel; the live quad uses these exact unrounded glass bounds.
+    m.box("LCD glass", [3.7, 5.76, 9.12], [12.3, 10.6333, 9.22], "#screen", shade=False)
+    m.south(
+        "SONY wordmark",
+        1.05,
+        2.85,
+        10.57,
+        11.12,
+        9.04,
+        label(1.8, 0.55, "SONY", shell, "#d0d4da"),
+        shell,
+    )
+    m.south(
+        "PSP wordmark",
+        6.9,
+        9.1,
+        5.04,
+        5.58,
+        9.23,
+        label(2.2, 0.54, "PSP", glass, "#d2d5db"),
+        glass,
+    )
+    m.box("D-pad socket horizontal", [0.74, 8.04, 9.02], [2.96, 9.26, 9.045], "#252830")
+    m.box("D-pad socket vertical", [1.24, 7.54, 9.02], [2.46, 9.76, 9.045], "#252830")
+    # Four separate arms leave the characteristic recessed centre visible.
+    for dx, dy in ((0, 0.58), (0, -0.58), (-0.58, 0), (0.58, 0)):
+        x, y = 1.85 + dx, 8.65 + dy
+        w, h = (0.59, 0.88) if dy else (0.88, 0.59)
+        m.box("D-pad arm", [x-w/2, y-h/2, 9.06], [x+w/2, y+h/2, 9.29], "#20232a",
+              {"south": "#50555f", "up": "#626975"})
+    button(m, "analog recess", 1.85, 6.3, 9.02, 0.7, "#20242b")
+    button(m, "analog nub", 1.85, 6.3, 9.08, 0.57, "#555c67")
+    nub = Image.new("RGBA", (9, 9), "#555c67")
+    draw = ImageDraw.Draw(nub)
+    for y in range(0, nub.height, 2):
+        for x in range(y % 2, nub.width, 2):
+                draw.point((x, y), fill="#737d88")
+    m.south("analog grip texture", 1.45, 2.25, 5.9, 6.7, 9.37, nub, "#555c67")
+    for symbol, x, y in (
+        ("triangle", 13.75, 9.55),
+        ("square", 12.98, 8.8),
+        ("circle", 14.52, 8.8),
+        ("cross", 13.75, 8.05),
+    ):
+        button(m, symbol + " socket", x, y, 9.025, 0.48, "#252830")
+        button(m, symbol + " button", x, y, 9.08, 0.41, "#363a42")
+        m.south(
+            symbol + " glyph",
+            x - 0.24,
+            x + 0.24,
+            y - 0.24,
+            y + 0.24,
+            9.37,
+            psp_symbol(symbol),
+            "#363a42",
+        )
+    for name, x0, x1 in (("L shoulder", 0.85, 3.15), ("R shoulder", 12.85, 15.15)):
+        m.box(name, [x0 + 0.15, 11.35, 7.6], [x1 - 0.15, 11.65, 8.65], "#8e98a3")
+        m.top(name + " inset", x0 + 0.35, x1 - 0.35, 7.8, 8.4, 11.66, "#bec5cc", trim)
+    for x in (2.85, 12.65):
+        speaker = tile(0.5, 0.8, shell)
+        d = ImageDraw.Draw(speaker)
+        for y in range(1, speaker.height, 2):
+            for xx in range(speaker.width):
+                d.point((xx, y), fill="#090b10")
+        m.south("speaker grille", x, x + 0.5, 5.55, 6.35, 9.04, speaker, shell)
+    for title, x, width in (
+        ("HOME", 2.5, 1.25),
+        ("-", 4, 0.55),
+        ("+", 4.85, 0.55),
+        ("SELECT", 11.15, 1.45),
+        ("START", 13, 1.4),
+    ):
+        m.box(
+            title + " key",
+            [x - width / 2, 4.64, 9.02],
+            [x + width / 2, 4.98, 9.17],
+            "#171a21",
+        )
+        if title == "+":
+            paint = Image.new("RGBA", (5, 5), "#171a21")
+            pd = ImageDraw.Draw(paint)
+            pd.line((1, 2, 3, 2), fill="#c8ccd2")
+            pd.line((2, 1, 2, 3), fill="#c8ccd2")
+        else:
+            paint = label(width, 0.34, title, "#171a21", "#c8ccd2")
+        m.south(
+            title + " legend",
+            x - width / 2,
+            x + width / 2,
+            4.66,
+            4.96,
+            9.18,
+            paint,
+            "#171a21",
+        )
+    for x in (8.1, 9.2):
+        m.box(
+            "display / sound key",
+            [x - 0.25, 4.65, 9.02],
+            [x + 0.25, 4.96, 9.16],
+            "#171a21",
+        )
+    m.south(
+        "volume legend",
+        3.65,
+        5.2,
+        5.02,
+        5.29,
+        9.04,
+        label(1.55, 0.27, "VOL", shell, "#9ca3ae"),
+        shell,
+    )
+    m.led([14.95, 6.1, 9.04], [15.13, 6.55, 9.18], "green")
+    m.south(
+        "power legend",
+        14.48,
+        15.15,
+        6.7,
+        7.1,
+        9.04,
+        label(0.67, 0.4, "PWR", shell, "#9aa1ac"),
+        shell,
+    )
+    m.box("memory activity indicator", [0.69, 6.78, 9], [0.87, 7.13, 9.12], "#79502b")
+    m.box("wireless indicator", [0.69, 6.15, 9], [0.87, 6.5, 9.12], "#34543d")
+    m.box("USB socket", [7.35, 11.58, 7.65], [8.65, 11.78, 8.4], "#0d1015")
+    m.box("USB inner contacts", [7.6, 11.65, 7.85], [8.4, 11.8, 8.15], "#8e959e")
+    m.box("headphone socket", [12.05, 4.43, 7.35], [12.85, 4.6, 8.15], "#0b0d12")
+    m.box("DC socket surround", [14, 4.45, 7.35], [14.65, 4.6, 8.15], "#ad9b43")
+    m.box("DC socket", [14.15, 4.42, 7.5], [14.5, 4.61, 7.95], "#15171c")
+    m.box("memory stick slot", [0.12, 7.1, 7.4], [0.38, 9.1, 7.78], "#0c0e13")
+    m.box("power / hold slider", [15.65, 5.75, 7.5], [15.9, 7.1, 8.05], "#111319")
+    m.box("power slider cap", [15.7, 6.3, 7.65], [15.98, 6.65, 8.05], trim)
+    m.box("rear battery cover", [11.6, 5.05, 6.65], [14.85, 10.95, 6.82], "#20232a")
+    m.box("UMD door seam", [4.6, 4.93, 6.65], [11.4, 11.07, 6.81], "#20242b")
+    ring = tile(6.5, 5.9, rear)
+    rd = ImageDraw.Draw(ring)
+    cx, cy = ring.width // 2, ring.height // 2
+    radius = min(ring.width, ring.height) // 2 - 1
+    rd.ellipse(
+        (cx - radius, cy - radius, cx + radius, cy + radius), outline="#b8bec5", width=2
+    )
+    text(ring, "PSP", (cx - 5, cy - 2), "#c2c7ce")
+    m.front("rear UMD ring", 4.75, 11.25, 5.08, 10.98, 6.63, ring, rear)
+    m.box("UMD latch", [7, 11.3, 6.65], [9, 11.6, 7.2], rear)
+    for x in (1.25, 14.5):
+        for y in (5.1, 10.8):
+            m.box("rear screw", [x, y, 6.6], [x + 0.15, y + 0.15, 6.8], "#717883")
+    m.front(
+        "rear model label",
+        1.5,
+        4.1,
+        5.7,
+        6.2,
+        6.64,
+        label(2.6, 0.5, "MODEL-1000", rear, "#7d8590"),
+        rear,
+    )
+    m.textures["screen"] = "retrocraft:block/console/lcd_color_off"
+    m.overrides = [
+        {
+            "predicate": {"retrocraft:powered": 1},
+            "model": "retrocraft:item/psp_handheld_on",
+        }
+    ]
+    m.save()
+    write_json(
+        "models/item/psp_handheld_on.json",
+        {
+            "parent": "retrocraft:item/psp_handheld",
+            "textures": {
+                "screen": "retrocraft:block/console/lcd_color_on",
+                "indicator": "retrocraft:block/console/led_green_on",
+            },
+        },
+    )
+
+
+def umd():
+    """Thin round-topped UMD shell, printed annulus and enclosed metal spindle."""
+    m = Model("psp", "item", "media_psp")
+    m.display = item_display()
+    shell, edge = "#eceee8", "#b5bcbf"
+    # A round upper half and broad lower corners, not a square cartridge.
+    profile = ((3, 3.35, 3.5), (3.35, 3.7, 4.55), (3.7, 4.4, 5.05),
+               (4.4, 8.7, 5.2), (8.7, 10.1, 4.95), (10.1, 11.15, 4.35),
+               (11.15, 12, 3.5), (12, 12.6, 2.5), (12.6, 12.95, 1.3))
+    for i, (y0, y1, r) in enumerate(profile):
+        m.box("UMD molded edge " + str(i), [8-r, y0, 7.55], [8+r, y1, 8.13], edge)
+        m.box("UMD white shell " + str(i), [8-r, y0, 8.13], [8+r, y1, 8.27], shell)
+    # Both prints fit entirely within the housing. Artwork remains on the circular disc.
+    disc = Image.new("RGBA", (40, 40), (0, 0, 0, 0))
+    d = ImageDraw.Draw(disc)
+    d.ellipse((0, 0, 39, 39), fill="#87939c")
+    d.ellipse((1, 1, 38, 38), fill="#252640")
+    # Original racing-inspired label: a sunset and staggered track ribbons.
+    d.polygon([(8, 3), (28, 3), (35, 9), (35, 13), (10, 13)], fill="#655c95")
+    d.polygon([(2, 22), (16, 8), (21, 8), (4, 28)], fill="#d2b576")
+    d.polygon([(5, 32), (29, 8), (34, 12), (12, 35)], fill="#a77954")
+    d.rectangle((14, 3, 25, 8), fill="#252640")
+    text(disc, "PSP", (14, 3), "#f0ede1")
+    text(disc, "UMD", (14, 31), "#d9d6df")
+    # Restore the circular edge after the diagonal artwork, and add the white spindle cover.
+    for y in range(40):
+        for x in range(40):
+            rr = (x-19.5)**2 + (y-19.5)**2
+            if rr > 19.5**2:
+                disc.putpixel((x, y), (0, 0, 0, 0))
+    d.ellipse((12, 12, 27, 27), fill="#a7aeb3")
+    d.ellipse((13, 13, 26, 26), fill=shell)
+    m.south("UMD printed disc", 3.35, 12.65, 3.6, 12.9, 8.29, disc, "#00000000")
+    # The read side is enclosed: silver disc, concentric hub and the left access slot.
+    rear = Image.new("RGBA", (40, 40), (0, 0, 0, 0))
+    d = ImageDraw.Draw(rear)
+    d.ellipse((0, 0, 39, 39), fill="#818b92")
+    d.ellipse((1, 1, 38, 38), fill="#bec9ce")
+    d.arc((2, 2, 37, 37), 30, 145, fill="#dbe0d9", width=2)
+    d.arc((3, 3, 36, 36), 200, 285, fill="#97afb8", width=2)
+    d.ellipse((12, 12, 27, 27), fill="#68767f")
+    d.ellipse((13, 13, 26, 26), fill="#dde0d9")
+    d.ellipse((15, 15, 24, 24), fill="#949fa5")
+    d.ellipse((17, 17, 22, 22), fill="#b9c2c5")
+    d.rectangle((0, 14, 11, 25), fill="#596974")
+    d.line((0, 13, 11, 13, 11, 26, 0, 26), fill="#e5e8e2")
+    m.front("UMD read side", 3.35, 12.65, 3.6, 12.9, 7.53, rear, "#00000000")
+    for x in (4.1, 11.4):
+        m.front("molded locating recess", x, x + 0.5, 3.5, 4, 7.5, "#929da3", shell)
+    m.save()
+
+
 def foldable_pose():
     """Read the renderer's hinge so baked geometry and live LCDs cannot drift apart."""
     source = (
@@ -2002,6 +2263,8 @@ def generate():
     })
     for name in ("gb", "gbc", "gba", "nes"):
         handheld(name)
+    psp()
+    umd()
     for name in ("gba_sp", "nds", "3ds"):
         foldable(name)
     for name in ("nds", "3ds"):
@@ -2011,7 +2274,7 @@ def generate():
     for name in ("ps1", "ps2", "dreamcast", "gamecube", "wii"):
         optical_disc(name)
     print(
-        "Generated 10 home consoles, 10 arcade skins, 7 handhelds and 15 game media models."
+        "Generated 10 home consoles, 10 arcade skins, 8 handhelds and 16 game media models."
     )
 
 

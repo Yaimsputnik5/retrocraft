@@ -17,6 +17,11 @@ public final class RomFormats {
         formats.put("gba", DiscoveryStrategy.extension("gba", "agb"));
         formats.put("nds", DiscoveryStrategy.extension("nds", "ids"));
         formats.put("3ds", DiscoveryStrategy.extension("3ds", "3dsx", "cci", "cxi", "app"));
+        var psp =
+                DiscoveryStrategy.extension("iso", "chd", "cso", "pbp", "elf")
+                        .inDir("psp", "playstation portable")
+                        .or(DiscoveryStrategy.extension("prx"));
+        formats.put("psp", psp);
         formats.put(
                 "megadrive",
                 DiscoveryStrategy.extension("md", "gen", "smd")
@@ -31,14 +36,16 @@ public final class RomFormats {
                 "ps2",
                 DiscoveryStrategy.extension("iso", "chd", "cue", "img", "mdf", "nrg", "gz")
                         .inDir("ps2", "playstation 2", "playstation2")
-                        .or(DiscoveryStrategy.extension("cso", "zso")));
+                        .or(DiscoveryStrategy.extension("cso", "zso"))
+                        .require(name -> !psp.matches(name)));
         formats.put(
                 "ps1",
                 DiscoveryStrategy.extension("iso", "chd", "cue", "img", "ccd", "m3u")
                         .inDir(
                                 new String[] {"ps1", "psx", "playstation"},
                                 new String[] {"ps2", "playstation 2", "playstation2"})
-                        .or(DiscoveryStrategy.extension("pbp", "minis")));
+                        .or(DiscoveryStrategy.extension("pbp", "minis"))
+                        .require(name -> !psp.matches(name)));
         formats.put(
                 "dreamcast",
                 DiscoveryStrategy.extension("iso", "chd", "cue", "img")
@@ -48,7 +55,8 @@ public final class RomFormats {
                 "wii",
                 DiscoveryStrategy.extension("iso", "chd", "img")
                         .inDir("wii")
-                        .or(DiscoveryStrategy.extension("wbfs", "rvz", "wad", "dol", "elf")));
+                        .or(DiscoveryStrategy.extension("wbfs", "rvz", "wad", "dol", "elf"))
+                        .require(name -> !psp.matches(name)));
         formats.put(
                 "gamecube",
                 DiscoveryStrategy.extension("iso", "chd", "img")

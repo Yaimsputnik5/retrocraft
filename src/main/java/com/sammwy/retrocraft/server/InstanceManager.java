@@ -1621,9 +1621,14 @@ public final class InstanceManager implements AutoCloseable {
         }
     }
 
+    /** These cores cannot provide a bounded checkpoint for client handoff. */
+    private boolean serverOnly(Session session) {
+        String id = config.coreId(session.game.cartridge().id().toString());
+        return id.equals("mame2003") || id.equals("ppsspp");
+    }
+
     private boolean serverMayEmulate(Session session) {
-        return config.emulationMode != RetrocraftConfig.EmulationMode.CLIENT
-                || config.coreId(session.game.cartridge().id().toString()).equals("mame2003");
+        return config.emulationMode != RetrocraftConfig.EmulationMode.CLIENT || serverOnly(session);
     }
 
     private boolean clientMayEmulate() {
@@ -1635,8 +1640,7 @@ public final class InstanceManager implements AutoCloseable {
      * client mode just refuses.
      */
     private boolean clientFits(Session session) {
-        if (config.coreId(session.game.cartridge().id().toString()).equals("mame2003"))
-            return false;
+        if (serverOnly(session)) return false;
         if (session.clientFit != null) return session.clientFit;
         if (!session.checkingFit) {
             session.checkingFit = true;
@@ -1909,8 +1913,16 @@ public final class InstanceManager implements AutoCloseable {
         // The pool layout is POOL/platform/<coreId>/<binary> — the parent dir name is the trusted
         // id.
         Path bios = RetrocraftConfig.systemDir(core.getParent().getFileName().toString());
+        Path nativeSaves =
+                config.coreId(session.game.cartridge().id().toString()).equals("ppsspp")
+                                && config.saveMode != RetrocraftConfig.SaveMode.NONE
+                        ? saves.nativeDirectory(
+                                session.data.owner(),
+                                config.saveMode == RetrocraftConfig.SaveMode.GLOBAL,
+                                session.data.gameId())
+                        : null;
         try {
-            return new WorkerProcess(workerJar, core, rom, state, bios, log);
+            return new WorkerProcess(workerJar, core, rom, state, bios, log, nativeSaves);
         } catch (IOException ex) {
             if (ex instanceof EOFException && workerLogSays(log, "Core rejected ROM"))
                 throw new RomRejectedException(ex, rom);
@@ -1921,7 +1933,7 @@ public final class InstanceManager implements AutoCloseable {
             byte[] previous = Files.readAllBytes(store.backup(session.data.id()));
             SaveStates.validate(previous);
             SaveStates.writeAtomic(state, previous);
-            return new WorkerProcess(workerJar, core, rom, state, bios, log);
+            return new WorkerProcess(workerJar, core, rom, state, bios, log, nativeSaves);
         }
     }
 

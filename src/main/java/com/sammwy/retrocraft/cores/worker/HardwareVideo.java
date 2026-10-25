@@ -275,12 +275,19 @@ final class HardwareVideo implements AutoCloseable {
         return new FrameCodec.Frame(w, h, rgb);
     }
 
+    /** Release native core GL objects while its callback owner is still alive. */
+    void releaseCore() {
+        if (!reset) return;
+        reset = false;
+        if (request.contextDestroy != null)
+            Function.getFunction(request.contextDestroy).invokeVoid(new Object[0]);
+    }
+
     @Override
     public void close() {
         if (window == 0 && eglDisplay == null) return;
         try {
-            if (reset && request.contextDestroy != null)
-                Function.getFunction(request.contextDestroy).invokeVoid(new Object[0]);
+            releaseCore();
         } finally {
             if (pixels != null) MemoryUtil.memFree(pixels);
             if (depth != 0) GL33C.glDeleteRenderbuffers(depth);

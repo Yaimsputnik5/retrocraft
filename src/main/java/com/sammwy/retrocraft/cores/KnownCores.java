@@ -84,6 +84,15 @@ public final class KnownCores {
                             "citra",
                             new Core("citra", "citra", false, "Nintendo 3DS", false, false)),
                     Map.entry(
+                            "ppsspp",
+                            new Core(
+                                    "ppsspp",
+                                    "ppsspp",
+                                    false,
+                                    "PlayStation Portable",
+                                    false,
+                                    false)),
+                    Map.entry(
                             "genesis_plus_gx",
                             new Core(
                                     "genesis_plus_gx",
@@ -143,6 +152,7 @@ public final class KnownCores {
                 Map.entry("retrocraft:gba", "mgba"),
                 Map.entry("retrocraft:nds", "desmume"),
                 Map.entry("retrocraft:3ds", "citra"),
+                Map.entry("retrocraft:psp", "ppsspp"),
                 Map.entry("retrocraft:megadrive", "genesis_plus_gx"),
                 Map.entry("retrocraft:n64", "parallel_n64"),
                 Map.entry("retrocraft:mame", "mame2003"),

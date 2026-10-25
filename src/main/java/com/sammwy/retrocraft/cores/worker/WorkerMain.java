@@ -51,13 +51,21 @@ public final class WorkerMain {
     private final Memory systemDir;
     private final boolean arcade;
 
-    private WorkerMain(String corePath, Path statePath, Path bios) throws IOException {
+    private WorkerMain(String corePath, Path statePath, Path bios, Path nativeSaves)
+            throws IOException {
         this.statePath = statePath;
         this.biosDir = bios;
         Files.createDirectories(statePath.getParent());
-        directory = cString(statePath.getParent().toAbsolutePath().toString());
-        systemDir =
-                cString((bios == null ? statePath.getParent() : bios).toAbsolutePath().toString());
+        Path saveRoot = nativeSaves == null ? statePath.getParent() : nativeSaves;
+        Files.createDirectories(saveRoot);
+        directory = cString(saveRoot.toAbsolutePath().toString());
+        Path systemRoot = bios == null ? statePath.getParent() : bios;
+        Path cachedSystem = Path.of(corePath).toAbsolutePath().getParent().resolve("system");
+        if (Path.of(corePath).getFileName().toString().startsWith("ppsspp_")
+                && !Files.isRegularFile(systemRoot.resolve("PPSSPP/compat.ini"))
+                && Files.isRegularFile(cachedSystem.resolve("PPSSPP/compat.ini")))
+            systemRoot = cachedSystem;
+        systemDir = cString(systemRoot.toAbsolutePath().toString());
         arcade = Path.of(corePath).getFileName().toString().startsWith("mame2003_");
         core = Native.load(corePath, Libretro.class);
         if (core.retro_api_version() != 1) throw new IOException("Unsupported libretro ABI");
@@ -96,7 +104,12 @@ public final class WorkerMain {
             socket.setTcpNoDelay(true);
             out.writeUTF(args[4]);
             out.flush();
-            new WorkerMain(args[0], Path.of(args[2]), bios).run(Path.of(args[1]), in, out);
+            new WorkerMain(
+                            args[0],
+                            Path.of(args[2]),
+                            bios,
+                            args.length > 6 && !args[6].isBlank() ? Path.of(args[6]) : null)
+                    .run(Path.of(args[1]), in, out);
         } catch (Throwable ex) {
             ex.printStackTrace(System.err);
             System.exit(1);
@@ -205,6 +218,7 @@ public final class WorkerMain {
                 out.flush();
             }
         } finally {
+            hardware.releaseCore();
             if (loaded) core.retro_unload_game();
             hardware.close();
             if (initialized) core.retro_deinit();
@@ -283,6 +297,11 @@ public final class WorkerMain {
                                     case "parallel-n64-aspectratiohint" -> "normal";
                                     case "parallel-n64-screensize" -> "640x480";
                                     case "pcsx2_renderer" -> "Software (SW)";
+                                    case "ppsspp_backend" -> "opengl";
+                                    case "ppsspp_internal_resolution" -> "480x272";
+                                    case "ppsspp_cropto16x9" -> "disabled";
+                                    case "ppsspp_software_rendering", "ppsspp_cache_iso" ->
+                                            "disabled";
                                     case "desmume_opengl_mode" -> "disabled";
                                     case "desmume_screens_layout" -> "top/bottom";
                                     case "desmume_screens_gap" -> "0";

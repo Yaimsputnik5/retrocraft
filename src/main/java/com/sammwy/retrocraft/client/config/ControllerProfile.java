@@ -85,6 +85,11 @@ public record ControllerProfile(String id, List<Button> buttons, int sticks) {
                 buttons.addAll(PLAYSTATION);
                 sticks = 2;
             }
+            case "psp_handheld" -> {
+                buttons.addAll(PLAYSTATION.subList(0, 4));
+                buttons.addAll(SHOULDERS);
+                sticks = 1;
+            }
             case "gba_handheld", "gba_sp_handheld" -> {
                 buttons.addAll(TWO);
                 buttons.addAll(SHOULDERS);
@@ -179,7 +184,7 @@ public record ControllerProfile(String id, List<Button> buttons, int sticks) {
     }
 
     public boolean playStation() {
-        return id.equals("ps1_console") || id.equals("ps2_console");
+        return id.equals("ps1_console") || id.equals("ps2_console") || id.equals("psp_handheld");
     }
 
     public List<Action> actions() {

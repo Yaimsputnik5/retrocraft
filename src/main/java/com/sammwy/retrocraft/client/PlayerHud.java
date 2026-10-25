@@ -159,7 +159,7 @@ public final class PlayerHud {
                 cols = 5;
                 rows = 3;
             }
-            case "snes_console", "nds_handheld", "3ds_handheld" -> {
+            case "snes_console", "nds_handheld", "3ds_handheld", "psp_handheld" -> {
                 face.add(new Cell(by.get(1 << 9), 1, 0));
                 face.add(new Cell(by.get(1 << 1), 0, 1));
                 face.add(new Cell(by.get(1 << 8), 2, 1));
@@ -169,7 +169,10 @@ public final class PlayerHud {
                 face.add(new Cell(by.get(1 << 12), 4, 0));
                 face.add(new Cell(by.get(1 << 13), 4, 2));
                 face.add(new Cell(by.get(1 << 14), 4, 1));
-                cols = theme.id().equals("snes_console") ? 4 : 5;
+                cols =
+                        theme.id().equals("nds_handheld") || theme.id().equals("3ds_handheld")
+                                ? 5
+                                : 4;
                 rows = 3;
             }
             case "megadrive_console", "genesis_console" -> {
@@ -608,7 +611,7 @@ public final class PlayerHud {
         scaledText(
                 context,
                 font,
-                ControllerProfile.of(console).playStation()
+                ControllerProfile.of(console).playStation() && !console.equals("psp_handheld")
                         ? right ? "R3" : "L3"
                         : right ? console.equals("n64_console") ? "C" : "R" : "L",
                 x + 5,

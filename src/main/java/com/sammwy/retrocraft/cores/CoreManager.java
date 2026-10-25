@@ -9,6 +9,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.*;
@@ -80,6 +81,7 @@ public final class CoreManager {
                 SaveStates.writeAtomic(receipt, writer.toString().getBytes(StandardCharsets.UTF_8));
             }
             WorkerProcess.Probe probe = WorkerProcess.probe(workerJar, core);
+            if (id.equals("ppsspp")) CoreSystemAssets.prepare(directory, downloads);
             return new Prepared(
                     core,
                     new CoreIdentity(
@@ -91,6 +93,18 @@ public final class CoreManager {
         } finally {
             lock.unlock();
         }
+    }
+
+    static ScheduledFuture<?> readTimeout(InputStream body) {
+        return TIMEOUTS.schedule(
+                () -> {
+                    try {
+                        body.close();
+                    } catch (IOException ignored) {
+                    }
+                },
+                120,
+                TimeUnit.SECONDS);
     }
 
     private void download(String id, Path target, Downloads downloads) throws IOException {
@@ -114,16 +128,7 @@ public final class CoreManager {
                 throw new IOException(ex);
             }
             try (InputStream body = response.body()) {
-                var timeout =
-                        TIMEOUTS.schedule(
-                                () -> {
-                                    try {
-                                        body.close();
-                                    } catch (IOException ignored) {
-                                    }
-                                },
-                                120,
-                                TimeUnit.SECONDS);
+                var timeout = readTimeout(body);
                 try {
                     if (response.statusCode() != 200)
                         throw new IOException(

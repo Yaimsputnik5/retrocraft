@@ -92,6 +92,7 @@ public final class Retrocraft implements ModInitializer {
                 gba);
         registerSystem("nds", "Nintendo DS", ConsoleType.HANDHELD);
         registerSystem("3ds", "Nintendo 3DS", ConsoleType.HANDHELD);
+        registerSystem("psp", "PlayStation Portable (PSP)", ConsoleType.HANDHELD);
         registerSystem("ps1", "PlayStation", ConsoleType.DOCKED);
         registerSystem("ps2", "PlayStation 2", ConsoleType.DOCKED);
         registerSystem("dreamcast", "Dreamcast", ConsoleType.DOCKED);

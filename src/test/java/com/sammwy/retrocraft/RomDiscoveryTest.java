@@ -16,6 +16,42 @@ class RomDiscoveryTest {
     @TempDir Path root;
 
     @Test
+    void pspSharedFormatsRequireItsFolderAndKeepOtherConsoleMappings() throws Exception {
+        var expected =
+                Map.of(
+                        "PSP/homebrew.PBP",
+                        "psp",
+                        "PSP/disc.CSO",
+                        "psp",
+                        "PSP/game.ISO",
+                        "psp",
+                        "PlayStation Portable/app.ELF",
+                        "psp",
+                        "psp/compressed.CHD",
+                        "psp",
+                        "anywhere/test.PRX",
+                        "psp",
+                        "classic.pbp",
+                        "ps1",
+                        "PS2/racer.cso",
+                        "ps2",
+                        "Wii/demo.elf",
+                        "wii");
+        int i = 0;
+        for (String file : expected.keySet()) {
+            Path path = root.resolve(file);
+            Files.createDirectories(path.getParent());
+            Files.write(path, new byte[] {(byte) i++});
+        }
+        var games = new RomScanner(RomFormats.ALL, 1024).scan(root, failWarning());
+        assertEquals(expected.size(), games.size());
+        for (var game : games) assertEquals(expected.get(game.source().file()), game.cartridge());
+        assertFalse(RomFormats.ALL.get("ps1").matches("PSP/homebrew.PBP"));
+        assertFalse(RomFormats.ALL.get("ps2").matches("PSP/disc.CSO"));
+        assertFalse(RomFormats.ALL.get("wii").matches("PSP/app.ELF"));
+    }
+
+    @Test
     void dsAndDecrypted3dsFormatsAreDiscoveredWithoutAPlatformFolder() throws Exception {
         String[] names = {
             "touch.NDS",

@@ -235,5 +235,8 @@
   "screen.retrocraft.layout.horizontal": "Screens: Horizontal",
   "screen.retrocraft.layout.top_large": "Screens: Large top",
   "screen.retrocraft.layout.bottom_large": "Screens: Large touch",
-  "screen.retrocraft.touch": "TOUCH"
+  "screen.retrocraft.touch": "TOUCH",
+  "console.retrocraft.psp_handheld": "PlayStation Portable (PSP)",
+  "item.retrocraft.psp_handheld": "PlayStation Portable (PSP)",
+  "item.retrocraft.psp": "PSP UMD"
 }

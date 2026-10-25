@@ -34,7 +34,8 @@ public final class Thumbnails {
                     "nes_handheld", new float[] {5.15f, 10.85f, 6.2f, 10.55f, 9.22f},
                     "gba_sp_handheld", new float[] {4.4f, 11.6f, 9.4f, 14.2f, 8.72f},
                     "nds_handheld", new float[] {4.4f, 11.6f, 9.15f, 14.55f, 8.72f},
-                    "3ds_handheld", new float[] {3, 13, 8.95f, 14.95f, 8.72f});
+                    "3ds_handheld", new float[] {3, 13, 8.95f, 14.95f, 8.72f},
+                    "psp_handheld", new float[] {3.7f, 12.3f, 5.76f, 10.6333f, 9.22f});
 
     private static final Map<String, float[]> TOUCH_SCREENS =
             Map.of(

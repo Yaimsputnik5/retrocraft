@@ -84,9 +84,16 @@ public final class WorkerProcess implements AutoCloseable {
 
     public WorkerProcess(Path workerJar, Path core, Path rom, Path state, Path bios, Path log)
             throws IOException {
+        this(workerJar, core, rom, state, bios, log, null);
+    }
+
+    public WorkerProcess(
+            Path workerJar, Path core, Path rom, Path state, Path bios, Path log, Path nativeSaves)
+            throws IOException {
         String token = UUID.randomUUID().toString();
         Files.createDirectories(state.getParent());
         if (bios != null) Files.createDirectories(bios);
+        if (nativeSaves != null) Files.createDirectories(nativeSaves);
         Path java = Path.of(javaExecutable());
         Process child = null;
         Socket connection = null;
@@ -108,7 +115,10 @@ public final class WorkerProcess implements AutoCloseable {
                                     state.toAbsolutePath().toString(),
                                     Integer.toString(listener.getLocalPort()),
                                     token,
-                                    bios == null ? "" : bios.toAbsolutePath().toString())
+                                    bios == null ? "" : bios.toAbsolutePath().toString(),
+                                    nativeSaves == null
+                                            ? ""
+                                            : nativeSaves.toAbsolutePath().toString())
                             .redirectErrorStream(true)
                             .redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile()))
                             .start();

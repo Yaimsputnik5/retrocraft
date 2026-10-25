@@ -24,6 +24,13 @@ public final class GameSaves {
         return root.resolve(global ? "global" : owner.toString());
     }
 
+    /** Durable filesystem saves for cores with native memory-stick directories. */
+    public Path nativeDirectory(UUID owner, boolean global, String gameId) {
+        if (gameId == null || !gameId.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("Invalid game save identity");
+        return directory(owner, global).resolve(gameId + ".files");
+    }
+
     private Path state(UUID owner, boolean global, String gameId) {
         return directory(owner, global).resolve(gameId + ".state");
     }

@@ -17,6 +17,7 @@ Retrocraft adds handhelds, home consoles, arcade cabinets and CRT televisions to
 | Game Boy Advance | Game Boy Advance, Game Boy Advance SP | mgba |
 | Nintendo DS | Nintendo DS | desmume |
 | Nintendo 3DS | Nintendo 3DS | citra |
+| PlayStation Portable | PSP | ppsspp |
 | Mega Drive / Genesis | Mega Drive, Genesis | genesis_plus_gx |
 | Nintendo 64 | Nintendo 64 | parallel_n64 |
 | PlayStation | PlayStation Console | beetle_psx |
@@ -32,7 +33,7 @@ Every console, cartridge and TV has its own pixel-art model and texture. Top-loa
 
 ## Handhelds
 
-Hold a Game Boy, Game Boy Color, Game Boy Advance, Game Boy Advance SP, Nintendo DS, Nintendo 3DS or NES Handheld in your hand and right-click:
+Hold a Game Boy, Game Boy Color, Game Boy Advance, Game Boy Advance SP, Nintendo DS, Nintendo 3DS, PSP or NES Handheld in your hand and right-click:
 
 - Powered off → opens the console inventory with a single cartridge slot.
 - Insert a cartridge, hit **Power on**, and the game HUD opens right away.
@@ -47,6 +48,10 @@ Nintendo DS and Nintendo 3DS have hinged models with two LCDs, each showing its 
 Game Boy Advance SP has its own hinged model, gameplay bezel and single-screen preview. It uses the same GBA cartridges, mGBA core and game saves as Game Boy Advance.
 
 Nintendo DS uses DeSmuME and accepts `.nds` and `.ids`. Nintendo 3DS uses Citra with a private OpenGL 3.3 context. Desktop clients use an invisible window; dedicated Linux servers can use surfaceless Mesa/EGL. Supply decrypted `.3ds` / `.cci` / `.cxi` / `.app` files or `.3dsx` homebrew; CIA installers are not launchable cartridges. Large ROM files already placed in the server library run directly on the server when they exceed the configured client transfer budget.
+
+PSP has a wide 480×272 LCD, a single analog stick, PlayStation face buttons, L/R shoulders and a UMD game item. Its handheld model displays live video or thumbnails, and its play screen uses a matching black-and-silver bezel. Use **WASD** for the analog stick, **arrow keys** for the D-pad, **Z/X/C/V** for Cross/Circle/Square/Triangle and **Q/E** for L/R; bindings remain customizable per console.
+
+Place PSP games in a `psp/` or `playstation portable/` folder under the ROM library: `.iso`, `.chd`, `.cso`, `.pbp` and `.elf` overlap other systems and need this folder. PSP `.prx` homebrew is recognized anywhere. PPSSPP and its required fonts and compatibility files are downloaded automatically from the official libretro buildbot and cached together; no PSP BIOS is required. The core uses OpenGL at native resolution, including Mesa/EGL on dedicated Linux servers without a desktop. PSP runs on the server (including the integrated singleplayer server), since PPSSPP's initial snapshots exceed the client handoff limit. Its native memory-stick saves are stored under `config/retrocraft/saves/<scope>/<game-id>.files/PSP/` and follow the player/global/none save policy. Use the game's own save function; PSP suspend-state transfer and restoration are unavailable.
 
 ## Home consoles and TVs
 
@@ -103,7 +108,7 @@ Cores are downloaded on demand from the [official libretro buildbot](https://bui
 
 2. Install `build/libs/retrocraft-0.1.1.jar` together with Fabric API on the server and on every client.
 
-3. Put your ROMs in `config/retrocraft/roms/` on the server (or upload them in-game via **F8 → Server → ROM Library** by picking files or dragging and dropping them onto the window). Detection uses deterministic file extensions and, for shared formats, platform folders (`megadrive`/`genesis`, `ps1`/`psx`/`playstation`, `ps2`/`playstation2`, `dreamcast`/`dc`, `wii`, `gamecube`/`ngc`). Console-unique formats (`.nes`, `.sfc`/`.smc`, `.gb`, `.gbc`, `.gba`, `.nds`/`.ids`, `.3ds`/`.3dsx`/`.cci`/`.cxi`/`.app`, `.md`/`.gen`/`.smd`, `.z64`/`.n64`/`.v64`, `.pbp`, `.cso`/`.zso`, `.cdi`/`.gdi`, `.wbfs`/`.rvz`/`.wad`/`.dol`, `.gcm`/`.gcz`/`.nkit`) match anywhere; shared disc images (`.iso`, `.chd`, `.cue`, `.img`) match inside their platform folder. ROM headers and archive contents are never inspected during discovery. Known MAME ZIP basenames stay intact and resolve to their full arcade titles. Games use content hashes for identity.
+3. Put your ROMs in `config/retrocraft/roms/` on the server (or upload them in-game via **F8 → Server → ROM Library** by picking files or dragging and dropping them onto the window). Detection uses deterministic file extensions and, for shared formats, platform folders (`megadrive`/`genesis`, `ps1`/`psx`/`playstation`, `ps2`/`playstation2`, `dreamcast`/`dc`, `wii`, `gamecube`/`ngc`, `psp`/`playstation portable`). Console-unique formats (`.nes`, `.sfc`/`.smc`, `.gb`, `.gbc`, `.gba`, `.nds`/`.ids`, `.3ds`/`.3dsx`/`.cci`/`.cxi`/`.app`, `.md`/`.gen`/`.smd`, `.z64`/`.n64`/`.v64`, `.pbp`, `.cso`/`.zso`, `.cdi`/`.gdi`, `.wbfs`/`.rvz`/`.wad`/`.dol`, `.gcm`/`.gcz`/`.nkit`) match anywhere; shared disc images (`.iso`, `.chd`, `.cue`, `.img`) match inside their platform folder. ROM headers and archive contents are never inspected during discovery. Known MAME ZIP basenames stay intact and resolve to their full arcade titles. Games use content hashes for identity.
 
 4. Start the world. Cartridges and discs for every ROM found appear in **RetroCraft - Games**, arcade variants in **RetroCraft - Arcades**, and consoles and TVs in **RetroCraft - Consoles**.
 

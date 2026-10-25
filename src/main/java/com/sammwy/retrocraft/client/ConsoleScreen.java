@@ -53,6 +53,10 @@ public final class ConsoleScreen extends AnimatedScreen {
             frameWidth = dualScreen.width;
             frameHeight = dualScreen.screenHeight * 2;
         }
+        if (packet.console().equals("psp_handheld")) {
+            frameWidth = 480;
+            frameHeight = 272;
+        }
         consoleName = Text.translatable("console.retrocraft." + packet.console());
         displayTitle = Text.empty().append(consoleName).append(" · ").append(title);
         consoleStack =
@@ -463,6 +467,7 @@ public final class ConsoleScreen extends AnimatedScreen {
         static Bezel of(ConsoleTheme.Bezel kind) {
             return switch (kind) {
                 case GB, GBC -> new Bezel(22, 14, 12, 12, 4, 8);
+                case PSP -> new Bezel(12, 12, 12, 12, 4, 8);
                 case GBA_SP -> new Bezel(14, 16, 14, 20, 4, 8);
                 case NDS, THREEDS -> new Bezel(14, 14, 14, 14, 4, 8);
                 case GBA -> new Bezel(12, 14, 12, 14, 4, 8);
@@ -509,7 +514,7 @@ public final class ConsoleScreen extends AnimatedScreen {
                     context.fill(hx + 1, oy + oh - 1, hx + 16, oy + oh, accent);
                 }
             }
-            case NDS, THREEDS -> {
+            case NDS, THREEDS, PSP -> {
                 rounded(context, ox + 4, oy + 4, ow - 8, oh - 8, dark, 2);
             }
             case NES_HANDHELD -> {
