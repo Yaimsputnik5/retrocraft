@@ -45,6 +45,7 @@ public final class RetrocraftClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientPreferences.load();
+        com.sammwy.retrocraft.client.hud.DefaultConsoleHuds.register();
         DownloadHud.register();
         SETTINGS_KEY =
                 KeyBindingHelper.registerKeyBinding(

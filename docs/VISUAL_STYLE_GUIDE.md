@@ -109,7 +109,8 @@ Glass, video, and interactive regions must describe the same physical surface.
 
 A gameplay bezel is a compact screen surround. Keep it narrow and consistent with neighboring gameplay frames, using the hardware palette and restrained surface details. Reserve full device silhouettes, grips, directional pads, analog sticks, and face-button clusters for the hardware models.
 
-- Build the frame in layers: outer shell, inner bezel, glass edge, and video area.
+- Author each handheld frame as a background PNG and a transparent overlay PNG. Register their source dimensions and fixed border insets through the handheld HUD API; draw video between the layers. Use nine-slice scaling to retain crisp corners and border thickness at every window size.
+- Build the artwork in layers: outer shell, inner bezel, glass edge, and video area. Keep the overlay window transparent unless a deliberate effect requires otherwise.
 - Retain the physical object's color hierarchy. Limit decoration to small details in the narrow frame, such as a stripe or indicator. Keep gameplay frames free of decorative branding and button legends.
 - Draw corners as pixel steps, with thin upper highlights and restrained lower shadows.
 - Size margins in GUI pixels. Prevent them from growing with the framebuffer until they consume an excessive part of the screen.
@@ -144,6 +145,7 @@ Edit the generators and artwork inputs that produce the assets. Regenerate the c
 python3 tools/generate_models.py
 python3 tools/generate_models.py --check
 python3 tools/check_models.py
+python3 tools/generate_hud_frames.py --check
 python3 tools/preview_models.py --output tmp/style-review/front
 python3 tools/preview_models.py --output tmp/style-review/back --view back
 python3 tools/preview_models.py --output tmp/style-review/straight --view straight

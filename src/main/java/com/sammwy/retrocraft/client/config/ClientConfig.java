@@ -17,6 +17,7 @@ public final class ClientConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     public Map<String, Map<String, Integer>> controls = new LinkedHashMap<>();
     public String ndsLayout = "vertical", threedsLayout = "vertical";
+    public Map<String, String> handheldLayouts = new LinkedHashMap<>();
     public int volume = 100;
     public int maxVideoFps = 60;
     public boolean renderWorldScreens = true;
@@ -42,8 +43,14 @@ public final class ClientConfig {
         changes.forEach(
                 (key, value) -> {
                     switch (key) {
-                        case "ndsLayout" -> copy.ndsLayout = value;
-                        case "threedsLayout" -> copy.threedsLayout = value;
+                        case "ndsLayout" -> {
+                            copy.ndsLayout = value;
+                            copy.handheldLayouts.remove("retrocraft:nds_handheld");
+                        }
+                        case "threedsLayout" -> {
+                            copy.threedsLayout = value;
+                            copy.handheldLayouts.remove("retrocraft:3ds_handheld");
+                        }
                         case "volume" -> copy.volume = Integer.parseInt(value);
                         case "maxVideoFps" -> copy.maxVideoFps = Integer.parseInt(value);
                         case "renderWorldScreens" -> copy.renderWorldScreens = bool(value);
@@ -61,6 +68,23 @@ public final class ClientConfig {
 
     public Map<String, Integer> controls(String console) {
         return Map.copyOf(controls.getOrDefault(console, Map.of()));
+    }
+
+    public DualScreenLayout hudLayout(String key) {
+        String legacy =
+                switch (key) {
+                    case "retrocraft:nds_handheld" -> ndsLayout;
+                    case "retrocraft:3ds_handheld" -> threedsLayout;
+                    default -> "vertical";
+                };
+        return DualScreenLayout.parse(handheldLayouts.getOrDefault(key, legacy));
+    }
+
+    public ClientConfig withHudLayout(String key, DualScreenLayout layout) {
+        ClientConfig copy = GSON.fromJson(GSON.toJson(this), ClientConfig.class);
+        copy.handheldLayouts.put(key, layout.id());
+        copy.validate();
+        return copy;
     }
 
     public ClientConfig withControls(Map<String, Map<String, Integer>> bindings) {
@@ -82,6 +106,14 @@ public final class ClientConfig {
     private void validate() {
         DualScreenLayout.parse(ndsLayout);
         DualScreenLayout.parse(threedsLayout);
+        if (handheldLayouts == null || handheldLayouts.size() > 128)
+            throw new IllegalArgumentException("Invalid handheld layouts");
+        handheldLayouts.forEach(
+                (key, value) -> {
+                    if (key == null || !key.matches("[a-z0-9_.:/-]{1,128}"))
+                        throw new IllegalArgumentException("Invalid handheld layout key");
+                    DualScreenLayout.parse(value);
+                });
         if (controls == null || controls.size() > 128)
             throw new IllegalArgumentException("Invalid controller bindings");
         controls.forEach(

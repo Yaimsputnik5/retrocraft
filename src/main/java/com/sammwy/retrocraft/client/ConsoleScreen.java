@@ -6,8 +6,10 @@ import org.lwjgl.glfw.GLFW;
 
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.client.config.DualScreenLayout;
-import com.sammwy.retrocraft.cores.stream.DualScreen;
+import com.sammwy.retrocraft.client.hud.*;
 import com.sammwy.retrocraft.cores.worker.PadInput;
+import com.sammwy.retrocraft.server.console.ConsoleRegistry;
+import com.sammwy.retrocraft.server.console.ConsoleType;
 import com.sammwy.retrocraft.server.net.Packets;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -22,6 +24,7 @@ public final class ConsoleScreen extends AnimatedScreen {
     private static final int HEADER = 18, MARGIN = 8;
     final UUID instance;
     private final ConsoleTheme theme;
+    private final Identifier definitionId;
     private final Text consoleName, displayTitle;
     private boolean controller, canManage, inWorld, subscribed = true;
     private long screen;
@@ -30,7 +33,8 @@ public final class ConsoleScreen extends AnimatedScreen {
     private final ItemStack consoleStack;
     private boolean hudWasHidden, hudHiddenByUs;
     private IconButton zoomOut, zoomIn;
-    private final DualScreen dualScreen;
+    private final ConsoleHudRenderer hudRenderer;
+    private ConsoleHudLayout hudLayout;
     private DualScreenLayout layout;
     private boolean touchHeld;
     private double touchX, touchY;
@@ -42,25 +46,31 @@ public final class ConsoleScreen extends AnimatedScreen {
         canManage = packet.canManage();
         inWorld = packet.inWorld();
         screen = packet.screen();
-        theme = ConsoleTheme.of(packet.console());
-        dualScreen = DualScreen.of(packet.console());
-        if (dualScreen != null) {
+        definitionId =
+                Identifier.of(
+                        packet.console().contains(":")
+                                ? packet.console()
+                                : "retrocraft:" + packet.console());
+        theme = ConsoleTheme.of(definitionId.getPath());
+        var definition = ConsoleRegistry.get(definitionId);
+        hudRenderer =
+                definition != null && definition.type() == ConsoleType.HANDHELD
+                        ? ConsoleHudRegistry.require(definitionId)
+                        : null;
+        if (hudRenderer != null) {
+            var config = hudRenderer.config();
+            frameWidth = config.nativeWidth();
+            frameHeight = config.nativeHeight();
             layout =
-                    DualScreenLayout.parse(
-                            dualScreen == DualScreen.NDS
-                                    ? ClientPreferences.get().ndsLayout
-                                    : ClientPreferences.get().threedsLayout);
-            frameWidth = dualScreen.width;
-            frameHeight = dualScreen.screenHeight * 2;
+                    config.dualScreen() == null
+                            ? DualScreenLayout.VERTICAL
+                            : ClientPreferences.get().hudLayout(config.layoutPreference());
         }
-        if (packet.console().equals("psp_handheld")) {
-            frameWidth = 480;
-            frameHeight = 272;
-        }
-        consoleName = Text.translatable("console.retrocraft." + packet.console());
+        consoleName =
+                Text.translatable(
+                        "console." + definitionId.getNamespace() + "." + definitionId.getPath());
         displayTitle = Text.empty().append(consoleName).append(" · ").append(title);
-        consoleStack =
-                new ItemStack(Registries.ITEM.get(Identifier.of("retrocraft", packet.console())));
+        consoleStack = new ItemStack(Registries.ITEM.get(definitionId));
     }
 
     String consoleId() {
@@ -79,6 +89,7 @@ public final class ConsoleScreen extends AnimatedScreen {
     @Override
     protected void init() {
         touchHeld = false;
+        hudLayout = null;
         if (client != null && !hudHiddenByUs) {
             hudWasHidden = client.options.hudHidden;
             client.options.hudHidden = true;
@@ -113,7 +124,7 @@ public final class ConsoleScreen extends AnimatedScreen {
                                 Text.translatable("screen.retrocraft.eject")));
             }
         }
-        if (dualScreen != null) {
+        if (hasDualScreens()) {
             x -= 132;
             addDrawableChild(
                     new SettingsWidgets.Flat(
@@ -126,12 +137,8 @@ public final class ConsoleScreen extends AnimatedScreen {
                                 touchHeld = false;
                                 layout = layout.next();
                                 try {
-                                    ClientPreferences.apply(
-                                            java.util.Map.of(
-                                                    dualScreen == DualScreen.NDS
-                                                            ? "ndsLayout"
-                                                            : "threedsLayout",
-                                                    layout.id()));
+                                    ClientPreferences.applyHudLayout(
+                                            hudRenderer.config().layoutPreference(), layout);
                                 } catch (java.io.IOException ex) {
                                     Retrocraft.LOG.warn("Cannot save screen layout", ex);
                                 }
@@ -224,7 +231,7 @@ public final class ConsoleScreen extends AnimatedScreen {
             frameWidth = entry.width();
             frameHeight = entry.height();
         }
-        if (inWorld && ClientPreferences.get().renderWorldScreens) {
+        if (hudRenderer == null && inWorld && ClientPreferences.get().renderWorldScreens) {
             // The cabinet block shows the video; only the key legend and the miniature actions are
             // drawn.
             context.drawItem(consoleStack, MARGIN, 3);
@@ -272,93 +279,82 @@ public final class ConsoleScreen extends AnimatedScreen {
                     17,
                     0xffa8b0c0);
 
-        if (dualScreen != null) {
-            var pair = dualRects();
-            drawDualScreen(context, pair.top(), false);
-            drawDualScreen(context, pair.bottom(), true);
-            if (controller && pair.bottom().contains(mouseX, mouseY)) {
+        if (hudRenderer != null) {
+            var runtime = hudContext(mouseX, mouseY, delta);
+            hudLayout = hudRenderer.render(context, runtime, panel -> drawHudVideo(context, panel));
+            if (controller && hudLayout.touchAt(mouseX, mouseY).isPresent()) {
                 int color = touchHeld ? 0xff72e5d4 : 0xffe9eef2;
                 context.fill(mouseX - 3, mouseY, mouseX + 4, mouseY + 1, color);
                 context.fill(mouseX, mouseY - 3, mouseX + 1, mouseY + 4, color);
             }
         } else {
-            // The video takes all the room between the top strip and the key legend, keeping its
-            // aspect
-            // ratio, inside a slim console bezel.
-            Bezel bezel = Bezel.of(theme.bezel());
-            int areaTop = HEADER + MARGIN,
-                    areaHeight = height - PlayerHud.reservedHeight(theme) - MARGIN - areaTop;
-            int availW = width - 2 * MARGIN - bezel.left - bezel.right,
-                    availH = areaHeight - bezel.top - bezel.bottom;
-            float fit = Math.min((float) availW / frameWidth, (float) availH / frameHeight);
-            int w = Math.max(1, Math.round(frameWidth * fit)),
-                    h = Math.max(1, Math.round(frameHeight * fit));
-            int x = (width - bezel.left - bezel.right - w) / 2 + bezel.left,
-                    y = areaTop + (areaHeight - bezel.top - bezel.bottom - h) / 2 + bezel.top;
-            drawBezel(context, bezel, x, y, w, h);
-            if (textureId != null)
-                context.drawTexture(
-                        textureId,
-                        x,
-                        y,
-                        w,
-                        h,
-                        0,
-                        0,
-                        frameWidth,
-                        frameHeight,
-                        frameWidth,
-                        frameHeight);
-            else {
-                context.fill(x, y, x + w, y + h, theme.screenOff());
-                context.drawCenteredTextWithShadow(
-                        textRenderer,
-                        Text.translatable("screen.retrocraft.connecting"),
-                        x + w / 2,
-                        y + h / 2 - 4,
-                        theme.handheld() ? 0xff1f2e1a : 0xffd8dde6);
-            }
+            // Flat-view fallback when world screens are disabled. TV and arcade renderers stay
+            // separate.
+            var area = hudViewport();
+            var bezel = WorldConsoleFrame.insets(theme);
+            int availableW = Math.max(1, area.width() - bezel.left() - bezel.right());
+            int availableH = Math.max(1, area.height() - bezel.top() - bezel.bottom());
+            double fit =
+                    Math.min((double) availableW / frameWidth, (double) availableH / frameHeight);
+            int w = Math.max(1, (int) Math.floor(frameWidth * fit));
+            int h = Math.max(1, (int) Math.floor(frameHeight * fit));
+            var video =
+                    new HudRect(
+                            area.x() + bezel.left() + (availableW - w) / 2,
+                            area.y() + bezel.top() + (availableH - h) / 2,
+                            w,
+                            h);
+            WorldConsoleFrame.render(context, theme, video);
+            drawHudVideo(
+                    context,
+                    new ConsoleHudLayout.Panel(
+                            video,
+                            video,
+                            new com.sammwy.retrocraft.cores.stream.DualScreen.Crop(0, 0, 1, 1),
+                            false));
         }
         PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
         zoomLabel(context);
         renderWidgets(context, mouseX, mouseY, delta);
     }
 
-    private DualScreenLayout.Pair dualRects() {
-        int top = HEADER + MARGIN;
-        return layout.fit(
-                dualScreen,
-                MARGIN,
-                top,
-                width - 2 * MARGIN,
-                Math.max(1, height - PlayerHud.reservedHeight(theme) - MARGIN - top),
-                14);
+    private boolean hasDualScreens() {
+        return hudRenderer != null && hudRenderer.config().dualScreen() != null;
     }
 
-    private void drawDualScreen(DrawContext context, DualScreenLayout.Rect rect, boolean bottom) {
+    private HudRect hudViewport() {
+        int top = HEADER + MARGIN;
+        return new HudRect(
+                MARGIN,
+                top,
+                Math.max(1, width - 2 * MARGIN),
+                Math.max(1, height - PlayerHud.reservedHeight(theme) - MARGIN - top));
+    }
+
+    private ConsoleHudContext hudContext(double mouseX, double mouseY, float delta) {
+        return new ConsoleHudContext(
+                instance,
+                definitionId.toString(),
+                hudViewport(),
+                frameWidth,
+                frameHeight,
+                layout == null ? DualScreenLayout.VERTICAL : layout,
+                controller,
+                mouseX,
+                mouseY,
+                delta);
+    }
+
+    private ConsoleHudLayout currentHudLayout() {
+        if (hudLayout == null && hudRenderer != null)
+            hudLayout = hudRenderer.layout(hudContext(touchX, touchY, 0));
+        return hudLayout;
+    }
+
+    private void drawHudVideo(DrawContext context, ConsoleHudLayout.Panel panel) {
+        var rect = panel.video();
+        var crop = panel.crop();
         int x = rect.x(), y = rect.y(), w = rect.width(), h = rect.height();
-        drawBezel(context, Bezel.of(theme.bezel()), x, y, w, h);
-        if (bottom) {
-            context.drawCenteredTextWithShadow(
-                    textRenderer,
-                    Text.translatable("screen.retrocraft.touch"),
-                    x + w / 2,
-                    y + h + 4,
-                    theme.accent());
-        } else if (theme.bezel() == ConsoleTheme.Bezel.NDS) {
-            for (int side : new int[] {x - 10, x + w + 6})
-                for (int i = 0; i < 3; i++)
-                    context.fill(
-                            side,
-                            y + h / 2 - 4 + i * 3,
-                            side + 4,
-                            y + h / 2 - 3 + i * 3,
-                            0xff25282e);
-        } else {
-            context.fill(x + w / 2 - 1, y - 10, x + w / 2 + 2, y - 7, 0xff06080c);
-            context.fill(x + w + 6, y + 2, x + w + 8, y + Math.max(4, h / 2), theme.accent());
-        }
-        var crop = dualScreen.crop(bottom);
         if (textureId != null) {
             int sw = Math.max(1, Math.round((crop.u1() - crop.u0()) * frameWidth));
             int sh = Math.max(1, Math.round((crop.v1() - crop.v0()) * frameHeight));
@@ -375,8 +371,13 @@ public final class ConsoleScreen extends AnimatedScreen {
                     frameWidth,
                     frameHeight);
         } else {
-            context.fill(x, y, x + w, y + h, theme.screenOff());
-            if (!bottom)
+            context.fill(
+                    x,
+                    y,
+                    x + w,
+                    y + h,
+                    hudRenderer == null ? theme.screenOff() : hudRenderer.config().screenOff());
+            if (crop.v0() == 0)
                 context.drawCenteredTextWithShadow(
                         textRenderer,
                         Text.translatable("screen.retrocraft.connecting"),
@@ -387,7 +388,7 @@ public final class ConsoleScreen extends AnimatedScreen {
     }
 
     PadInput withTouch(PadInput input) {
-        if (dualScreen == null
+        if (hudRenderer == null
                 || !controller
                 || !touchHeld
                 || !acceptingInput()
@@ -397,22 +398,19 @@ public final class ConsoleScreen extends AnimatedScreen {
             touchHeld = false;
             return input;
         }
-        var rect = dualRects().bottom();
-        if (!rect.contains(touchX, touchY)) return input;
-        return input.withTouch(
-                dualScreen.pointerX((touchX - rect.x()) / rect.width()),
-                dualScreen.pointerY((touchY - rect.y()) / rect.height()),
-                true);
+        var panel = currentHudLayout().touchAt(touchX, touchY).orElse(null);
+        if (panel == null) return input;
+        return input.withTouch(panel.pointerX(touchX), panel.pointerY(touchY), true);
     }
 
     @Override
     public boolean mouseClicked(double x, double y, int button) {
         if (super.mouseClicked(x, y, button)) return true;
-        if (dualScreen != null
+        if (hudRenderer != null
                 && button == 0
                 && controller
                 && acceptingInput()
-                && dualRects().bottom().contains(x, y)) {
+                && currentHudLayout().touchAt(x, y).isPresent()) {
             touchHeld = true;
             touchX = x;
             touchY = y;
@@ -445,7 +443,7 @@ public final class ConsoleScreen extends AnimatedScreen {
         return (canManage ? 32 : 0)
                 + (controller ? 0 : 74)
                 + (focusActive() ? 56 : 0)
-                + (dualScreen == null ? 0 : 132);
+                + (hasDualScreens() ? 132 : 0);
     }
 
     /** Zoom percentage between the [-] and [+] buttons, matching the header text. */
@@ -458,136 +456,8 @@ public final class ConsoleScreen extends AnimatedScreen {
 
     @Override
     protected void renderDimmer(DrawContext context, float visibility) {
-        if (!(inWorld && ClientPreferences.get().renderWorldScreens))
+        if (!(hudRenderer == null && inWorld && ClientPreferences.get().renderWorldScreens))
             context.fill(0, 0, width, height, (int) (112 * visibility) << 24);
-    }
-
-    /** Padding the bezel needs around the video on each side, in GUI pixels. */
-    private record Bezel(int left, int top, int right, int bottom, int rim, int inner) {
-        static Bezel of(ConsoleTheme.Bezel kind) {
-            return switch (kind) {
-                case GB, GBC -> new Bezel(22, 14, 12, 12, 4, 8);
-                case PSP -> new Bezel(12, 12, 12, 12, 4, 8);
-                case GBA_SP -> new Bezel(14, 16, 14, 20, 4, 8);
-                case NDS, THREEDS -> new Bezel(14, 14, 14, 14, 4, 8);
-                case GBA -> new Bezel(12, 14, 12, 14, 4, 8);
-                case NES_HANDHELD -> new Bezel(12, 12, 12, 14, 4, 8);
-                case TV -> new Bezel(14, 12, 14, 22, 6, 8);
-                case ARCADE -> new Bezel(14, 22, 14, 12, 6, 8);
-            };
-        }
-    }
-
-    private void drawBezel(DrawContext context, Bezel b, int x, int y, int w, int h) {
-        int shell = theme.shell(), dark = theme.bezelColor(), accent = theme.accent();
-        int ox = x - b.left, oy = y - b.top, ow = w + b.left + b.right, oh = h + b.top + b.bottom;
-        int ix = x - b.inner, iy = y - b.inner, iw = w + 2 * b.inner, ih = h + 2 * b.inner;
-        rounded(context, ox, oy, ow, oh, shell, 3);
-        context.fill(ox + 3, oy + 1, ox + ow - 3, oy + 2, ConsoleTheme.shade(shell, 1.25f));
-        context.fill(ox + 3, oy + oh - 2, ox + ow - 3, oy + oh - 1, ConsoleTheme.shade(shell, .6f));
-        switch (theme.bezel()) {
-            case GB, GBC -> {
-                rounded(context, ox + b.rim, oy + b.rim, ow - 2 * b.rim, oh - 2 * b.rim, dark, 2);
-                if (theme.bezel() == ConsoleTheme.Bezel.GB) {
-                    context.fill(ix - 10, oy + b.rim + 3, ix + iw, oy + b.rim + 4, 0xff7a2a7c);
-                    context.fill(ix - 10, oy + b.rim + 5, ix + iw, oy + b.rim + 6, 0xff2f3c8f);
-                    context.fill(ix - 10, oy + b.rim + 7, ix + iw, oy + b.rim + 8, 0xff9b2d5f);
-                }
-                led(context, ix - 7, y + h / 2 - 1, 0xffd9453a);
-                context.fill(ix - 9, y + h / 2 + 5, ix - 3, y + h / 2 + 6, 0xff9c9cae);
-            }
-            case GBA -> {
-                rounded(context, ox + b.rim, oy + b.rim, ow - 2 * b.rim, oh - 2 * b.rim, dark, 2);
-                for (int sx : new int[] {ox + 10, ox + ow - 40})
-                    context.fill(sx, oy - 3, sx + 30, oy + 1, 0xff4b4190);
-                led(context, ix + 2, iy + ih - 5, 0xff3ab064);
-                context.fill(
-                        ix + 8, iy + ih - 4, ix + Math.min(iw - 4, 48), iy + ih - 3, 0xff777788);
-            }
-            case GBA_SP -> {
-                rounded(context, ox + 4, oy + 4, ow - 8, oh - 10, dark, 2);
-                context.drawCenteredTextWithShadow(
-                        textRenderer, "GAME BOY ADVANCE SP", ox + ow / 2, oy + oh - 12, 0xffc8ced6);
-                for (int hx : new int[] {ox + 5, ox + ow - 22}) {
-                    context.fill(
-                            hx, oy + oh - 1, hx + 17, oy + oh + 3, ConsoleTheme.shade(shell, .7f));
-                    context.fill(hx + 1, oy + oh - 1, hx + 16, oy + oh, accent);
-                }
-            }
-            case NDS, THREEDS, PSP -> {
-                rounded(context, ox + 4, oy + 4, ow - 8, oh - 8, dark, 2);
-            }
-            case NES_HANDHELD -> {
-                context.fill(ox + 2, oy + 2, ox + ow - 2, oy + oh - 2, 0xff2d2d31);
-                context.fill(ox + b.rim, oy + b.rim, ox + ow - b.rim, oy + oh - b.rim, dark);
-                context.fill(ix, iy + ih + 1, ix + iw, iy + ih + 3, accent);
-                led(context, ox + 4, oy + 4, 0xffd9453a);
-            }
-            case TV -> {
-                rounded(
-                        context,
-                        ox + b.rim,
-                        oy + b.rim,
-                        ow - 2 * b.rim,
-                        oh - b.rim - b.bottom + b.inner,
-                        dark,
-                        4);
-                int strip = iy + ih + 4;
-                context.fill(
-                        ox + 10,
-                        strip + 3,
-                        ox + 10 + Math.min(60, ow / 4),
-                        strip + 4,
-                        ConsoleTheme.shade(shell, .7f));
-                context.fill(
-                        ox + 10,
-                        strip + 6,
-                        ox + 10 + Math.min(60, ow / 4),
-                        strip + 7,
-                        ConsoleTheme.shade(shell, .7f));
-                context.fill(ox + 12, strip + 1, ox + 18, strip + 2, accent);
-                for (int k = 0; k < 3; k++)
-                    context.fill(
-                            ox + ow - 40 + k * 9,
-                            strip + 2,
-                            ox + ow - 35 + k * 9,
-                            strip + 7,
-                            0xff8a8a92);
-                led(context, ox + ow - 12, strip + 3, 0xffd9453a);
-            }
-            case ARCADE -> {
-                context.fill(ox + 2, oy + 2, ox + 5, oy + oh - 2, 0xffc04f8a);
-                context.fill(ox + 6, oy + 6, ox + 8, oy + oh - 6, 0xff2b7fc4);
-                context.fill(ox + ow - 5, oy + 2, ox + ow - 2, oy + oh - 2, 0xffc04f8a);
-                context.fill(ox + ow - 8, oy + 6, ox + ow - 6, oy + oh - 6, 0xff2b7fc4);
-                context.fill(ox + 9, oy + 3, ox + ow - 9, oy + 13, 0xff1b1d3f);
-                context.fill(ox + 9, oy + 3, ox + ow - 9, oy + 4, 0xff2b7fc4);
-                context.fill(ox + 9, oy + 12, ox + ow - 9, oy + 13, 0xffc04f8a);
-                context.fill(ox + ow / 2 - 24, oy + 6, ox + ow / 2 + 24, oy + 10, accent);
-                led(context, ox + ow - 20, oy + 6, 0xff3ab064);
-                context.fill(ox + b.rim + 3, oy + 15, ox + ow - b.rim - 3, oy + oh - b.rim, dark);
-            }
-        }
-        context.fill(ix, iy, ix + iw, iy + ih, dark);
-        context.fill(x - 2, y - 2, x + w + 2, y + h + 2, 0xff000000);
-    }
-
-    private static void rounded(DrawContext context, int x, int y, int w, int h, int color, int r) {
-        context.fill(x + r, y, x + w - r, y + h, color);
-        context.fill(x, y + r, x + r, y + h - r, color);
-        context.fill(x + w - r, y + r, x + w, y + h - r, color);
-        for (int k = 1; k < r; k++) {
-            context.fill(x + r - k, y + k, x + r, y + k + 1, color);
-            context.fill(x + w - r, y + k, x + w - r + k, y + k + 1, color);
-            context.fill(x + r - k, y + h - k - 1, x + r, y + h - k, color);
-            context.fill(x + w - r, y + h - k - 1, x + w - r + k, y + h - k, color);
-        }
-    }
-
-    private static void led(DrawContext context, int x, int y, int color) {
-        context.fill(x - 1, y - 1, x + 4, y + 4, 0xff0b0d12);
-        context.fill(x, y, x + 3, y + 3, color);
-        context.fill(x, y, x + 1, y + 1, ConsoleTheme.shade(color, 1.4f));
     }
 
     @Override

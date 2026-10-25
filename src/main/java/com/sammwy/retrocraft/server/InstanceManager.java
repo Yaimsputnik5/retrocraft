@@ -2073,7 +2073,7 @@ public final class InstanceManager implements AutoCloseable {
         return new Packets.Ui(
                 mode,
                 session.data.id(),
-                session.host.definition().id().getPath(),
+                session.host.definition().id().toString(),
                 session.game.name(),
                 isInputSource(player.getUuid(), session.data.id()),
                 session.host.canAccess(player),

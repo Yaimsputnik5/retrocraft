@@ -44,6 +44,14 @@ final class ClientPreferences {
         config = next;
     }
 
+    static void applyHudLayout(
+            String key, com.sammwy.retrocraft.client.config.DualScreenLayout layout)
+            throws IOException {
+        ClientConfig next = config.withHudLayout(key, layout);
+        next.save(RetrocraftConfig.root().resolve("client.json"));
+        config = next;
+    }
+
     static void send() {
         if (ClientPlayNetworking.canSend(Packets.Preferences.ID))
             ClientPlayNetworking.send(
