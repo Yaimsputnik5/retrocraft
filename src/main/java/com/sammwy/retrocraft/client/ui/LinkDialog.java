@@ -244,7 +244,7 @@ final class LinkDialog {
     private void renderCandidates(DrawContext context, TextRenderer font) {
         if (!state.entries().isEmpty()) return;
         rounded(context, panelW / 2 - 20, HEADER + 4, 40, 40, PANEL, 8);
-        draw(context, REFRESH, panelW / 2 - 3, HEADER + 20, ACCENT);
+        UiDrawing.centeredGlyph(context, REFRESH, panelW / 2 - 20, HEADER + 4, 40, 40, ACCENT);
         centered(context, font, text("empty"), HEADER + 55, TEXT);
         paragraph(context, font, text("empty_hint"), HEADER + 73, MUTED);
     }

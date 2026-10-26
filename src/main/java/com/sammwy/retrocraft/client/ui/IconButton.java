@@ -28,12 +28,14 @@ final class IconButton extends ButtonWidget {
         rounded(context, getX(), getY(), 14, 14, hover ? 0xE04A5160 : 0xC0282D38, 3);
         context.fill(getX() + 3, getY(), getX() + 11, getY() + 1, hover ? 0x30FFFFFF : 0x18FFFFFF);
         int fg = hover ? 0xFFFFFFFF : 0xBFE4E8F0;
-        switch (icon) {
-            case POWER -> glyph(context, POWER_GLYPH, getX() + 3, getY() + 4, fg);
-            case EJECT -> glyph(context, EJECT_GLYPH, getX() + 3, getY() + 4, fg);
-            case ZOOM_IN -> glyph(context, ZOOM_IN_GLYPH, getX() + 3, getY() + 4, fg);
-            case ZOOM_OUT -> glyph(context, ZOOM_OUT_GLYPH, getX() + 3, getY() + 4, fg);
-        }
+        String[] art =
+                switch (icon) {
+                    case POWER -> POWER_GLYPH;
+                    case EJECT -> EJECT_GLYPH;
+                    case ZOOM_IN -> ZOOM_IN_GLYPH;
+                    case ZOOM_OUT -> ZOOM_OUT_GLYPH;
+                };
+        UiDrawing.centeredGlyph(context, art, getX(), getY(), getWidth(), getHeight(), fg);
     }
 
     // Power symbol: open ring with the 12-o'clock bar. Eject: up triangle over a tray bar.
@@ -50,13 +52,6 @@ final class IconButton extends ButtonWidget {
     private static final String[] ZOOM_OUT_GLYPH = {
         " XXX    ", "X   X   ", "XXXXX   ", "X   X   ", " XXX    ", "     X  ", "      X "
     };
-
-    private static void glyph(DrawContext context, String[] rows, int x, int y, int color) {
-        for (int r = 0; r < rows.length; r++)
-            for (int col = 0; col < rows[r].length(); col++)
-                if (rows[r].charAt(col) == 'X')
-                    context.fill(x + col, y + r, x + col + 1, y + r + 1, color);
-    }
 
     private static void rounded(DrawContext context, int x, int y, int w, int h, int color, int r) {
         context.fill(x + r, y, x + w - r, y + h, color);

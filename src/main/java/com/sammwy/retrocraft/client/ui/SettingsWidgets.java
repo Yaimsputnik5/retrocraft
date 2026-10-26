@@ -232,11 +232,13 @@ final class SettingsWidgets {
             rounded(context, getX(), getY(), 14, 14, hot ? CONTROL_HOVER : CONTROL, 3);
             context.fill(
                     getX() + 3, getY(), getX() + 11, getY() + 1, hot ? 0x30FFFFFF : 0x18FFFFFF);
-            draw(
+            UiDrawing.centeredGlyph(
                     context,
                     art,
-                    getX() + 3,
-                    getY() + 4,
+                    getX(),
+                    getY(),
+                    getWidth(),
+                    getHeight(),
                     hot ? 0xFFFFFFFF : (active ? 0xBFE4E8F0 : 0x50E4E8F0));
         }
 
