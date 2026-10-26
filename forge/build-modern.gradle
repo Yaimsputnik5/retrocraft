@@ -1,0 +1,65 @@
+plugins {
+    id 'net.minecraftforge.gradle' version '7.0.40'
+}
+
+apply from: rootProject.file('gradle/platform.gradle')
+base { archivesName = "retrocraft-${rootProject.minecraftVersion}-forge" }
+
+repositories {
+    minecraft.mavenizer(it)
+    maven { url = 'https://maven.creeperhost.net/' }
+    maven fg.minecraftLibsMaven
+}
+
+dependencies {
+    implementation minecraft.dependency("net.minecraftforge:forge:${rootProject.minecraftVersion}-${rootProject.target.forge}")
+    compileOnly 'net.java.dev.jna:jna:5.15.0'
+}
+
+sourceSets.main {
+    java.srcDir rootProject.file('core/src/main/java')
+    java.srcDir rootProject.file('worker/src/main/java')
+    resources.srcDir rootProject.file('core/src/main/resources')
+}
+sourceSets {
+    gametest {
+        java.srcDir rootProject.file('common/src/gametest/java')
+        resources.srcDir rootProject.file('common/src/gametest/resources')
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+
+minecraft {
+    runs {
+        configureEach {
+            workingDir = rootProject.layout.projectDirectory.dir("build/runs/${rootProject.minecraftVersion}/forge/${name}")
+            args '-mixin.config', 'retrocraft.mixins.json'
+            mods {
+                retrocraft { source sourceSets.main }
+                if (project.hasProperty('smoke')) { retrocraft_smoke { source sourceSets.smoke } }
+            }
+        }
+        register('client')
+        register('server') { args '--nogui' }
+        register('gameTestServer') {
+            mods { retrocraft_test { source sourceSets.gametest } }
+        }
+    }
+}
+
+processResources {
+    def metadata = [version: project.version, minecraft: rootProject.minecraftVersion, forgeMajor: rootProject.target.forge.tokenize('.')[0]]
+    inputs.properties metadata
+    filesMatching('META-INF/mods.toml') { expand metadata }
+}
+jar { manifest { attributes 'MixinConfigs': 'retrocraft.mixins.json' } }
+
+sourceSets.each {
+    def output = layout.buildDirectory.dir("sourceSets/${it.name}")
+    it.output.resourcesDir = output
+    it.java.destinationDirectory = output
+}
+
+tasks.register('runGameTest') { dependsOn 'runGameTestServer' }
+check.dependsOn 'runGameTest'

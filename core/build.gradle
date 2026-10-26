@@ -1,0 +1,19 @@
+plugins { id 'java-library'; id 'java-test-fixtures' }
+
+dependencies {
+    api project(':worker')
+    implementation 'com.google.code.gson:gson:2.10.1'
+}
+
+// This project intentionally has no Minecraft, mod loader or UI dependencies.
+tasks.register('checkIsolation') {
+    inputs.files(sourceSets.main.allJava)
+    doLast {
+        sourceSets.main.allJava.each { file ->
+            if (file.text =~ /(?m)^import (net\.(minecraft|fabricmc|minecraftforge)|com\.sammwy\.retrocraft\.(client|server))\./) {
+                throw new GradleException("Platform dependency in core: ${file}")
+            }
+        }
+    }
+}
+check.dependsOn checkIsolation

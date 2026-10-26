@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "retrocraft",
+  "version": "${version}",
+  "name": "Retrocraft",
+  "icon": "assets/retrocraft/icon.png",
+  "description": "Hybrid libretro emulation with checkpointed client/server ownership.",
+  "authors": ["Sammwy"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.sammwy.retrocraft.platform.fabric.FabricPlatform"],
+    "client": ["com.sammwy.retrocraft.platform.fabric.FabricClient"],
+    "modmenu": ["com.sammwy.retrocraft.client.ModMenuIntegration"]
+  },
+  "mixins": ["retrocraft.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.16.14",
+    "minecraft": "${minecraft}",
+    "java": ">=${java}",
+    "fabric-api": "*"
+  }
+}

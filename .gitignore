@@ -12,3 +12,7 @@ run/
 __pycache__
 *.pyc
 tmp
+
+# All module output and Minecraft working directories live under build/.
+**/build/
+**/.gradle/

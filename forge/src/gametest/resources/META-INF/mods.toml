@@ -1,0 +1,7 @@
+modLoader="javafml"
+loaderVersion="[50,)"
+license="MIT"
+[[mods]]
+modId="retrocraft_test"
+version="1.0.0"
+displayName="Retrocraft Game Tests"

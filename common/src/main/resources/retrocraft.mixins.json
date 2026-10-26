@@ -1,0 +1,8 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.sammwy.retrocraft.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": ["CameraMixin", "ItemRendererMixin", "ItemModelPropertiesAccessor", "ItemModelResolverMixin"],
+  "injectors": { "defaultRequire": 1 }
+}

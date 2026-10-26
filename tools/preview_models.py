@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw
 from generate_models import media_id
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSETS = ROOT / "src/main/resources/assets"
+ASSETS = ROOT / "common/src/main/resources/assets"
 
 
 def load_model(ref):
@@ -182,7 +182,7 @@ def render(ref, size=400, view="front", powered=False):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--output", type=Path, default=ROOT / "tmp/model-previews")
+    p.add_argument("--output", type=Path, default=ROOT / "build/previews/models")
     p.add_argument("--view", choices=["front", "back", "straight", "side"], default="front")
     p.add_argument("--powered", action="store_true")
     a = p.parse_args()

@@ -10,7 +10,7 @@ from PIL import Image, ImageColor
 from generate_models import foldable_pose
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSETS = ROOT / "src/main/resources/assets"
+ASSETS = ROOT / "common/src/main/resources/assets"
 MODELS = ASSETS / "retrocraft/models"
 VERIFIED_TEXTURES = set()
 
@@ -80,7 +80,7 @@ def main():
                 resolve(variant["model"])
     # The live video quad must be the actual glass bounds, not the old screen position.
     java = (
-        ROOT / "src/main/java/com/sammwy/retrocraft/client/render/Thumbnails.java"
+        ROOT / "common/src/main/java/com/sammwy/retrocraft/client/render/Thumbnails.java"
     ).read_text()
     screens = re.findall(r'"(\w+)", new float\[\] \{([^}]+)\}', java)
     if len(screens) != 10:
@@ -113,7 +113,7 @@ def main():
             raise ValueError(f"{name}: no powered LCD texture")
     # Check Java selection bounds against the actual model, including its rotation-sensitive depth.
     # Each console class passes its outline to its super constructor, inline or as a constant.
-    console = ROOT / "src/main/java/com/sammwy/retrocraft/server/console"
+    console = ROOT / "common/src/main/java/com/sammwy/retrocraft/server/console"
     java = "\n".join(
         p.read_text()
         for p in [console / "ArcadeConsole.java", *sorted((console / "builtin").glob("*.java"))]
@@ -199,7 +199,7 @@ def main():
             r"(SCREEN_\w+)\s*=\s*(-?[\d.]+)f?",
             (
                 ROOT
-                / "src/main/java/com/sammwy/retrocraft/server/block/ArcadeCabinet.java"
+                / "common/src/main/java/com/sammwy/retrocraft/server/block/ArcadeCabinet.java"
             ).read_text(),
         )
     )
@@ -240,7 +240,7 @@ def main():
         loot = json.loads(
             (
                 ROOT
-                / "src/main/resources/data/retrocraft/loot_table/blocks"
+                / "common/src/main/resources/data/retrocraft/loot_table/blocks"
                 / f"{name}.json"
             ).read_text()
         )

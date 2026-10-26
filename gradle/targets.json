@@ -1,0 +1,108 @@
+{
+  "1.20.5": {
+    "java": 21,
+    "fabric_api": "0.97.8+1.20.5",
+    "forge": null,
+    "pack_resource": 32,
+    "pack_data": 41,
+    "modmenu": "11.0.3"
+  },
+  "1.20.6": {
+    "java": 21,
+    "fabric_api": "0.100.8+1.20.6",
+    "forge": "50.2.14",
+    "pack_resource": 32,
+    "pack_data": 41,
+    "modmenu": "11.0.3"
+  },
+  "1.21.1": {
+    "java": 21,
+    "fabric_api": "0.116.17+1.21.1",
+    "forge": "52.1.4",
+    "pack_resource": 34,
+    "pack_data": 48,
+    "modmenu": "11.0.3"
+  },
+  "1.21.3": {
+    "java": 21,
+    "fabric_api": "0.114.1+1.21.3",
+    "forge": "53.1.16",
+    "pack_resource": 42,
+    "pack_data": 57,
+    "modmenu": "12.0.1"
+  },
+  "1.21.4": {
+    "java": 21,
+    "fabric_api": "0.119.4+1.21.4",
+    "forge": "54.1.22",
+    "pack_resource": 46,
+    "pack_data": 61,
+    "modmenu": "13.0.4"
+  },
+  "1.21.5": {
+    "java": 21,
+    "fabric_api": "0.128.2+1.21.5",
+    "forge": "55.1.18",
+    "pack_resource": 55,
+    "pack_data": 71,
+    "modmenu": "14.0.2"
+  },
+  "1.21.8": {
+    "java": 21,
+    "fabric_api": "0.136.1+1.21.8",
+    "forge": "58.1.26",
+    "pack_resource": 64,
+    "pack_data": 81,
+    "modmenu": "15.0.2"
+  },
+  "1.21.10": {
+    "java": 21,
+    "fabric_api": "0.138.4+1.21.10",
+    "forge": "60.1.18",
+    "pack_resource": 69,
+    "pack_resource_minor": 0,
+    "pack_data": 88,
+    "pack_data_minor": 0,
+    "modmenu": "11.0.3"
+  },
+  "1.21.11": {
+    "java": 21,
+    "fabric_api": "0.141.6+1.21.11",
+    "forge": "61.2.4",
+    "pack_resource": 75,
+    "pack_resource_minor": 0,
+    "pack_data": 94,
+    "pack_data_minor": 1,
+    "modmenu": "17.0.1"
+  },
+  "26.1.2": {
+    "java": 25,
+    "fabric_api": "0.155.3+26.1.2",
+    "forge": "64.1.5",
+    "pack_resource": 84,
+    "pack_resource_minor": 0,
+    "pack_data": 101,
+    "pack_data_minor": 1,
+    "modmenu": "18.0.0"
+  },
+  "26.2": {
+    "java": 25,
+    "fabric_api": "0.161.0+26.2",
+    "forge": "65.1.5",
+    "pack_resource": 88,
+    "pack_resource_minor": 0,
+    "pack_data": 107,
+    "pack_data_minor": 1,
+    "modmenu": "20.0.0"
+  },
+  "26.3": {
+    "java": 25,
+    "fabric_api": "0.165.0+26.3",
+    "forge": "66.1.0",
+    "pack_resource": 97,
+    "pack_resource_minor": 1,
+    "pack_data": 121,
+    "pack_data_minor": 0,
+    "modmenu": "21.0.0"
+  }
+}

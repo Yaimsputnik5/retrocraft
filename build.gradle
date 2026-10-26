@@ -1,107 +1,51 @@
 plugins {
-    id 'fabric-loom' version '1.10.5'
-    id 'maven-publish'
+    id 'base'
     id 'com.diffplug.spotless' version '7.0.2'
 }
 
-version = project.mod_version
-group = project.maven_group
-base { archivesName = 'retrocraft' }
+ext.minecraftVersion = providers.gradleProperty('mc').getOrElse('1.21.1')
+def targets = new groovy.json.JsonSlurper().parse(file('gradle/targets.json'))
+if (!targets.containsKey(minecraftVersion)) throw new GradleException("Unknown Minecraft target: ${minecraftVersion}")
+ext.target = targets[minecraftVersion]
 
-repositories {
-    mavenCentral()
-    maven { name = 'Terraformers'; url = 'https://maven.terraformersmc.com/releases/' }
+allprojects {
+    version = rootProject.mod_version
+    group = rootProject.maven_group
+    repositories { mavenCentral() }
 }
 
-loom {
-    runs {
-        client {
-            if (project.hasProperty('retrocraftRunDir')) runDir project.property('retrocraftRunDir')
+subprojects {
+    layout.buildDirectory = rootProject.layout.buildDirectory.dir(
+            name in ['core', 'worker'] ? "modules/${name}" : "targets/${rootProject.minecraftVersion}/${name}")
+    plugins.withType(JavaPlugin) {
+        def javaVersion = name in ['core', 'worker'] ? 21 : rootProject.target.java
+        java { toolchain.languageVersion = JavaLanguageVersion.of(javaVersion) }
+        tasks.withType(JavaCompile).configureEach { options.release = javaVersion }
+        dependencies {
+            testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+            testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
         }
+        tasks.withType(Test).configureEach { useJUnitPlatform() }
     }
-}
-
-configurations { workerLibraries }
-
-dependencies {
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
-    compileOnly 'net.java.dev.jna:jna:5.15.0'
-    workerLibraries 'net.java.dev.jna:jna:5.15.0'
-    // Hidden worker GL context for hardware-only cores such as Citra.
-    for (module in ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl']) {
-        implementation "org.lwjgl:${module}:3.3.3"
-        workerLibraries "org.lwjgl:${module}:3.3.3"
-        for (platform in ['natives-linux', 'natives-linux-arm64', 'natives-windows',
-                          'natives-windows-arm64', 'natives-macos', 'natives-macos-arm64']) {
-            workerLibraries "org.lwjgl:${module}:3.3.3:${platform}"
-        }
-    }
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
-    testImplementation 'net.java.dev.jna:jna:5.15.0'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-}
-
-tasks.register('workerJar', Jar) {
-    archiveFileName = 'retrocraft-worker.jar'
-    destinationDirectory = layout.buildDirectory.dir('worker')
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    manifest { attributes 'Main-Class': 'com.sammwy.retrocraft.cores.worker.WorkerMain' }
-    dependsOn compileJava
-    from(layout.buildDirectory.dir('classes/java/main')) {
-        include 'com/sammwy/retrocraft/cores/worker/**'
-        include 'com/sammwy/retrocraft/cores/stream/**'
-    }
-    from { configurations.workerLibraries.collect { it.isDirectory() ? it : zipTree(it) } }
-    exclude 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA'
-}
-
-processResources {
-    inputs.property 'version', project.version
-    filesMatching('fabric.mod.json') { expand version: project.version }
-    from(tasks.named('workerJar')) { into 'retrocraft' }
-}
-
-jar {
-    from('LICENSE') { rename { 'LICENSE_retrocraft' } }
-    from('THIRD_PARTY_NOTICES.md')
-    from('licenses') { into 'licenses' }
-}
-java {
-    toolchain.languageVersion = JavaLanguageVersion.of(21)
-    withSourcesJar()
-}
-tasks.withType(JavaCompile).configureEach { options.release = 21 }
-test {
-    useJUnitPlatform()
-    dependsOn tasks.named('workerJar')
-    systemProperty 'retrocraft.workerJar', tasks.named('workerJar').get().archiveFile.get().asFile.absolutePath
-    systemProperty 'retrocraft.testDownload', System.getenv('RETROCRAFT_TEST_DOWNLOAD') ?: 'false'
-    if (System.getenv('RETROCRAFT_TEST_CORE')) systemProperty 'retrocraft.testCore', System.getenv('RETROCRAFT_TEST_CORE')
-    if (System.getenv('RETROCRAFT_TEST_N64_CORE')) systemProperty 'retrocraft.testN64Core', System.getenv('RETROCRAFT_TEST_N64_CORE')
-    if (System.getenv('RETROCRAFT_TEST_N64_ROM')) systemProperty 'retrocraft.testN64Rom', System.getenv('RETROCRAFT_TEST_N64_ROM')
-    if (System.getenv('RETROCRAFT_TEST_MAME_CORE')) systemProperty 'retrocraft.testMameCore', System.getenv('RETROCRAFT_TEST_MAME_CORE')
-    if (System.getenv('RETROCRAFT_TEST_MAME_ROM')) systemProperty 'retrocraft.testMameRom', System.getenv('RETROCRAFT_TEST_MAME_ROM')
-    if (System.getenv('RETROCRAFT_TEST_MAME_SAVABLE_ROM')) systemProperty 'retrocraft.testMameSavableRom', System.getenv('RETROCRAFT_TEST_MAME_SAVABLE_ROM')
-    if (System.getenv('RETROCRAFT_TEST_MAME_BIOS')) systemProperty 'retrocraft.testMameBios', System.getenv('RETROCRAFT_TEST_MAME_BIOS')
 }
 
 spotless {
     java {
-        target 'src/**/*.java'
+        target 'common/src/**/*.java', 'core/src/**/*.java', 'worker/src/**/*.java',
+                'fabric/src/**/*.java', 'forge/src/**/*.java', 'compat/**/*.java'
         googleJavaFormat('1.24.0').aosp()
         removeUnusedImports()
         importOrder('java', 'javax', 'org', 'com', 'net', '')
     }
 }
 
-fabricApi {
-    configureTests {
-        createSourceSet = true
-        modId = 'retrocraft-test'
-        enableClientGameTests = false
-    }
+def targetLoader = findProperty('loader') ?: 'fabric'
+tasks.named('check') { dependsOn spotlessCheck, ':core:check', ':worker:check' }
+tasks.named('assemble') { dependsOn ':core:assemble', ':worker:assemble' }
+tasks.register('workerJar') { dependsOn ':worker:workerJar' }
+if (targetLoader != 'none') {
+    tasks.named('check') { dependsOn ":${targetLoader}:check" }
+    tasks.named('assemble') { dependsOn ":${targetLoader}:assemble" }
+    tasks.register('runGameTest') { dependsOn ":${targetLoader}:runGameTest" }
+    tasks.register('runClient') { dependsOn ":${targetLoader}:runClient" }
 }

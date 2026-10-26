@@ -11,7 +11,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageColor
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / 'src/main/resources/assets/retrocraft/textures/gui/console_hud'
+OUTPUT = ROOT / 'common/src/main/resources/assets/retrocraft/textures/gui/console_hud'
 # shell / recess / accent. Keep the artwork limited to the screen surround.
 PALETTES = {
     'gb': ('#c8c4b8', '#4a4a5a', '#9b2d5f'),
@@ -26,7 +26,7 @@ PALETTES = {
 
 
 def margins():
-    source = (ROOT / 'src/main/java/com/sammwy/retrocraft/client/ui/hud/DefaultConsoleHuds.java').read_text()
+    source = (ROOT / 'common/src/main/java/com/sammwy/retrocraft/client/ui/hud/DefaultConsoleHuds.java').read_text()
     values = {name: tuple(map(int, border.split(','))) for name, border in re.findall(
         r'single\(\s*"(\w+)"\s*,.*?new HudInsets\(([^)]+)\)\)', source, re.S)}
     for name in re.findall(r'dual\(\s*"(\w+)"\s*,', source):

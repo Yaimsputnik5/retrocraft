@@ -1,0 +1,163 @@
+// Sources and packaging are shared; each loader build only configures its own toolchain and API.
+evaluationDependsOn(':core')
+evaluationDependsOn(':worker')
+
+sourceSets {
+    main {
+        java.srcDir rootProject.file('common/src/main/java')
+        resources.srcDir rootProject.file('common/src/main/resources')
+    }
+    test { java.srcDir rootProject.file('common/src/test/java') }
+    smoke {
+        java.srcDir rootProject.file('common/src/smoke/java')
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+
+def legacy = rootProject.minecraftVersion in ['1.20.5', '1.20.6', '1.21.1']
+def oldItems = legacy || rootProject.minecraftVersion == '1.21.3'
+def oldNbt = rootProject.minecraftVersion in ['1.20.5', '1.20.6', '1.21.1', '1.21.3', '1.21.4']
+def compatibility = [
+        nbt: oldNbt ? 'legacy' : 'modern',
+        tooltip: oldNbt ? 'legacy' : 'modern',
+        'block-render': oldNbt ? 'legacy' : 'modern',
+        lifecycle: oldNbt ? 'legacy' : 'modern',
+        texture: oldNbt ? 'legacy' : 'modern',
+        "models-${project.name}": oldNbt ? 'legacy' : 'modern',
+        vertices: rootProject.minecraftVersion.startsWith('1.20.') ? 'legacy' : 'modern',
+        interaction: legacy ? 'legacy' : 'modern',
+        content: legacy ? 'legacy' : 'modern',
+        graphics: legacy ? 'legacy' : 'modern',
+        'item-render': legacy ? 'legacy' : oldItems ? '1.21.3' : 'modern',
+        'item-model': oldItems ? 'legacy' : 'modern',
+        'block-clone': oldItems ? 'legacy' : 'modern',
+        'model-data': oldItems ? 'legacy' : 'modern'
+]
+compatibility.each { api, variant -> sourceSets.main.java.srcDir rootProject.file("compat/${api}/${variant}/java") }
+
+if (!oldItems) {
+    def itemDefinitions = tasks.register('generateItemDefinitions') {
+        def models = rootProject.file('common/src/main/resources/assets/retrocraft/models/item')
+        def output = layout.buildDirectory.dir('generated/itemDefinitions')
+        inputs.dir models
+        outputs.dir output
+        doLast {
+            def directory = output.get().dir('assets/retrocraft/items').asFile
+            directory.mkdirs()
+            models.eachFileMatch(~/.*\.json/) { file ->
+                def source = new groovy.json.JsonSlurper().parse(file)
+                def model = [type: 'minecraft:model', model: "retrocraft:item/${file.name[0..-6]}"]
+                if (source.overrides) {
+                    def overrides = source.overrides
+                    if (overrides.every { it.predicate.keySet() == ['retrocraft:powered'] as Set }) {
+                        model = [type: 'minecraft:condition', property: 'retrocraft:powered',
+                                 on_false: model,
+                                 on_true: [type: 'minecraft:model', model: overrides.last().model]]
+                    } else if (overrides.every { it.predicate.keySet() == ['custom_model_data'] as Set }) {
+                        model = [type: 'minecraft:range_dispatch', property: 'minecraft:custom_model_data', index: 0,
+                                 fallback: model,
+                                 entries: overrides.collect { [threshold: it.predicate.custom_model_data,
+                                                              model: [type: 'minecraft:model', model: it.model]] }]
+                    } else {
+                        throw new GradleException("Unsupported legacy model predicate in ${file}")
+                    }
+                }
+                new File(directory, file.name).text = groovy.json.JsonOutput.toJson([model: model])
+            }
+        }
+    }
+    sourceSets.main.resources.srcDir itemDefinitions
+}
+
+dependencies {
+    if (project.name == 'forge') {
+        // Forge's module path must see these sources as part of retrocraft, not as separate
+        // automatic modules exporting the same packages. Forge compiles their sources below.
+        compileOnly project(':core')
+        compileOnly project(':worker')
+        testImplementation project(':core')
+    } else {
+        implementation project(':core')
+        implementation project(':worker')
+    }
+    testImplementation testFixtures(project(':core'))
+    testImplementation 'net.java.dev.jna:jna:5.15.0'
+}
+
+def packMetadata = tasks.register('generatePackMetadata') {
+    def output = layout.buildDirectory.dir('generated/packMetadata')
+    inputs.property 'resourceFormat', rootProject.target.pack_resource
+    inputs.property 'dataFormat', rootProject.target.pack_data
+    inputs.property 'resourceMinor', rootProject.target.pack_resource_minor ?: 0
+    inputs.property 'dataMinor', rootProject.target.pack_data_minor ?: 0
+    outputs.dir output
+    doLast {
+        def directory = output.get().asFile
+        directory.mkdirs()
+        def resource = rootProject.target.pack_resource
+        def data = rootProject.target.pack_data
+        def pack = [description: 'Retrocraft resources']
+        if (rootProject.target.containsKey('pack_resource_minor')) {
+            pack.min_format = [resource, rootProject.target.pack_resource_minor]
+            pack.max_format = [data, rootProject.target.pack_data_minor]
+        } else {
+            pack.pack_format = resource
+            pack.supported_formats = [Math.min(resource, data), Math.max(resource, data)]
+        }
+        def metadata = [pack: pack]
+        new File(directory, 'pack.mcmeta').text = groovy.json.JsonOutput.toJson(metadata)
+    }
+}
+
+processResources {
+    from(project(':worker').tasks.named('workerJar')) { into 'retrocraft' }
+}
+
+tasks.withType(ProcessResources).configureEach {
+    from packMetadata
+    inputs.property 'minecraftVersion', rootProject.minecraftVersion
+    if (rootProject.minecraftVersion.startsWith('1.20.')) {
+        eachFile { details ->
+            details.path = details.path.replace('/loot_table/', '/loot_tables/').replace('/structure/', '/structures/')
+        }
+    }
+}
+
+processResources {
+    inputs.property 'mixinCompatibility', rootProject.target.java == 25 ? 'JAVA_25' : project.name == 'forge' && rootProject.minecraftVersion == '1.20.6' ? 'JAVA_17' : 'JAVA_21'
+    filesMatching('retrocraft.mixins.json') {
+        filter { line ->
+            def value = oldItems ? line.replace(', "ItemModelResolverMixin"', '') : line
+            if (project.name == 'forge' && rootProject.minecraftVersion == '1.20.6') value = value.replace('JAVA_21', 'JAVA_17')
+            if (rootProject.target.java == 25) value = value.replace('JAVA_21', 'JAVA_25')
+            value
+        }
+    }
+}
+
+jar {
+    if (project.name != 'forge') {
+        from project(':core').sourceSets.main.output
+        from project(':worker').sourceSets.main.output
+    }
+    from(rootProject.file('LICENSE')) { rename { 'LICENSE_retrocraft' } }
+    from(rootProject.file('THIRD_PARTY_NOTICES.md'))
+    from(rootProject.file('licenses')) { into 'licenses' }
+}
+
+test {
+    dependsOn project(':worker').tasks.named('workerJar')
+    systemProperty 'retrocraft.workerJar', project(':worker').tasks.named('workerJar').get().archiveFile.get().asFile.absolutePath
+    systemProperty 'retrocraft.testDownload', System.getenv('RETROCRAFT_TEST_DOWNLOAD') ?: 'false'
+    ['CORE', 'N64_CORE', 'N64_ROM', 'MAME_CORE', 'MAME_ROM', 'MAME_SAVABLE_ROM', 'MAME_BIOS'].each { suffix ->
+        def value = System.getenv("RETROCRAFT_TEST_${suffix}")
+        if (value) {
+            def property = [CORE: 'Core', N64_CORE: 'N64Core', N64_ROM: 'N64Rom', MAME_CORE: 'MameCore',
+                            MAME_ROM: 'MameRom', MAME_SAVABLE_ROM: 'MameSavableRom', MAME_BIOS: 'MameBios'][suffix]
+            systemProperty "retrocraft.test${property}", value
+        }
+    }
+}
+
+tasks.named('check') { dependsOn rootProject.tasks.named('spotlessCheck') }

@@ -1,0 +1,50 @@
+apply from: rootProject.file('gradle/platform.gradle')
+base { archivesName = "retrocraft-${rootProject.minecraftVersion}-fabric" }
+
+repositories {
+    mavenCentral()
+    maven { name = 'Terraformers'; url = 'https://maven.terraformersmc.com/releases/' }
+}
+
+
+dependencies {
+    minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"
+    if (!rootProject.minecraftVersion.startsWith('26.')) mappings loom.officialMojangMappings()
+    def runtime = rootProject.minecraftVersion.startsWith('26.') ? 'implementation' : 'modImplementation'
+    def optional = rootProject.minecraftVersion.startsWith('26.') ? 'compileOnly' : 'modCompileOnly'
+    add(runtime, "net.fabricmc:fabric-loader:${rootProject.minecraftVersion.startsWith('26.') ? '0.19.5' : project.loader_version}")
+    add(runtime, "net.fabricmc.fabric-api:fabric-api:${rootProject.target.fabric_api}")
+    add(optional, "com.terraformersmc:modmenu:${rootProject.target.modmenu}")
+
+}
+
+processResources {
+    def metadata = [version: project.version, minecraft: rootProject.minecraftVersion, java: rootProject.target.java]
+    inputs.properties metadata
+    filesMatching('fabric.mod.json') { expand metadata }
+}
+
+fabricApi {
+    configureTests {
+        createSourceSet = true
+        modId = 'retrocraft-test'
+        enableClientGameTests = false
+    }
+}
+
+sourceSets.gametest.java.srcDir rootProject.file('common/src/gametest/java')
+sourceSets.gametest.resources.srcDir rootProject.file('common/src/gametest/resources')
+
+loom.runs.configureEach {
+    runDir "../build/runs/${project.rootProject.minecraftVersion}/fabric/${name}"
+}
+
+if (project.hasProperty('smoke')) {
+    loom {
+        mods {
+            retrocraft { sourceSet sourceSets.main }
+            retrocraft_smoke { sourceSet sourceSets.smoke }
+        }
+        runs.client { source sourceSets.smoke }
+    }
+}

@@ -12,7 +12,7 @@ from pathlib import Path
 from PIL import Image, ImageColor
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSETS = ROOT / "src/main/resources/assets/retrocraft"
+ASSETS = ROOT / "common/src/main/resources/assets/retrocraft"
 
 PALETTE = {
     "k": "#14151a",  # outline

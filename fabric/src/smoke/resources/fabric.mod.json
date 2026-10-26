@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "retrocraft-smoke",
+  "version": "1.0.0",
+  "name": "Retrocraft Client Smoke Test",
+  "environment": "client",
+  "entrypoints": {"client": ["com.sammwy.retrocraft.smoke.fabric.FabricClientSmoke"]},
+  "depends": {"retrocraft": "*"}
+}

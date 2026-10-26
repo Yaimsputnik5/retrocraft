@@ -1,0 +1,23 @@
+modLoader="javafml"
+loaderVersion="[${forgeMajor},)"
+license="MIT"
+
+[[mods]]
+modId="retrocraft"
+version="${version}"
+displayName="Retrocraft"
+description='''Play real retro games inside Minecraft.'''
+
+[[dependencies.retrocraft]]
+modId="forge"
+mandatory=true
+versionRange="[${forgeMajor},)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.retrocraft]]
+modId="minecraft"
+mandatory=true
+versionRange="[${minecraft}]"
+ordering="NONE"
+side="BOTH"

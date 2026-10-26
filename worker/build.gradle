@@ -1,0 +1,25 @@
+plugins { id 'java-library' }
+
+configurations { workerLibraries }
+dependencies {
+    implementation 'net.java.dev.jna:jna:5.15.0'
+    workerLibraries 'net.java.dev.jna:jna:5.15.0'
+    for (module in ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl']) {
+        implementation "org.lwjgl:${module}:3.3.3"
+        workerLibraries "org.lwjgl:${module}:3.3.3"
+        for (platform in ['natives-linux', 'natives-linux-arm64', 'natives-windows',
+                          'natives-windows-arm64', 'natives-macos', 'natives-macos-arm64']) {
+            workerLibraries "org.lwjgl:${module}:3.3.3:${platform}"
+        }
+    }
+}
+
+tasks.register('workerJar', Jar) {
+    archiveFileName = 'retrocraft-worker.jar'
+    destinationDirectory = layout.buildDirectory.dir('worker')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest { attributes 'Main-Class': 'com.sammwy.retrocraft.cores.worker.WorkerMain' }
+    from sourceSets.main.output
+    from { configurations.workerLibraries.collect { it.isDirectory() ? it : zipTree(it) } }
+    exclude 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA'
+}

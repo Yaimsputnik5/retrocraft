@@ -20,7 +20,7 @@ from PIL import Image, ImageDraw
 from arcade_art import THEMES, control_art, marquee, side_art
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSETS = ROOT / "src/main/resources/assets/retrocraft"
+ASSETS = ROOT / "common/src/main/resources/assets/retrocraft"
 DENSITY = 4
 FACES = ("north", "south", "east", "west", "up", "down")
 BLACK = "#14151a"
@@ -1365,7 +1365,7 @@ def umd():
 def foldable_pose():
     """Read the renderer's hinge so baked geometry and live LCDs cannot drift apart."""
     source = (
-        ROOT / "src/main/java/com/sammwy/retrocraft/client/render/FoldablePose.java"
+        ROOT / "common/src/main/java/com/sammwy/retrocraft/client/render/FoldablePose.java"
     ).read_text()
     values = {
         key: float(value)

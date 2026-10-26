@@ -1,7 +1,0 @@
-{
-  "required": true,
-  "package": "com.sammwy.retrocraft.mixin",
-  "compatibilityLevel": "JAVA_21",
-  "client": ["CameraMixin", "ItemRendererMixin"],
-  "injectors": { "defaultRequire": 1 }
-}

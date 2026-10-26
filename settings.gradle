@@ -1,8 +1,25 @@
 pluginManagement {
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == 'net.minecraftforge.gradle') {
+                def artifact = requested.version.startsWith('7.') ? 'net.minecraftforge:forgegradle' : 'net.minecraftforge.gradle:ForgeGradle'
+                useModule("${artifact}:${requested.version}")
+            }
+        }
+    }
     repositories {
         maven { url = 'https://maven.fabricmc.net/' }
+        maven { url = 'https://maven.creeperhost.net/' }
         gradlePluginPortal()
         mavenCentral()
     }
 }
 rootProject.name = 'retrocraft'
+def targetLoader = providers.gradleProperty('loader').getOrElse('fabric')
+if (!(targetLoader in ['fabric', 'forge', 'none'])) throw new GradleException("Unknown loader: ${targetLoader}")
+include 'core', 'worker'
+if (targetLoader != 'none') include targetLoader
+
+if (targetLoader != 'none' && providers.gradleProperty('mc').getOrElse('1.21.1').startsWith('26.')) {
+    project(":${targetLoader}").buildFileName = 'build-modern.gradle'
+}

@@ -1,0 +1,85 @@
+plugins {
+    id 'net.minecraftforge.gradle' version '6.0.54'
+}
+
+apply from: rootProject.file('gradle/platform.gradle')
+base { archivesName = "retrocraft-${rootProject.minecraftVersion}-forge" }
+
+repositories {
+    maven { url = 'https://maven.creeperhost.net/' }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${rootProject.minecraftVersion}-${rootProject.target.forge}"
+    compileOnly 'net.java.dev.jna:jna:5.15.0'
+}
+
+// Compile the shared sources into one Forge module. This avoids split packages on the
+// development module path and produces the same single-JAR layout used in production.
+sourceSets.main {
+    java.srcDir rootProject.file('core/src/main/java')
+    java.srcDir rootProject.file('worker/src/main/java')
+    resources.srcDir rootProject.file('core/src/main/resources')
+}
+
+sourceSets {
+    gametest {
+        java.srcDir rootProject.file('common/src/gametest/java')
+        resources.srcDir rootProject.file('common/src/gametest/resources')
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+
+minecraft {
+    mappings channel: 'official', version: rootProject.minecraftVersion
+    reobf = false
+    copyIdeResources = true
+    runs {
+        configureEach {
+            workingDirectory rootProject.file("build/runs/${rootProject.minecraftVersion}/forge/${name}")
+            args '-mixin.config', 'retrocraft.mixins.json'
+            property 'forge.logging.console.level', 'info'
+            mods {
+                retrocraft {
+                    source sourceSets.main
+                }
+                if (project.hasProperty("smoke")) { retrocraft_smoke { source sourceSets.smoke } }
+            }
+        }
+        client {}
+        server { args '--nogui' }
+        gameTestServer {
+            mods { retrocraft_test { source sourceSets.gametest } }
+        }
+    }
+}
+
+processResources {
+    def metadata = [version: project.version, minecraft: rootProject.minecraftVersion, forgeMajor: rootProject.target.forge.tokenize('.')[0]]
+    inputs.properties metadata
+    filesMatching('META-INF/mods.toml') { expand metadata }
+}
+
+jar { manifest { attributes 'MixinConfigs': 'retrocraft.mixins.json' } }
+
+// Forge's module path expects resources and classes in the same directory.
+sourceSets.each {
+    def output = layout.buildDirectory.dir("sourceSets/${it.name}")
+    it.output.resourcesDir = output
+    it.java.destinationDirectory = output
+}
+
+tasks.register('runGameTest') { dependsOn 'runGameTestServer' }
+tasks.withType(JavaExec).configureEach {
+    if (name == 'runGameTestServer') {
+        doFirst { new File(workingDir, 'logs/latest.log').delete() }
+        doLast {
+            def log = new File(workingDir, 'logs/latest.log')
+            if (!log.exists() || !(log.text =~ /All \d+ required tests passed/)) {
+                throw new GradleException('The shared GameTest suite did not complete successfully; inspect logs/latest.log')
+            }
+        }
+    }
+}
+check.dependsOn 'runGameTest'

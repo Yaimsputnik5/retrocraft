@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Use a separate cached Gradle wrapper for Minecraft releases that require Java 25."""
+import os
+from pathlib import Path
+import shutil
+import sys
+
+root = Path(__file__).resolve().parents[1]
+launcher = root / "build/gradle-modern"
+launcher.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(root / "gradle/wrapper/gradle-wrapper.jar", launcher / "gradle-wrapper.jar")
+(launcher / "gradle-wrapper.properties").write_text("""distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https\\://services.gradle.org/distributions/gradle-9.7.1-bin.zip
+networkTimeout=30000
+validateDistributionUrl=true
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
+""")
+java_home = os.environ.get("JAVA25_HOME", "/usr/lib/jvm/java-25-openjdk")
+java = Path(java_home) / "bin/java"
+if not java.exists():
+    raise SystemExit("Set JAVA25_HOME to an installed JDK 25")
+environment = os.environ.copy()
+environment["JAVA_HOME"] = java_home
+os.execve(java, [str(java), "-classpath", str(launcher / "gradle-wrapper.jar"),
+                 "org.gradle.wrapper.GradleWrapperMain", *sys.argv[1:]], environment)
