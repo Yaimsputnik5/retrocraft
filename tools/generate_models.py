@@ -289,7 +289,7 @@ def console_display(scale=0.85):
             "scale": [scale] * 3,
         },
         "ground": {"translation": [0, 3, 0], "scale": [0.5] * 3},
-        "fixed": {"rotation": [0, 180, 0], "scale": [0.8] * 3},
+        "fixed": {"scale": [0.8] * 3},
         "thirdperson_righthand": {
             "rotation": [75, 45, 0],
             "translation": [0, 2.5, 0],
@@ -2171,7 +2171,6 @@ def arcade(theme):
     body["display"]["gui"]["translation"] = [0, -3, 0]
     body["display"]["ground"]["scale"] = [0.25] * 3
     body["display"]["fixed"] = {
-        "rotation": [0, 180, 0],
         "translation": [0, -4, 0],
         "scale": [0.35] * 3,
     }
