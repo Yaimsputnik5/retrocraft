@@ -4,6 +4,7 @@ import java.util.*;
 
 import com.sammwy.retrocraft.cores.*;
 import com.sammwy.retrocraft.cores.transfer.BlobTransfer;
+import com.sammwy.retrocraft.cores.worker.HardwareProfile;
 
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.RegistryByteBuf;
@@ -102,7 +103,8 @@ public final class HybridPackets {
             String title,
             String romName,
             boolean worldScreen,
-            long sequence)
+            long sequence,
+            String hardware)
             implements CustomPayload {
         public static final Id<Lease> ID = new Id<>(Identifier.of("retrocraft", "ownership"));
         public static final PacketCodec<RegistryByteBuf, Lease> CODEC =
@@ -117,7 +119,8 @@ public final class HybridPackets {
                                 b.readString(200),
                                 b.readString(140),
                                 b.readBoolean(),
-                                b.readVarLong());
+                                b.readVarLong(),
+                                b.readString(HardwareProfile.MAX_ENCODED));
                     }
 
                     public void encode(RegistryByteBuf b, Lease p) {
@@ -130,11 +133,12 @@ public final class HybridPackets {
                         b.writeString(p.romName, 140);
                         b.writeBoolean(p.worldScreen);
                         b.writeVarLong(p.sequence);
+                        b.writeString(p.hardware, HardwareProfile.MAX_ENCODED);
                     }
                 };
 
         public static Lease signal(UUID id, long epoch, Action action, long sequence) {
-            return new Lease(id, epoch, action, "", "", "", "", false, sequence);
+            return new Lease(id, epoch, action, "", "", "", "", false, sequence, "");
         }
 
         public Id<? extends CustomPayload> getId() {

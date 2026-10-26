@@ -60,7 +60,7 @@ final class SettingsWidgets {
 
         @Override
         protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-            boolean hot = isHovered() && active;
+            boolean hot = (isHovered() || isFocused()) && active;
             int bg =
                     !active
                             ? 0x60242034
@@ -228,7 +228,7 @@ final class SettingsWidgets {
 
         @Override
         protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-            boolean hot = isHovered() && active;
+            boolean hot = (isHovered() || isFocused()) && active;
             rounded(context, getX(), getY(), 14, 14, hot ? CONTROL_HOVER : CONTROL, 3);
             context.fill(
                     getX() + 3, getY(), getX() + 11, getY() + 1, hot ? 0x30FFFFFF : 0x18FFFFFF);

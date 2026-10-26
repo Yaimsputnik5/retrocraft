@@ -17,6 +17,8 @@ import com.sammwy.retrocraft.cores.*;
 import com.sammwy.retrocraft.cores.ownership.Ownership;
 import com.sammwy.retrocraft.cores.stream.*;
 import com.sammwy.retrocraft.cores.transfer.*;
+import com.sammwy.retrocraft.cores.worker.GameLinkBridge;
+import com.sammwy.retrocraft.cores.worker.HardwareProfile;
 import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 import com.sammwy.retrocraft.roms.*;
@@ -25,8 +27,10 @@ import com.sammwy.retrocraft.server.block.*;
 import com.sammwy.retrocraft.server.config.ConfigKey;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
 import com.sammwy.retrocraft.server.console.*;
+import com.sammwy.retrocraft.server.console.component.Components;
 import com.sammwy.retrocraft.server.item.*;
 import com.sammwy.retrocraft.server.net.HybridPackets;
+import com.sammwy.retrocraft.server.net.LinkPackets;
 import com.sammwy.retrocraft.server.net.Packets;
 import com.sammwy.retrocraft.server.net.SettingsPackets;
 import com.sammwy.retrocraft.server.screen.*;
@@ -172,6 +176,12 @@ public final class InstanceManager implements AutoCloseable {
         }
     }
 
+    /** Blocks between two consoles joined by a link cable. */
+    private static final double LINK_RANGE = 16;
+
+    private final LinkInvitations linkInvitations = new LinkInvitations();
+    private final Map<UUID, Long> lastLinkRequest = new HashMap<>();
+
     private static final class Session {
         final InstanceStore.Metadata data;
         volatile RomIndex.Game game;
@@ -226,10 +236,30 @@ public final class InstanceManager implements AutoCloseable {
         long nextStream, nextKeyframe;
         long audioSequence;
 
-        Session(InstanceStore.Metadata data, RomIndex.Game game, ConsoleHost host) {
+        /** Fixed at power-on: components are locked while the console runs. */
+        final HardwareProfile hardware;
+
+        final int controllerPorts;
+        volatile List<WorkerProcess.Rumble> rumble = List.of();
+
+        /** Serial link: emulated on the server so both cores share a loopback socket. */
+        final boolean linked;
+
+        volatile int linkPort = -1;
+        GameLinkBridge linkBridge;
+        volatile Session linkPartner;
+        volatile HardwareProfile linkOptions =
+                HardwareProfile.options("gambatte_gb_link_mode", "Not Connected");
+        volatile Boolean linkSupported;
+
+        Session(InstanceStore.Metadata data, RomIndex.Game game, ConsoleHost host, String core) {
             this.data = data;
             this.game = game;
             this.host = host;
+            var installed = host.installedComponents();
+            hardware = host.definition().hardware(core, installed);
+            controllerPorts = host.definition().controllerPorts(installed);
+            linked = host.definition().links(installed);
         }
     }
 
@@ -944,7 +974,9 @@ public final class InstanceManager implements AutoCloseable {
                                                         (DockedConsoleBlockEntity) host,
                                                         tv,
                                                         data.id());
-                                            sessions.put(data.id(), new Session(data, game, host));
+                                            sessions.put(
+                                                    data.id(),
+                                                    new Session(data, game, host, coreId(game)));
                                             if (host.canAccess(current)
                                                     && current.currentScreenHandler
                                                             instanceof ConsoleScreenHandler screen
@@ -1000,7 +1032,7 @@ public final class InstanceManager implements AutoCloseable {
                     || !data.gameId().equals(game.id())
                     || !data.console().equals(host.definition().id().toString()))
                 throw new IOException("Console/cartridge identity mismatch");
-            sessions.put(id, new Session(data, game, host));
+            sessions.put(id, new Session(data, game, host, coreId(game)));
         } catch (IOException ex) {
             failedDiscovery.add(id);
             Retrocraft.LOG.error("Cannot discover powered console {}", id, ex);
@@ -1015,6 +1047,7 @@ public final class InstanceManager implements AutoCloseable {
         failedDiscovery.remove(id);
         Session session = sessions.get(id);
         if (session != null) {
+            if (session.linkPartner != null) disconnectLink(session);
             if (session.ownership.owner() != null) revoke(session, false);
             session.poweredOff = true;
             session.destroy = true;
@@ -1065,7 +1098,7 @@ public final class InstanceManager implements AutoCloseable {
     }
 
     private static int maxSlots(Session session) {
-        return session.host.definition().type().isPlaced() ? WorkerProtocol.PORTS : 1;
+        return Math.min(WorkerProtocol.PORTS, session.controllerPorts);
     }
 
     private static int slotOf(Session session, UUID player) {
@@ -1166,6 +1199,7 @@ public final class InstanceManager implements AutoCloseable {
             cancelledUpload.progress.cancel();
         downloadNotified.remove(player);
         biosManifestSent.remove(player);
+        lastLinkRequest.remove(player);
         biosPending.remove(player);
         biosOutgoing.remove(player);
         detachVideo(player);
@@ -1313,6 +1347,7 @@ public final class InstanceManager implements AutoCloseable {
         notifyDownloads();
         if (roms == null) return;
         ticks++;
+        tickLinks();
         if (ticks % 20 == 1) discoverItems();
         if (ticks % (20 * config.thumbnailIntervalSeconds) == 1) markThumbnails();
         if (ticks % (20 * 3600) == 2)
@@ -1379,6 +1414,20 @@ public final class InstanceManager implements AutoCloseable {
                         .name("retrocraft-console-unload")
                         .start(() -> persistSave(session));
                 continue;
+            }
+            if (ticks % 2 == 0 && session.process != null) {
+                var strengths = session.rumble;
+                for (int port = 0; port < Math.min(strengths.size(), session.pads.length); port++) {
+                    var pad = session.pads[port];
+                    if (pad == null) continue;
+                    var player = server.getPlayerManager().getPlayer(pad.player);
+                    var strength = strengths.get(port);
+                    if (player != null)
+                        send(
+                                player,
+                                new Packets.Rumble(
+                                        session.data.id(), strength.strong(), strength.weak()));
+                }
             }
             stream(session, now);
         }
@@ -1619,9 +1668,25 @@ public final class InstanceManager implements AutoCloseable {
         }
     }
 
-    /** These cores cannot provide a bounded checkpoint for client handoff. */
+    /** Native save files, linked serial ports and remote rumble must stay on the server. */
     private boolean serverOnly(Session session) {
-        return KnownCores.get(coreId(session.game)).serverOnly();
+        return "rumble".equals(session.hardware.options().get("parallel-n64-pak1"))
+                || nativeFileSaves(session)
+                || session.linked
+                || session.linkPartner != null
+                || KnownCores.get(coreId(session.game)).serverOnly();
+    }
+
+    private boolean nativeFileSaves(Session session) {
+        String core = coreId(session.game);
+        return core.equals("ppsspp")
+                || core.equals(Components.BEETLE_PSX)
+                        && "enabled"
+                                .equals(
+                                        session.hardware
+                                                .options()
+                                                .get("beetle_psx_enable_memcard1"))
+                || core.equals(Components.FLYCAST);
     }
 
     private String coreId(RomIndex.Game game) {
@@ -1801,6 +1866,7 @@ public final class InstanceManager implements AutoCloseable {
                                                         openServerProcess(
                                                                 session, core, rom, state)) {
                                             Future<?> pendingSave = null;
+                                            HardwareProfile appliedLink = null;
                                             session.process = process;
                                             session.sampleRate = process.sampleRate();
                                             long period =
@@ -1828,6 +1894,13 @@ public final class InstanceManager implements AutoCloseable {
                                                     next = System.nanoTime();
                                                     continue;
                                                 }
+                                                if (coreId.equals(Components.GAMBATTE)
+                                                        && appliedLink != session.linkOptions) {
+                                                    HardwareProfile desired = session.linkOptions;
+                                                    session.linkSupported =
+                                                            process.options(desired);
+                                                    appliedLink = desired;
+                                                }
                                                 long before = System.nanoTime();
                                                 boolean video =
                                                         session.thumbDue
@@ -1840,12 +1913,13 @@ public final class InstanceManager implements AutoCloseable {
                                                                             / Math.min(
                                                                                     20,
                                                                                     config.streamFps);
-                                                session.media.offer(
+                                                var output =
                                                         process.advance(
                                                                 session.inputMasks,
                                                                 video,
-                                                                session.wantsAudio),
-                                                        process.sampleRate());
+                                                                session.wantsAudio);
+                                                session.rumble = output.rumble();
+                                                session.media.offer(output, process.sampleRate());
                                                 if (before >= nextSave
                                                         && (pendingSave == null
                                                                 || pendingSave.isDone())) {
@@ -1915,15 +1989,17 @@ public final class InstanceManager implements AutoCloseable {
         // id.
         Path bios = RetrocraftConfig.systemDir(core.getParent().getFileName().toString());
         Path nativeSaves =
-                coreId(session.game).equals("ppsspp")
-                                && config.saveMode != RetrocraftConfig.SaveMode.NONE
+                nativeFileSaves(session) && config.saveMode != RetrocraftConfig.SaveMode.NONE
                         ? saves.nativeDirectory(
                                 session.data.owner(),
                                 config.saveMode == RetrocraftConfig.SaveMode.GLOBAL,
                                 session.data.gameId())
                         : null;
+        HardwareProfile hardware = session.hardware;
+        if (coreId(session.game).equals(Components.GAMBATTE))
+            hardware = hardware.merge(session.linkOptions);
         try {
-            return new WorkerProcess(workerJar, core, rom, state, bios, log, nativeSaves);
+            return new WorkerProcess(workerJar, core, rom, state, bios, log, nativeSaves, hardware);
         } catch (IOException ex) {
             if (ex instanceof EOFException && workerLogSays(log, "Core rejected ROM"))
                 throw new RomRejectedException(ex, rom);
@@ -1934,7 +2010,7 @@ public final class InstanceManager implements AutoCloseable {
             byte[] previous = Files.readAllBytes(store.backup(session.data.id()));
             SaveStates.validate(previous);
             SaveStates.writeAtomic(state, previous);
-            return new WorkerProcess(workerJar, core, rom, state, bios, log, nativeSaves);
+            return new WorkerProcess(workerJar, core, rom, state, bios, log, nativeSaves, hardware);
         }
     }
 
@@ -1959,31 +2035,319 @@ public final class InstanceManager implements AutoCloseable {
         }
     }
 
-    private static void requireBios(String coreId, RomIndex.Game game) throws IOException {
-        if (coreId.equals("mame2003")) {
-            if (game != null)
-                BiosFiles.ensureArcadeBios(RetrocraftConfig.biosDir(coreId), game.materialize());
+    private boolean linkConsole(Session session) {
+        return session != null
+                && !session.destroy
+                && !session.poweredOff
+                && session.failure == null
+                && session.host instanceof HandheldHost
+                && session.host.valid()
+                && coreId(session.game).equals(Components.GAMBATTE);
+    }
+
+    private ServerPlayerEntity linkPlayer(Session session) {
+        if (!linkConsole(session) || session.pads[0] == null) return null;
+        var player = server.getPlayerManager().getPlayer(session.pads[0].player);
+        return controlsHere(session, player) ? player : null;
+    }
+
+    private boolean linkNearby(Session a, Session b) {
+        return linkConsole(a)
+                && linkConsole(b)
+                && a != b
+                && a.host.world() == b.host.world()
+                && a.host.position().squaredDistanceTo(b.host.position())
+                        <= LINK_RANGE * LINK_RANGE;
+    }
+
+    private void linkNotice(ServerPlayerEntity player, String key) {
+        if (player != null)
+            player.sendMessage(Text.translatable("message.retrocraft.link." + key), true);
+    }
+
+    public void linkRequest(ServerPlayerEntity player, LinkPackets.Request packet) {
+        if (stopping) return;
+        Session source = sessions.get(packet.instance());
+        if (linkPlayer(source) != player) return;
+        long now = System.nanoTime();
+        if (packet.action() == LinkPackets.CANCEL) {
+            var offer =
+                    linkInvitations.cancel(packet.target(), packet.instance(), player.getUuid());
+            if (offer != null) closeOffer(offer);
             return;
         }
-        if (!coreId.equals("pcsx2")) return;
-        BiosFiles.migrateLegacy(RetrocraftConfig.root().resolve("bios"));
-        Path bios = RetrocraftConfig.biosDir(coreId);
-        if (!Files.isDirectory(bios))
-            throw new BiosFiles.MissingException("PS2 BIOS missing", "pcsx2", null, "PS2 BIOS");
-        try (var files = Files.list(bios)) {
-            if (files.noneMatch(
-                    path ->
-                            Files.isRegularFile(path)
-                                    && path.getFileName()
-                                            .toString()
-                                            .toLowerCase(Locale.ROOT)
-                                            .endsWith(".bin")))
-                throw new BiosFiles.MissingException("PS2 BIOS missing", "pcsx2", null, "PS2 BIOS");
+        if (packet.action() == LinkPackets.DISCONNECT) {
+            disconnectLink(source);
+            return;
         }
+        if (packet.action() == LinkPackets.ACCEPT || packet.action() == LinkPackets.DECLINE) {
+            var pending =
+                    linkInvitations.offers().stream()
+                            .filter(o -> o.token().equals(packet.target()))
+                            .findFirst()
+                            .orElse(null);
+            var offer =
+                    linkInvitations.reply(
+                            packet.target(), packet.instance(), player.getUuid(), now);
+            if (offer == null) {
+                if (pending != null
+                        && pending.target().equals(packet.instance())
+                        && pending.recipient().equals(player.getUuid())
+                        && now >= pending.expires()) {
+                    closeOffer(pending);
+                    linkResult(pending, LinkPackets.EXPIRED);
+                }
+                return;
+            }
+            Session sender = sessions.get(offer.source());
+            var senderPlayer = linkPlayer(sender);
+            closeOffer(offer);
+            if (packet.action() == LinkPackets.DECLINE) {
+                linkResult(offer, LinkPackets.DECLINED);
+                linkNotice(senderPlayer, "declined");
+                return;
+            }
+            if (senderPlayer == null
+                    || !senderPlayer.getUuid().equals(offer.sender())
+                    || !linkNearby(sender, source)
+                    || !sender.linked
+                    || sender.linkPartner != null
+                    || source.linkPartner != null
+                    || Boolean.FALSE.equals(sender.linkSupported)
+                    || Boolean.FALSE.equals(source.linkSupported)) {
+                linkResult(offer, LinkPackets.UNAVAILABLE);
+                linkNotice(player, "unavailable");
+                return;
+            }
+            long required = activeCount();
+            if (sender.thread == null || sender.finished) required++;
+            if (source.thread == null || source.finished) required++;
+            if (required > config.maxActiveInstances) {
+                linkResult(offer, LinkPackets.UNAVAILABLE);
+                linkNotice(player, "unavailable");
+                linkNotice(senderPlayer, "unavailable");
+                return;
+            }
+            GameLinkBridge bridge;
+            try {
+                bridge = GameLinkBridge.open(Components.LINK_PORTS[0], Components.LINK_PORTS[1]);
+            } catch (IOException ex) {
+                linkResult(offer, LinkPackets.UNAVAILABLE);
+                linkNotice(player, "unavailable");
+                return;
+            }
+            int port = bridge.port();
+            sender.linkBridge = source.linkBridge = bridge;
+            sender.linkPort = source.linkPort = port;
+            sender.linkPartner = source;
+            source.linkPartner = sender;
+            sender.linkOptions = Components.gambatteLink(false, port);
+            source.linkOptions = Components.gambatteLink(false, port);
+            // A peer without a cable can be running locally; return its checkpoint first.
+            if (source.ownership.mode() == Ownership.Mode.CLIENT) returnOwnership(source);
+            else if (!source.ownership.serverMayRun()) revoke(source, false);
+            notifyLink(sender, LinkPackets.CONNECTED);
+            notifyLink(source, LinkPackets.CONNECTED);
+            linkNotice(senderPlayer, "connected");
+            linkNotice(player, "connected");
+            return;
+        }
+        if (packet.action() == LinkPackets.LIST) {
+            long last = lastLinkRequest.getOrDefault(player.getUuid(), 0L);
+            if (now - last < TimeUnit.MILLISECONDS.toNanos(500)) return;
+            lastLinkRequest.put(player.getUuid(), now);
+        }
+        if (source.linkPartner != null) {
+            notifyLink(source, LinkPackets.CONNECTED);
+            return;
+        }
+        if (!source.linked) {
+            linkNotice(player, "cable_required");
+            return;
+        }
+        if (Boolean.FALSE.equals(source.linkSupported)) {
+            linkNotice(player, "unsupported");
+            return;
+        }
+        if (packet.action() == LinkPackets.LIST) {
+            List<LinkPackets.Entry> entries = new ArrayList<>();
+            for (Session other : sessions.values()) {
+                var target = linkPlayer(other);
+                if (target != null
+                        && target != player
+                        && linkNearby(source, other)
+                        && other.linkPartner == null
+                        && !linkInvitations.busy(other.data.id())
+                        && !Boolean.FALSE.equals(other.linkSupported))
+                    entries.add(
+                            new LinkPackets.Entry(
+                                    other.data.id(), target.getGameProfile().getName()));
+            }
+            entries.sort(Comparator.comparing(LinkPackets.Entry::name));
+            send(
+                    player,
+                    new LinkPackets.State(
+                            LinkPackets.CANDIDATES,
+                            source.data.id(),
+                            LinkPackets.NONE,
+                            List.copyOf(entries.subList(0, Math.min(32, entries.size())))));
+        } else if (packet.action() == LinkPackets.INVITE) {
+            Session target = sessions.get(packet.target());
+            var recipient = linkPlayer(target);
+            if (recipient == null
+                    || !linkNearby(source, target)
+                    || target.linkPartner != null
+                    || Boolean.FALSE.equals(target.linkSupported)) {
+                send(
+                        player,
+                        new LinkPackets.State(
+                                LinkPackets.UNAVAILABLE,
+                                source.data.id(),
+                                LinkPackets.NONE,
+                                List.of()));
+                linkNotice(player, "unavailable");
+                return;
+            }
+            var offer =
+                    linkInvitations.invite(
+                            source.data.id(),
+                            target.data.id(),
+                            player.getUuid(),
+                            recipient.getUuid(),
+                            now);
+            if (offer == null) {
+                send(
+                        player,
+                        new LinkPackets.State(
+                                LinkPackets.UNAVAILABLE,
+                                source.data.id(),
+                                LinkPackets.NONE,
+                                List.of()));
+                linkNotice(player, "busy");
+                return;
+            }
+            send(
+                    recipient,
+                    new LinkPackets.State(
+                            LinkPackets.OFFER,
+                            target.data.id(),
+                            offer.token(),
+                            List.of(
+                                    new LinkPackets.Entry(
+                                            source.data.id(), player.getGameProfile().getName()))));
+            send(
+                    player,
+                    new LinkPackets.State(
+                            LinkPackets.WAITING,
+                            source.data.id(),
+                            offer.token(),
+                            List.of(
+                                    new LinkPackets.Entry(
+                                            target.data.id(),
+                                            recipient.getGameProfile().getName()))));
+            linkNotice(player, "sent");
+        }
+    }
+
+    private void notifyLink(Session session, int mode) {
+        var player = linkPlayer(session);
+        var partner = linkPlayer(session.linkPartner);
+        List<LinkPackets.Entry> entries =
+                partner == null
+                        ? List.of()
+                        : List.of(
+                                new LinkPackets.Entry(
+                                        session.linkPartner.data.id(),
+                                        partner.getGameProfile().getName()));
+        if (player != null)
+            send(player, new LinkPackets.State(mode, session.data.id(), LinkPackets.NONE, entries));
+    }
+
+    private void linkResult(LinkInvitations.Offer offer, int mode) {
+        var sender = server.getPlayerManager().getPlayer(offer.sender());
+        var recipient = server.getPlayerManager().getPlayer(offer.recipient());
+        if (sender != null)
+            send(
+                    sender,
+                    new LinkPackets.State(
+                            mode,
+                            offer.source(),
+                            offer.token(),
+                            recipient == null
+                                    ? List.of()
+                                    : List.of(
+                                            new LinkPackets.Entry(
+                                                    offer.target(),
+                                                    recipient.getGameProfile().getName()))));
+    }
+
+    private void closeOffer(LinkInvitations.Offer offer) {
+        var recipient = server.getPlayerManager().getPlayer(offer.recipient());
+        if (recipient != null)
+            send(
+                    recipient,
+                    new LinkPackets.State(
+                            LinkPackets.CLOSED, offer.target(), offer.token(), List.of()));
+    }
+
+    private void disconnectLink(Session session) {
+        Session partner = session.linkPartner;
+        if (session.linkBridge != null) session.linkBridge.close();
+        session.linkBridge = null;
+        session.linkPartner = null;
+        session.linkPort = -1;
+        session.linkOptions = HardwareProfile.options("gambatte_gb_link_mode", "Not Connected");
+        notifyLink(session, LinkPackets.CLOSED);
+        if (partner != null) {
+            partner.linkBridge = null;
+            partner.linkPartner = null;
+            partner.linkPort = -1;
+            partner.linkOptions = HardwareProfile.options("gambatte_gb_link_mode", "Not Connected");
+            notifyLink(partner, LinkPackets.CLOSED);
+            linkNotice(linkPlayer(partner), "disconnected");
+            linkNotice(linkPlayer(session), "disconnected");
+        }
+    }
+
+    private void tickLinks() {
+        long now = System.nanoTime();
+        for (var offer : linkInvitations.offers()) {
+            Session a = sessions.get(offer.source()), b = sessions.get(offer.target());
+            var sender = linkPlayer(a);
+            var recipient = linkPlayer(b);
+            if (now >= offer.expires()
+                    || !linkNearby(a, b)
+                    || sender == null
+                    || recipient == null
+                    || !sender.getUuid().equals(offer.sender())
+                    || !recipient.getUuid().equals(offer.recipient())) {
+                linkInvitations.remove(offer);
+                closeOffer(offer);
+                linkResult(offer, LinkPackets.EXPIRED);
+                linkNotice(sender, "expired");
+            }
+        }
+        for (Session a : sessions.values()) {
+            Session b = a.linkPartner;
+            if (b == null) continue;
+            if (a.linkBridge == null
+                    || a.linkBridge.closed()
+                    || !linkNearby(a, b)
+                    || linkPlayer(a) == null
+                    || linkPlayer(b) == null
+                    || Boolean.FALSE.equals(a.linkSupported)
+                    || Boolean.FALSE.equals(b.linkSupported)) disconnectLink(a);
+        }
+    }
+
+    /** Each console's game system declares the firmware it needs. */
+    private static void requireBios(String coreId, RomIndex.Game game) throws IOException {
+        game.cartridge().system().bios().require(coreId, game);
     }
 
     private void finish(Session session) {
         if (!session.finished) return;
+        if (session.linkPartner != null) disconnectLink(session);
         session.thread = null;
         session.finished = false;
         resetVideo(session);
@@ -2079,11 +2443,13 @@ public final class InstanceManager implements AutoCloseable {
                 isInputSource(player.getUuid(), session.data.id()),
                 session.host.canAccess(player),
                 inWorld(session),
-                screen);
+                screen,
+                session.hardware.aims());
     }
 
     private static Packets.Ui stopped(Session session) {
-        return new Packets.Ui(Packets.STOP, session.data.id(), "", "", false, false, false, 0);
+        return new Packets.Ui(
+                Packets.STOP, session.data.id(), "", "", false, false, false, 0, false);
     }
 
     private void destroyFiles(UUID id) {
@@ -2456,8 +2822,8 @@ public final class InstanceManager implements AutoCloseable {
 
     private void coordinateOwnership(Session session, long now) {
         if (session.destroy || session.failure != null) return;
-        if (!clientMayEmulate() && session.ownership.mode() == Ownership.Mode.CLIENT)
-            returnOwnership(session);
+        if ((!clientMayEmulate() || serverOnly(session))
+                && session.ownership.mode() == Ownership.Mode.CLIENT) returnOwnership(session);
         if (session.ownership.serverMayRun()
                 && session.pads[0] != null
                 && clientMayEmulate()
@@ -2547,7 +2913,8 @@ public final class InstanceManager implements AutoCloseable {
                                                                     .definition()
                                                                     .type()
                                                                     .isPlaced(),
-                                                            0));
+                                                            0,
+                                                            session.hardware.encode()));
                                             var queue =
                                                     outbound.computeIfAbsent(
                                                             playerId,
@@ -3013,6 +3380,8 @@ public final class InstanceManager implements AutoCloseable {
     @Override
     public void close() {
         stopping = true;
+        for (Session session : sessions.values())
+            if (session.linkBridge != null) session.linkBridge.close();
         libraryIo.getQueue().clear();
         libraryIo.shutdown();
         for (PendingStart pending : pendingStarts.values())

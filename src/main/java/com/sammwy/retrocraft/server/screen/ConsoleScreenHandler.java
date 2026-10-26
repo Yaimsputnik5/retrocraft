@@ -2,6 +2,7 @@ package com.sammwy.retrocraft.server.screen;
 
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.server.console.*;
+import com.sammwy.retrocraft.server.console.component.*;
 
 import net.minecraft.entity.player.*;
 import net.minecraft.inventory.*;
@@ -19,14 +20,20 @@ public final class ConsoleScreenHandler extends ScreenHandler {
     private final int lockedSlot;
 
     public ConsoleScreenHandler(int syncId, PlayerInventory inventory, ConsoleOpenData data) {
+        this(syncId, inventory, ConsoleRegistry.get(data.console()), data.lockedSlot());
+    }
+
+    private ConsoleScreenHandler(
+            int syncId, PlayerInventory inventory, ConsoleDefinition definition, int lockedSlot) {
         this(
                 syncId,
                 inventory,
-                ConsoleRegistry.get(data.console()),
+                definition,
                 null,
-                new SimpleInventory(1),
+                new SimpleInventory(
+                        1 + (definition == null ? 0 : definition.componentSlots().size())),
                 new ArrayPropertyDelegate(1),
-                data.lockedSlot());
+                lockedSlot);
     }
 
     public ConsoleScreenHandler(
@@ -67,8 +74,9 @@ public final class ConsoleScreenHandler extends ScreenHandler {
         this.lockedSlot = lockedSlot;
         if (definition == null) throw new IllegalArgumentException("Unknown console");
         addProperties(properties);
+        var componentSlots = definition.componentSlots();
         addSlot(
-                new Slot(cartridge, 0, 80, 35) {
+                new Slot(cartridge, 0, slotX(componentSlots.size(), 0), 35) {
                     @Override
                     public boolean canInsert(ItemStack stack) {
                         return !definition.internalRom()
@@ -86,10 +94,42 @@ public final class ConsoleScreenHandler extends ScreenHandler {
                         return 1;
                     }
                 });
+        for (int i = 0; i < componentSlots.size(); i++) {
+            ComponentSlot port = componentSlots.get(i);
+            addSlot(
+                    new Slot(cartridge, 1 + i, slotX(componentSlots.size(), 1 + i), 35) {
+                        @Override
+                        public boolean canInsert(ItemStack stack) {
+                            return !powered() && port.accepts(ComponentStorage.component(stack));
+                        }
+
+                        @Override
+                        public boolean canTakeItems(PlayerEntity player) {
+                            return !powered();
+                        }
+
+                        @Override
+                        public int getMaxItemCount() {
+                            return 1;
+                        }
+                    });
+        }
         for (int row = 0; row < 3; row++)
             for (int col = 0; col < 9; col++)
                 addPlayerSlot(inventory, col + row * 9 + 9, 8 + col * 18, 94 + row * 18);
         for (int col = 0; col < 9; col++) addPlayerSlot(inventory, col, 8 + col * 18, 152);
+    }
+
+    /** Cartridge bay then component ports, centred in the console panel. */
+    private static int slotX(int components, int index) {
+        if (components == 0) return 80;
+        int start = 88 - (16 + 20 + components * 16 + (components - 1) * 6) / 2;
+        return index == 0 ? start : start + 36 + (index - 1) * 22;
+    }
+
+    /** Machine slots (cartridge + components) precede the player inventory. */
+    public int machineSlots() {
+        return 1 + definition.componentSlots().size();
     }
 
     private void addPlayerSlot(PlayerInventory inventory, int index, int x, int y) {
@@ -183,10 +223,18 @@ public final class ConsoleScreenHandler extends ScreenHandler {
         Slot slot = slots.get(index);
         if (!slot.hasStack() || !slot.canTakeItems(player)) return ItemStack.EMPTY;
         ItemStack original = slot.getStack(), copy = original.copy();
-        if (index == 0) {
-            if (!insertItem(original, 1, slots.size(), true)) return ItemStack.EMPTY;
-        } else if (!slots.getFirst().canInsert(original) || !insertItem(original, 0, 1, false))
-            return ItemStack.EMPTY;
+        int machine = machineSlots();
+        if (index < machine) {
+            if (!insertItem(original, machine, slots.size(), true)) return ItemStack.EMPTY;
+        } else {
+            boolean moved = false;
+            for (int i = 0; i < machine && !moved; i++)
+                moved =
+                        !slots.get(i).hasStack()
+                                && slots.get(i).canInsert(original)
+                                && insertItem(original, i, i + 1, false);
+            if (!moved) return ItemStack.EMPTY;
+        }
         if (original.isEmpty()) slot.setStack(ItemStack.EMPTY);
         else slot.markDirty();
         return copy;

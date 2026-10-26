@@ -38,6 +38,10 @@ public interface Libretro extends Library {
         short invoke(int port, int device, int index, int id);
     }
 
+    interface Rumble extends Callback {
+        byte invoke(int port, int effect, short strength);
+    }
+
     /**
      * retro_log_printf_t is variadic; reading only the fixed arguments is ABI-safe on every
      * supported platform.

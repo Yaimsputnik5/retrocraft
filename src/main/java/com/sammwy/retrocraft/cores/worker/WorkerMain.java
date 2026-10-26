@@ -16,10 +16,14 @@ public final class WorkerMain {
     private final Path statePath;
     private final Memory directory;
     private final Map<String, Memory> variables = new HashMap<>();
+    private final Map<String, List<String>> optionChoices = new HashMap<>();
+    private boolean variablesUpdated;
     private double aspectRatio, forceAspect;
     private int pixelFormat;
     private final PadInput[] input = new PadInput[WorkerProtocol.PORTS];
     private final int[] controllerDevices = {1, 1, 1, 1};
+    private final HardwareProfile profile;
+    private boolean portsDirty, gameLoaded;
     private boolean shutdown;
     private final HardwareVideo hardware = new HardwareVideo();
     private boolean captureVideo = true, captureAudio = true;
@@ -34,6 +38,14 @@ public final class WorkerMain {
     private final Libretro.AudioBatch batch = this::batch;
     private final Libretro.InputPoll poll = () -> {};
     private final Libretro.InputState buttons = this::inputState;
+    private final int[][] rumbleStrength = new int[WorkerProtocol.PORTS][2];
+    private final Libretro.Rumble rumble =
+            (port, effect, strength) -> {
+                if (port < 0 || port >= rumbleStrength.length || effect < 0 || effect > 1) return 0;
+                rumbleStrength[port][effect] = Short.toUnsignedInt(strength);
+                return 1;
+            };
+    private final Pointer rumblePointer = CallbackReference.getFunctionPointer(rumble);
     // Some cores (MAME 2003-Plus) call the log callback unconditionally, so one must always be
     // provided.
     private final Libretro.Log log =
@@ -44,6 +56,8 @@ public final class WorkerMain {
 
     private short inputState(int port, int device, int index, int id) {
         if (port < 0 || port >= input.length) return 0;
+        // Light guns read as touchscreens aim with the pointer of the pad that holds them.
+        if ((device & 255) == 6 && profile.aims()) port = profile.pointerPort();
         return input[port] == null ? 0 : input[port].state(device, index, id);
     }
 
@@ -51,9 +65,11 @@ public final class WorkerMain {
     private final Memory systemDir;
     private final boolean arcade;
 
-    private WorkerMain(String corePath, Path statePath, Path bios, Path nativeSaves)
+    private WorkerMain(
+            String corePath, Path statePath, Path bios, Path nativeSaves, HardwareProfile profile)
             throws IOException {
         this.statePath = statePath;
+        this.profile = profile;
         this.biosDir = bios;
         Files.createDirectories(statePath.getParent());
         Path saveRoot = nativeSaves == null ? statePath.getParent() : nativeSaves;
@@ -108,7 +124,10 @@ public final class WorkerMain {
                             args[0],
                             Path.of(args[2]),
                             bios,
-                            args.length > 6 && !args[6].isBlank() ? Path.of(args[6]) : null)
+                            args.length > 6 && !args[6].isBlank() ? Path.of(args[6]) : null,
+                            args.length > 7
+                                    ? HardwareProfile.decode(args[7])
+                                    : HardwareProfile.NONE)
                     .run(Path.of(args[1]), in, out);
         } catch (Throwable ex) {
             ex.printStackTrace(System.err);
@@ -143,11 +162,11 @@ public final class WorkerMain {
             }
             if (core.retro_load_game(game) == 0) throw new IOException("Core rejected ROM");
             loaded = true;
+            gameLoaded = true;
             Libretro.AvInfo initialAv = new Libretro.AvInfo();
             core.retro_get_system_av_info(initialAv);
             hardware.start(initialAv.geometry.baseWidth, initialAv.geometry.baseHeight);
-            for (int port = 0; port < input.length; port++)
-                core.retro_set_controller_port_device(port, controllerDevices[port]);
+            applyPorts();
             if (forceAspect > 0 || arcade) {
                 captureVideo = false;
                 captureAudio = false;
@@ -190,7 +209,26 @@ public final class WorkerMain {
                     saveBattery();
                     break;
                 }
-                if (command == WorkerProtocol.CAPTURE) {
+                if (command == WorkerProtocol.OPTIONS) {
+                    HardwareProfile update = HardwareProfile.decode(in.readUTF());
+                    boolean valid = update.devices().isEmpty() && !update.aims();
+                    for (var option : update.options().entrySet())
+                        valid &=
+                                optionChoices
+                                        .getOrDefault(option.getKey(), List.of())
+                                        .contains(option.getValue());
+                    if (valid) {
+                        for (var option : update.options().entrySet()) {
+                            Memory previous = variables.get(option.getKey());
+                            if (previous == null
+                                    || !previous.getString(0).equals(option.getValue())) {
+                                variables.put(option.getKey(), cString(option.getValue()));
+                                variablesUpdated = true;
+                            }
+                        }
+                    }
+                    out.writeBoolean(valid);
+                } else if (command == WorkerProtocol.CAPTURE) {
                     byte[] snapshot = capture();
                     out.writeInt(snapshot.length);
                     out.write(snapshot);
@@ -208,12 +246,17 @@ public final class WorkerMain {
                     captureAudio = (flags & 2) != 0;
                     if (shutdown) throw new IOException("Core requested shutdown");
                     audio.reset();
+                    if (portsDirty) applyPorts();
                     core.retro_run();
                     out.writeShort(captureVideo ? frame.width() : 0);
                     out.writeShort(captureVideo ? frame.height() : 0);
                     if (captureVideo) out.write(frame.rgb());
                     out.writeInt(audio.size());
                     audio.writeTo(out);
+                    for (int[] strength : rumbleStrength) {
+                        out.writeShort(strength[0]);
+                        out.writeShort(strength[1]);
+                    }
                 } else throw new IOException("Unknown worker command");
                 out.flush();
             }
@@ -270,6 +313,7 @@ public final class WorkerMain {
             case 24 ->
                     data.setLong(0, (1L << 1) | (1L << 5) | (1L << 6)); // joypad, analog, pointer
             case 35 -> controllerInfo(data);
+            case 23 -> data.setPointer(0, rumblePointer); // GET_RUMBLE_INTERFACE
             case 27 -> data.setPointer(0, logPointer); // RETRO_ENVIRONMENT_GET_LOG_INTERFACE
             case 15 -> {
                 String key = data.getPointer(0).getString(0);
@@ -287,42 +331,49 @@ public final class WorkerMain {
                     if (separator >= 0) {
                         String name = key.getString(0),
                                 choices = definition.substring(separator + 1).trim();
+                        optionChoices.put(name, Arrays.asList(choices.split("\\|")));
                         if (name.startsWith("parallel-n64-"))
                             forceAspect = 4.0 / 3.0; // the VI always outputs 4:3 display
-                        String selected =
-                                switch (name) {
-                                    case "parallel-n64-gfxplugin" -> "angrylion";
-                                    case "parallel-n64-rspplugin" -> "cxd4";
-                                    case "parallel-n64-angrylion-multithread" -> "2";
-                                    case "parallel-n64-aspectratiohint" -> "normal";
-                                    case "parallel-n64-screensize" -> "640x480";
-                                    case "pcsx2_renderer" -> "Software (SW)";
-                                    case "ppsspp_backend" -> "opengl";
-                                    case "ppsspp_internal_resolution" -> "480x272";
-                                    case "ppsspp_cropto16x9" -> "disabled";
-                                    case "ppsspp_software_rendering", "ppsspp_cache_iso" ->
-                                            "disabled";
-                                    case "desmume_opengl_mode" -> "disabled";
-                                    case "desmume_screens_layout" -> "top/bottom";
-                                    case "desmume_screens_gap" -> "0";
-                                    case "desmume_internal_resolution" -> "256x192";
-                                    case "desmume_pointer_mouse" -> "enabled";
-                                    case "desmume_pointer_type" -> "touch";
-                                    case "citra_layout_option" -> "Default Top-Bottom Screen";
-                                    case "citra_swap_screen" -> "Top";
-                                    case "citra_resolution_factor" -> "1x (Native)";
-                                    case "citra_analog_function" -> "C-Stick";
-                                    case "citra_touch_touchscreen" -> "enabled";
-                                    case "citra_mouse_touchscreen" -> "disabled";
-                                    default -> choices.split("\\|", 2)[0];
-                                };
+                        String selected = profile.options().get(name);
+                        if (selected == null)
+                            selected =
+                                    switch (name) {
+                                        case "parallel-n64-gfxplugin" -> "angrylion";
+                                        case "parallel-n64-rspplugin" -> "cxd4";
+                                        case "parallel-n64-angrylion-multithread" -> "2";
+                                        case "parallel-n64-aspectratiohint" -> "normal";
+                                        case "parallel-n64-screensize" -> "640x480";
+                                        case "pcsx2_renderer" -> "Software (SW)";
+                                        case "ppsspp_backend" -> "opengl";
+                                        case "ppsspp_internal_resolution" -> "480x272";
+                                        case "ppsspp_cropto16x9" -> "disabled";
+                                        case "ppsspp_software_rendering", "ppsspp_cache_iso" ->
+                                                "disabled";
+                                        case "desmume_opengl_mode" -> "disabled";
+                                        case "desmume_screens_layout" -> "top/bottom";
+                                        case "desmume_screens_gap" -> "0";
+                                        case "desmume_internal_resolution" -> "256x192";
+                                        case "desmume_pointer_mouse" -> "enabled";
+                                        case "desmume_pointer_type" -> "touch";
+                                        case "citra_layout_option" -> "Default Top-Bottom Screen";
+                                        case "citra_swap_screen" -> "Top";
+                                        case "citra_resolution_factor" -> "1x (Native)";
+                                        case "citra_analog_function" -> "C-Stick";
+                                        case "citra_touch_touchscreen" -> "enabled";
+                                        case "citra_mouse_touchscreen" -> "disabled";
+                                        default -> choices.split("\\|", 2)[0];
+                                    };
                         if (!Arrays.asList(choices.split("\\|")).contains(selected))
                             selected = choices.split("\\|", 2)[0];
                         variables.put(name, cString(selected));
                     }
                 }
             }
-            case 17, 49 -> data.setByte(0, (byte) 0);
+            case 17 -> {
+                data.setByte(0, (byte) (variablesUpdated ? 1 : 0));
+                variablesUpdated = false;
+            }
+            case 49 -> data.setByte(0, (byte) 0);
             case 39, 52 -> data.setInt(0, 0); // English / legacy core options
             case 47 -> data.setInt(0, (captureVideo ? 1 : 0) | (captureAudio ? 2 : 0));
             case 50 -> data.setFloat(0, 60);
@@ -334,6 +385,12 @@ public final class WorkerMain {
         return 1;
     }
 
+    private void applyPorts() {
+        portsDirty = false;
+        for (int port = 0; port < input.length; port++)
+            core.retro_set_controller_port_device(port, controllerDevices[port]);
+    }
+
     private void controllerInfo(Pointer data) {
         if (data == null) return;
         int infoSize = new Libretro.ControllerInfo(data).size();
@@ -343,10 +400,12 @@ public final class WorkerMain {
             if (info.count < 0 || info.count > 64) continue;
             int descriptionSize = new Libretro.ControllerDescription(info.types).size();
             int best = 0;
+            Set<Integer> advertised = new HashSet<>();
             for (int i = 0; i < info.count; i++) {
                 var type =
                         new Libretro.ControllerDescription(
                                 info.types.share((long) i * descriptionSize));
+                advertised.add(type.id);
                 String name =
                         type.description == null ? "" : type.description.toLowerCase(Locale.ROOT);
                 int score =
@@ -360,7 +419,11 @@ public final class WorkerMain {
                     best = score;
                 }
             }
+            Integer wanted = profile.devices().get(port);
+            if (wanted != null && advertised.contains(wanted)) controllerDevices[port] = wanted;
         }
+        // Cores that describe their ports after loading content get them on the next frame.
+        if (gameLoaded) portsDirty = true;
     }
 
     private void video(Pointer pixels, int width, int height, Libretro.SizeT pitch) {

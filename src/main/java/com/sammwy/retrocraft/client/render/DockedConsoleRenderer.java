@@ -262,6 +262,8 @@ public final class DockedConsoleRenderer implements BlockEntityRenderer<DockedCo
                 0,
                 0,
                 0);
+        ScreenProjection.capture(
+                entry.id(), matrix, cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, z - .0045f);
         var glass = vertices.getBuffer(RenderLayer.getEntityCutoutNoCull(entry.id()));
         quad(
                 glass,

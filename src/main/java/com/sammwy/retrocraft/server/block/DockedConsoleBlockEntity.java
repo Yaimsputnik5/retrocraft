@@ -1,9 +1,10 @@
 package com.sammwy.retrocraft.server.block;
 
-import java.util.UUID;
+import java.util.*;
 
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.server.console.*;
+import com.sammwy.retrocraft.server.console.component.ComponentStorage;
 import com.sammwy.retrocraft.server.item.ArcadeItem;
 import com.sammwy.retrocraft.server.item.CartridgeItem;
 
@@ -25,8 +26,31 @@ public final class DockedConsoleBlockEntity extends BlockEntity implements Conso
     private UUID instance;
     private BlockPos tv;
 
+    private final ItemStack[] components;
+
     public DockedConsoleBlockEntity(BlockPos pos, BlockState state) {
         super(((DockedConsoleBlock) state.getBlock()).entityType(), pos, state);
+        components = new ItemStack[definition().componentSlots().size()];
+        Arrays.fill(components, ItemStack.EMPTY);
+    }
+
+    @Override
+    public ItemStack component(int slot) {
+        return slot >= 0 && slot < components.length ? components[slot] : ItemStack.EMPTY;
+    }
+
+    @Override
+    public void component(int slot, ItemStack stack) {
+        if (slot < 0 || slot >= components.length) return;
+        components[slot] =
+                definition().componentSlots().get(slot).accepts(ComponentStorage.component(stack))
+                        ? stack.copyWithCount(1)
+                        : ItemStack.EMPTY;
+        changed();
+    }
+
+    public List<ItemStack> components() {
+        return List.of(components);
     }
 
     @Override
@@ -137,6 +161,11 @@ public final class DockedConsoleBlockEntity extends BlockEntity implements Conso
                 cartridge.encodeAllowEmpty(registries));
         if (instance != null) nbt.putUuid("InstanceID", instance);
         if (tv != null) nbt.putLong("Tv", tv.asLong());
+        NbtCompound installed = new NbtCompound();
+        var slots = definition().componentSlots();
+        for (int i = 0; i < components.length; i++)
+            ComponentStorage.write(installed, slots.get(i), components[i]);
+        if (!installed.isEmpty()) nbt.put(ComponentStorage.KEY, installed);
     }
 
     @Override
@@ -148,6 +177,10 @@ public final class DockedConsoleBlockEntity extends BlockEntity implements Conso
                         nbt.getCompound(hasInternalRom() ? "InternalRom" : "Cartridge"));
         instance = nbt.containsUuid("InstanceID") ? nbt.getUuid("InstanceID") : null;
         tv = nbt.contains("Tv", NbtElement.LONG_TYPE) ? BlockPos.fromLong(nbt.getLong("Tv")) : null;
+        NbtCompound installed = nbt.getCompound(ComponentStorage.KEY);
+        var slots = definition().componentSlots();
+        for (int i = 0; i < components.length; i++)
+            components[i] = ComponentStorage.read(installed, slots.get(i));
     }
 
     public static void tick(

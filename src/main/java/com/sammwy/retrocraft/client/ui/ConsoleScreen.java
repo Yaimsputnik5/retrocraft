@@ -10,12 +10,14 @@ import com.sammwy.retrocraft.client.InputControls;
 import com.sammwy.retrocraft.client.RetrocraftClient;
 import com.sammwy.retrocraft.client.config.DualScreenLayout;
 import com.sammwy.retrocraft.client.render.CameraRig;
+import com.sammwy.retrocraft.client.render.ScreenProjection;
 import com.sammwy.retrocraft.client.render.ScreenTextures;
 import com.sammwy.retrocraft.client.ui.hud.*;
 import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.server.console.ConsoleDefinition;
 import com.sammwy.retrocraft.server.console.ConsoleRegistry;
 import com.sammwy.retrocraft.server.console.ConsoleType;
+import com.sammwy.retrocraft.server.net.LinkPackets;
 import com.sammwy.retrocraft.server.net.Packets;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -46,6 +48,46 @@ public final class ConsoleScreen extends AnimatedScreen {
     private boolean touchHeld;
     private double touchX, touchY;
 
+    /** A light gun is plugged in: the mouse aims at the picture and the left button fires. */
+    private boolean aims;
+
+    private HudRect flatVideo;
+    private LinkDialog linkDialog;
+    private boolean linkConnected;
+
+    public void link(LinkPackets.State state) {
+        if (!instance.equals(state.instance())) return;
+        if (state.mode() == LinkPackets.CLOSED) {
+            if (state.token().equals(LinkPackets.NONE)) {
+                linkConnected = false;
+                if (linkDialog != null) linkDialog.serverClosed();
+                clearAndInit();
+            } else if (linkDialog != null && linkDialog.token().equals(state.token()))
+                linkDialog.serverClosed();
+            return;
+        }
+        if (state.mode() == LinkPackets.CONNECTED) {
+            linkConnected = true;
+            clearAndInit();
+        }
+        linkDialog = new LinkDialog(state, () -> linkDialog = null);
+    }
+
+    private boolean hasLinkPort() {
+        return definition != null
+                && definition.componentSlots().stream()
+                        .anyMatch(
+                                slot ->
+                                        slot.accepts(
+                                                com.sammwy.retrocraft.server.console.component
+                                                        .Components.GB_LINK_CABLE));
+    }
+
+    private void renderLink(DrawContext context, int mouseX, int mouseY, float delta) {
+        if (linkDialog != null)
+            linkDialog.render(context, textRenderer, width, height, mouseX, mouseY, delta);
+    }
+
     public ConsoleScreen(Packets.Ui packet) {
         super(Text.literal(packet.title()));
         instance = packet.instance();
@@ -53,6 +95,7 @@ public final class ConsoleScreen extends AnimatedScreen {
         canManage = packet.canManage();
         inWorld = packet.inWorld();
         screen = packet.screen();
+        aims = packet.aims();
         definitionId =
                 Identifier.of(
                         packet.console().contains(":")
@@ -90,6 +133,7 @@ public final class ConsoleScreen extends AnimatedScreen {
         canManage = packet.canManage();
         inWorld = packet.inWorld();
         screen = packet.screen();
+        aims = packet.aims();
         if (changed) clearAndInit();
     }
 
@@ -130,6 +174,26 @@ public final class ConsoleScreen extends AnimatedScreen {
                                                 Packets.Request.of(Packets.EJECT, instance)),
                                 Text.translatable("screen.retrocraft.eject")));
             }
+        }
+        if (canManage && hasLinkPort()) {
+            x -= 90;
+            addDrawableChild(
+                    new SettingsWidgets.Flat(
+                                    x,
+                                    4,
+                                    86,
+                                    14,
+                                    Text.translatable(
+                                            linkConnected
+                                                    ? "screen.retrocraft.link.connected"
+                                                    : "screen.retrocraft.link.title"),
+                                    () ->
+                                            ClientPlayNetworking.send(
+                                                    new LinkPackets.Request(
+                                                            LinkPackets.LIST,
+                                                            instance,
+                                                            LinkPackets.NONE)))
+                            .accent(linkConnected));
         }
         if (hasDualScreens()) {
             x -= 132;
@@ -199,7 +263,7 @@ public final class ConsoleScreen extends AnimatedScreen {
     @Override
     public void tick() {
         if (!subscribed || !ClientPlayNetworking.canSend(Packets.Request.ID)) return;
-        var input = controller ? InputControls.sample(client) : PadInput.IDLE;
+        var input = controller && linkDialog == null ? InputControls.sample(client) : PadInput.IDLE;
         ClientPlayNetworking.send(
                 new Packets.Request(
                         Packets.INPUT, instance, input, RetrocraftClient.VIDEO.sequence(instance)));
@@ -208,6 +272,10 @@ public final class ConsoleScreen extends AnimatedScreen {
     @Override
     public boolean keyPressed(int key, int scanCode, int modifiers) {
         if (closing()) return true;
+        if (linkDialog != null) {
+            linkDialog.keyPressed(key, modifiers);
+            return true;
+        }
         if (key == GLFW.GLFW_KEY_ESCAPE) {
             close();
             return true;
@@ -267,6 +335,8 @@ public final class ConsoleScreen extends AnimatedScreen {
             PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
             zoomLabel(context);
             renderWidgets(context, mouseX, mouseY, delta);
+            drawSight(context, mouseX, mouseY);
+            renderLink(context, mouseX, mouseY, delta);
             return;
         }
         context.drawItem(consoleStack, MARGIN, 3);
@@ -311,6 +381,7 @@ public final class ConsoleScreen extends AnimatedScreen {
                             area.y() + bezel.top() + (availableH - h) / 2,
                             w,
                             h);
+            flatVideo = video;
             WorldConsoleFrame.render(context, theme, video);
             drawHudVideo(
                     context,
@@ -323,6 +394,54 @@ public final class ConsoleScreen extends AnimatedScreen {
         PlayerHud.render(context, textRenderer, client, theme, width, height, instance);
         zoomLabel(context);
         renderWidgets(context, mouseX, mouseY, delta);
+        drawSight(context, mouseX, mouseY);
+        renderLink(context, mouseX, mouseY, delta);
+    }
+
+    /** On-screen picture a light gun aims at: projected TV/cabinet glass or the flat view. */
+    private HudRect aimTarget() {
+        if (!aims || hudRenderer != null || !controller) return null;
+        return inWorld && ClientPreferences.get().renderWorldScreens
+                ? ScreenProjection.get(textureId)
+                : flatVideo;
+    }
+
+    private static boolean inside(HudRect rect, double x, double y) {
+        return rect != null
+                && x >= rect.x()
+                && y >= rect.y()
+                && x < rect.x() + rect.width()
+                && y < rect.y() + rect.height();
+    }
+
+    private void drawSight(DrawContext context, int mouseX, int mouseY) {
+        if (!inside(aimTarget(), mouseX, mouseY)) return;
+        int color = touchHeld ? 0xffff5a4a : 0xffe9eef2;
+        context.fill(mouseX - 5, mouseY, mouseX - 1, mouseY + 1, color);
+        context.fill(mouseX + 2, mouseY, mouseX + 6, mouseY + 1, color);
+        context.fill(mouseX, mouseY - 5, mouseX + 1, mouseY - 1, color);
+        context.fill(mouseX, mouseY + 2, mouseX + 1, mouseY + 6, color);
+    }
+
+    private PadInput withAim(PadInput input) {
+        HudRect target = aimTarget();
+        if (target == null) return input;
+        double scale = (double) client.getWindow().getScaledWidth() / client.getWindow().getWidth();
+        double x = client.mouse.getX() * scale, y = client.mouse.getY() * scale;
+        boolean firing =
+                GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT)
+                        == GLFW.GLFW_PRESS;
+        touchHeld = firing && inside(target, x, y);
+        if (!inside(target, x, y)) return input;
+        return input.withTouch(
+                pointer((x - target.x()) / target.width()),
+                pointer((y - target.y()) / target.height()),
+                firing);
+    }
+
+    private static short pointer(double fraction) {
+        double value = Math.max(0, Math.min(1, fraction)) * 65534 - 32767;
+        return (short) Math.round(value);
     }
 
     private boolean hasDualScreens() {
@@ -395,6 +514,9 @@ public final class ConsoleScreen extends AnimatedScreen {
     }
 
     public PadInput withTouch(PadInput input) {
+        if (linkDialog != null) return PadInput.IDLE;
+        if (hudRenderer == null && controller && acceptingInput() && client.isWindowFocused())
+            return withAim(input);
         if (hudRenderer == null
                 || !controller
                 || !touchHeld
@@ -412,7 +534,12 @@ public final class ConsoleScreen extends AnimatedScreen {
 
     @Override
     public boolean mouseClicked(double x, double y, int button) {
+        if (linkDialog != null) {
+            linkDialog.click(x, y, button);
+            return true;
+        }
         if (super.mouseClicked(x, y, button)) return true;
+        if (button == 0 && acceptingInput() && inside(aimTarget(), x, y)) return true;
         if (hudRenderer != null
                 && button == 0
                 && controller
@@ -427,7 +554,17 @@ public final class ConsoleScreen extends AnimatedScreen {
     }
 
     @Override
+    public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        if (linkDialog != null) {
+            linkDialog.scroll(vertical);
+            return true;
+        }
+        return super.mouseScrolled(x, y, horizontal, vertical);
+    }
+
+    @Override
     public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
+        if (linkDialog != null) return true;
         if (touchHeld && button == 0) {
             touchX = x;
             touchY = y;
@@ -438,6 +575,7 @@ public final class ConsoleScreen extends AnimatedScreen {
 
     @Override
     public boolean mouseReleased(double x, double y, int button) {
+        if (linkDialog != null) return true;
         if (button == 0 && touchHeld) {
             touchHeld = false;
             return true;
@@ -450,7 +588,8 @@ public final class ConsoleScreen extends AnimatedScreen {
         return (canManage ? 32 : 0)
                 + (controller ? 0 : 74)
                 + (focusActive() ? 56 : 0)
-                + (hasDualScreens() ? 132 : 0);
+                + (hasDualScreens() ? 132 : 0)
+                + (canManage && hasLinkPort() ? 90 : 0);
     }
 
     /** Zoom percentage between the [-] and [+] buttons, matching the header text. */

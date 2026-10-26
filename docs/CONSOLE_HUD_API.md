@@ -1,6 +1,6 @@
 # Handheld HUD renderers
 
-Register systems and hardware through `ConsoleRegistry` in the common initializer (the built-ins are declared in `Consoles`). Register each handheld's screen presentation through `ConsoleHudRegistry` in a **client initializer**, after its hardware exists. Docked consoles and arcade machines keep their existing world renderers: a nearby television for docked hardware and the cabinet's own screen for arcade machines.
+Register console classes through `ConsoleRegistry.register` in the common initializer; each console registers its own system, components and hardware (the built-ins are listed in `Consoles.ALL`). Register each handheld's screen presentation through `ConsoleHudRegistry` in a **client initializer**, after its hardware exists. Docked consoles and arcade machines keep their existing world renderers: a nearby television for docked hardware and the cabinet's own screen for arcade machines.
 
 The handheld pipeline is:
 

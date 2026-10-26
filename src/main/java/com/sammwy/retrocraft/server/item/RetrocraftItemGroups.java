@@ -28,6 +28,8 @@ public final class RetrocraftItemGroups {
                                 if (console.listed())
                                     entries.add(Registries.ITEM.get(console.id()));
                             for (var tv : ConsoleRegistry.televisions()) entries.add(tv.asItem());
+                            for (var component : ConsoleRegistry.components())
+                                entries.add(component);
                         });
         GAMES =
                 register(

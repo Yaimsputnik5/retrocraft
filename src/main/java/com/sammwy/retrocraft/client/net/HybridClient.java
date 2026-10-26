@@ -21,6 +21,7 @@ import com.sammwy.retrocraft.cores.*;
 import com.sammwy.retrocraft.cores.stream.FrameCodec;
 import com.sammwy.retrocraft.cores.stream.ThumbnailCodec;
 import com.sammwy.retrocraft.cores.transfer.*;
+import com.sammwy.retrocraft.cores.worker.HardwareProfile;
 import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.roms.*;
 import com.sammwy.retrocraft.server.config.RetrocraftConfig;
@@ -63,6 +64,7 @@ public final class HybridClient {
         final AtomicReferenceArray<PadInput> ports = new AtomicReferenceArray<>(4);
 
         volatile int rate;
+        volatile List<WorkerProcess.Rumble> rumble = List.of();
         Downloads.Transfer romDownload;
         volatile float volume = 1;
         Path rom, snapshot;
@@ -79,6 +81,7 @@ public final class HybridClient {
         synchronized void output(WorkerProcess.Output output, int sampleRate) {
             if (output.frame() != null) frame = output.frame();
             rate = sampleRate;
+            rumble = output.rumble();
             audio.offer(sampleRate, output.audio(), volume * gain);
             if (pcm.size() + output.audio().length > Math.min(262_144, sampleRate)) pcm.reset();
             pcm.writeBytes(output.audio());
@@ -151,6 +154,13 @@ public final class HybridClient {
                     client.currentScreen instanceof ConsoleScreen screen
                             && screen.instance.equals(local.offer.instance());
             PadInput buttons = visible ? InputControls.sample(client) : PadInput.IDLE;
+            var rumble = local.rumble;
+            if (local.phase == Phase.ACTIVE && mine >= 0 && mine < rumble.size()) {
+                var strength = rumble.get(mine);
+                PlayerHud.rumble(
+                        new com.sammwy.retrocraft.server.net.Packets.Rumble(
+                                local.offer.instance(), strength.strong(), strength.weak()));
+            }
             for (int port = 0; port < local.ports.length(); port++)
                 local.ports.set(
                         port,
@@ -283,6 +293,15 @@ public final class HybridClient {
                         });
     }
 
+    private static boolean validHardware(String hardware) {
+        try {
+            HardwareProfile.decode(hardware);
+            return true;
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
     public void lease(HybridPackets.Lease packet) {
         Local local = locals.get(packet.instance());
         if (packet.action() == HybridPackets.Action.OFFER) {
@@ -293,7 +312,8 @@ public final class HybridClient {
             if (!prepared.containsKey(packet.core())
                     || workerJar == null
                     || !packet.gameId().matches("[0-9a-f]{64}")
-                    || !RomCache.safeFilename(packet.romName())) {
+                    || !RomCache.safeFilename(packet.romName())
+                    || !validHardware(packet.hardware())) {
                 signal(packet, HybridPackets.Action.FAILED, 0);
                 return;
             }
@@ -499,6 +519,7 @@ public final class HybridClient {
                         local.rom,
                         local.snapshot,
                         RetrocraftConfig.systemDir(local.offer.core()),
+                        HardwareProfile.decode(local.offer.hardware()),
                         checkpointSeconds,
                         local.ports::get,
                         new ClientEmulator.Listener() {

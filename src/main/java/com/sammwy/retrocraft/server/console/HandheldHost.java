@@ -2,6 +2,7 @@ package com.sammwy.retrocraft.server.console;
 
 import java.util.*;
 
+import com.sammwy.retrocraft.server.console.component.ComponentStorage;
 import com.sammwy.retrocraft.server.item.HandheldConsoleItem;
 
 import net.minecraft.component.DataComponentTypes;
@@ -9,6 +10,7 @@ import net.minecraft.component.type.ContainerComponent;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.Vec3d;
@@ -64,6 +66,23 @@ public final class HandheldHost implements ConsoleHost {
     @Override
     public void cartridge(ItemStack cartridge) {
         stack.set(DataComponentTypes.CONTAINER, ContainerComponent.fromStacks(List.of(cartridge)));
+        dirty();
+    }
+
+    @Override
+    public ItemStack component(int slot) {
+        var slots = definition().componentSlots();
+        if (slot < 0 || slot >= slots.size()) return ItemStack.EMPTY;
+        return ComponentStorage.read(HandheldConsoleItem.components(stack), slots.get(slot));
+    }
+
+    @Override
+    public void component(int slot, ItemStack component) {
+        var slots = definition().componentSlots();
+        if (slot < 0 || slot >= slots.size()) return;
+        NbtCompound components = HandheldConsoleItem.components(stack);
+        ComponentStorage.write(components, slots.get(slot), component);
+        HandheldConsoleItem.components(stack, components);
         dirty();
     }
 

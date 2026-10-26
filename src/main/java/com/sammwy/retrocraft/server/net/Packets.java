@@ -116,7 +116,8 @@ public final class Packets {
             boolean controller,
             boolean canManage,
             boolean inWorld,
-            long screen)
+            long screen,
+            boolean aims)
             implements CustomPayload {
         public static final Id<Ui> ID = new Id<>(Identifier.of("retrocraft", "ui"));
         public static final PacketCodec<RegistryByteBuf, Ui> CODEC =
@@ -130,7 +131,8 @@ public final class Packets {
                                 b.readBoolean(),
                                 b.readBoolean(),
                                 b.readBoolean(),
-                                b.readLong());
+                                b.readLong(),
+                                b.readBoolean());
                     }
 
                     public void encode(RegistryByteBuf b, Ui p) {
@@ -142,6 +144,7 @@ public final class Packets {
                         b.writeBoolean(p.canManage);
                         b.writeBoolean(p.inWorld);
                         b.writeLong(p.screen);
+                        b.writeBoolean(p.aims);
                     }
                 };
 
@@ -380,6 +383,28 @@ public final class Packets {
         }
     }
 
+    /** Rumble for the receiving player's controller; strengths are unsigned 16-bit values. */
+    public record Rumble(UUID instance, int strong, int weak) implements CustomPayload {
+        public static final Id<Rumble> ID = new Id<>(Identifier.of("retrocraft", "rumble"));
+        public static final PacketCodec<RegistryByteBuf, Rumble> CODEC =
+                new PacketCodec<>() {
+                    public Rumble decode(RegistryByteBuf b) {
+                        return new Rumble(
+                                b.readUuid(), b.readUnsignedShort(), b.readUnsignedShort());
+                    }
+
+                    public void encode(RegistryByteBuf b, Rumble p) {
+                        b.writeUuid(p.instance);
+                        b.writeShort(p.strong);
+                        b.writeShort(p.weak);
+                    }
+                };
+
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
     public static void register() {
         PayloadTypeRegistry.playC2S().register(Request.ID, Request.CODEC);
         PayloadTypeRegistry.playC2S().register(Preferences.ID, Preferences.CODEC);
@@ -392,6 +417,7 @@ public final class Packets {
         PayloadTypeRegistry.playS2C().register(Catalog.ID, Catalog.CODEC);
         PayloadTypeRegistry.playS2C().register(Players.ID, Players.CODEC);
         PayloadTypeRegistry.playS2C().register(Pad.ID, Pad.CODEC);
+        PayloadTypeRegistry.playS2C().register(Rumble.ID, Rumble.CODEC);
     }
 
     private Packets() {}

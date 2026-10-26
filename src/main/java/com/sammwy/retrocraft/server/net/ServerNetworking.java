@@ -16,9 +16,11 @@ public final class ServerNetworking {
 
     public static void register(Supplier<InstanceManager> instances) {
         Packets.register();
+        LinkPackets.register();
         HybridPackets.register();
         SettingsPackets.register();
         receive(instances, Packets.Request.ID, InstanceManager::request);
+        receive(instances, LinkPackets.Request.ID, InstanceManager::linkRequest);
         receive(instances, Packets.Preferences.ID, InstanceManager::preferences);
         receive(instances, Packets.ThumbnailUpload.ID, InstanceManager::thumbnailUpload);
         receive(instances, HybridPackets.Status.ID, InstanceManager::coreStatus);

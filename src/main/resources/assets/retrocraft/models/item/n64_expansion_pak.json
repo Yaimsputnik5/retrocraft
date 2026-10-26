@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "retrocraft:item/component/n64_expansion_pak"
+  }
+}

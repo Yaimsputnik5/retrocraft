@@ -7,6 +7,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.function.IntFunction;
 import java.util.function.IntUnaryOperator;
 
+import com.sammwy.retrocraft.cores.worker.HardwareProfile;
 import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 import com.sammwy.retrocraft.roms.GameSaves;
@@ -60,6 +61,28 @@ public final class ClientEmulator implements AutoCloseable {
             int checkpointSeconds,
             IntFunction<PadInput> input,
             Listener listener) {
+        this(
+                jar,
+                core,
+                rom,
+                snapshot,
+                bios,
+                HardwareProfile.NONE,
+                checkpointSeconds,
+                input,
+                listener);
+    }
+
+    public ClientEmulator(
+            Path jar,
+            Path core,
+            Path rom,
+            Path snapshot,
+            Path bios,
+            HardwareProfile hardware,
+            int checkpointSeconds,
+            IntFunction<PadInput> input,
+            Listener listener) {
         checkpointInterval(checkpointSeconds);
         thread =
                 Thread.ofVirtual()
@@ -79,8 +102,9 @@ public final class ClientEmulator implements AutoCloseable {
                                                             rom,
                                                             snapshot,
                                                             bios,
-                                                            snapshot.resolveSibling(
-                                                                    "worker.log"))) {
+                                                            snapshot.resolveSibling("worker.log"),
+                                                            null,
+                                                            hardware)) {
                                         process = worker;
                                         listener.prepared();
                                         while (!committed && !returning && !closed)

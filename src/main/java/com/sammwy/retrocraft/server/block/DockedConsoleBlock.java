@@ -7,6 +7,7 @@ import java.util.Map;
 import com.mojang.serialization.MapCodec;
 import com.sammwy.retrocraft.Retrocraft;
 import com.sammwy.retrocraft.server.console.ConsoleDefinition;
+import com.sammwy.retrocraft.server.console.component.ComponentStorage;
 import com.sammwy.retrocraft.server.item.CartridgeItem;
 import com.sammwy.retrocraft.server.screen.ConsoleMenus;
 
@@ -164,6 +165,20 @@ public final class DockedConsoleBlock extends BlockWithEntity {
             }
             return ItemActionResult.SUCCESS;
         }
+        var component = ComponentStorage.component(stack);
+        if (component != null
+                && world.getBlockEntity(pos) instanceof DockedConsoleBlockEntity console
+                && console.instance() == null) {
+            var slots = definition.componentSlots();
+            for (int i = 0; i < slots.size(); i++)
+                if (slots.get(i).accepts(component) && console.component(i).isEmpty()) {
+                    if (!world.isClient) {
+                        console.component(i, stack.copyWithCount(1));
+                        if (!player.isCreative()) stack.decrement(1);
+                    }
+                    return ItemActionResult.SUCCESS;
+                }
+        }
         return ItemActionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
     }
 
@@ -181,6 +196,9 @@ public final class DockedConsoleBlock extends BlockWithEntity {
                         pos.getY() + .5,
                         pos.getZ() + .5,
                         console.cartridge());
+            for (ItemStack component : console.components())
+                ItemScatterer.spawn(
+                        world, pos.getX() + .5, pos.getY() + .5, pos.getZ() + .5, component);
         }
         super.onStateReplaced(state, world, pos, newState, moved);
     }

@@ -46,6 +46,16 @@ public final class PlayerHud {
 
     private static final class State {
         final Slot[] slots = {new Slot(), new Slot(), new Slot(), new Slot()};
+        float rumble;
+        long rumbleAt;
+    }
+
+    /** Keyboard controls represent motor feedback by shaking the local controller card. */
+    public static void rumble(Packets.Rumble packet) {
+        State state = SESSIONS.get(packet.instance());
+        if (state == null) return;
+        state.rumble = Math.max(packet.strong(), packet.weak()) / 65535f;
+        state.rumbleAt = System.nanoTime();
     }
 
     private record HudButton(Action action, String label) {
@@ -307,6 +317,11 @@ public final class PlayerHud {
             }
             float join = Math.min(1f, (now - slot.joinedAt) / 1e6f / JOIN_MS);
             matrices.push();
+            if (client.player != null
+                    && client.player.getUuid().equals(slot.player)
+                    && now - state.rumbleAt < 300_000_000L
+                    && state.rumble > 0)
+                matrices.translate(Math.sin(now / 15_000_000d) * 2 * state.rumble, 0, 0);
             if (join < 1f) {
                 float s = .55f + .45f * easeOut(join);
                 matrices.translate(px + w / 2f, y + cardH / 2f, 0);

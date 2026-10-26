@@ -8,8 +8,8 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
 
 /**
- * Every open menu observes the same cartridge; per-menu copies allow concurrent viewers to
- * duplicate it.
+ * Every open menu observes the same cartridge and components; per-menu copies allow concurrent
+ * viewers to duplicate them. Slot 0 is the cartridge, slots 1.. the component slots.
  */
 final class ConsoleInventory implements Inventory {
     private final ConsoleHost host;
@@ -20,12 +20,13 @@ final class ConsoleInventory implements Inventory {
 
     @Override
     public int size() {
-        return 1;
+        return 1 + host.componentCount();
     }
 
     @Override
     public boolean isEmpty() {
-        return host.cartridge().isEmpty();
+        for (int slot = 0; slot < size(); slot++) if (!getStack(slot).isEmpty()) return false;
+        return true;
     }
 
     @Override
@@ -35,12 +36,15 @@ final class ConsoleInventory implements Inventory {
 
     @Override
     public ItemStack getStack(int slot) {
-        return slot == 0 ? host.cartridge() : ItemStack.EMPTY;
+        if (slot == 0) return host.cartridge();
+        return slot > 0 && slot < size() ? host.component(slot - 1) : ItemStack.EMPTY;
     }
 
     @Override
     public ItemStack removeStack(int slot, int amount) {
-        if (host.hasInternalRom() || slot != 0 || amount <= 0) return ItemStack.EMPTY;
+        if (amount <= 0) return ItemStack.EMPTY;
+        if (slot > 0) return removeStack(slot);
+        if (host.hasInternalRom() || slot != 0) return ItemStack.EMPTY;
         ItemStack stack = host.cartridge();
         ItemStack removed = stack.split(amount);
         host.cartridge(stack.isEmpty() ? ItemStack.EMPTY : stack);
@@ -49,6 +53,11 @@ final class ConsoleInventory implements Inventory {
 
     @Override
     public ItemStack removeStack(int slot) {
+        if (slot > 0 && slot < size()) {
+            ItemStack result = host.component(slot - 1);
+            host.component(slot - 1, ItemStack.EMPTY);
+            return result;
+        }
         if (host.hasInternalRom() || slot != 0) return ItemStack.EMPTY;
         ItemStack result = host.cartridge();
         host.cartridge(ItemStack.EMPTY);
@@ -57,7 +66,8 @@ final class ConsoleInventory implements Inventory {
 
     @Override
     public void setStack(int slot, ItemStack stack) {
-        if (!host.hasInternalRom() && slot == 0) host.cartridge(stack);
+        if (slot > 0 && slot < size()) host.component(slot - 1, stack);
+        else if (!host.hasInternalRom() && slot == 0) host.cartridge(stack);
     }
 
     @Override

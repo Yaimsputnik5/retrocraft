@@ -3,6 +3,8 @@ package com.sammwy.retrocraft.cores;
 import java.net.URI;
 import java.util.*;
 
+import com.sammwy.retrocraft.server.console.Consoles;
+
 /** Compiled-in allowlist. Network packets can name an ID, never a URL or native path. */
 public final class KnownCores {
     public static final String POOL = "retrocraft-libretro-1";
@@ -176,33 +178,19 @@ public final class KnownCores {
         return CORES.values().stream().filter(Core::defaultEnabled).map(Core::id).toList();
     }
 
+    /** System ID to default core, as declared by each console's game system. */
     public static Map<String, String> defaultMappings() {
-        return Map.ofEntries(
-                Map.entry("retrocraft:nes", "fceumm"),
-                Map.entry("retrocraft:snes", "snes9x"),
-                Map.entry("retrocraft:gb", "gambatte"),
-                Map.entry("retrocraft:gbc", "gambatte"),
-                Map.entry("retrocraft:gba", "mgba"),
-                Map.entry("retrocraft:nds", "desmume"),
-                Map.entry("retrocraft:3ds", "citra"),
-                Map.entry("retrocraft:psp", "ppsspp"),
-                Map.entry("retrocraft:megadrive", "genesis_plus_gx"),
-                Map.entry("retrocraft:n64", "parallel_n64"),
-                Map.entry("retrocraft:arcade", "mame2003"),
-                Map.entry("retrocraft:ps1", "beetle_psx"),
-                Map.entry("retrocraft:ps2", "pcsx2"),
-                Map.entry("retrocraft:dreamcast", "flycast"),
-                Map.entry("retrocraft:wii", "dolphin"),
-                Map.entry("retrocraft:gamecube", "dolphin"));
+        Map<String, String> mappings = new LinkedHashMap<>();
+        for (var system : Consoles.systems())
+            mappings.put(system.id().toString(), system.defaultCore());
+        return Collections.unmodifiableMap(mappings);
     }
 
-    /**
-     * Cores that can actually run a cartridge. One entry today; a list so alternatives can join
-     * later.
-     */
+    /** Cores that can actually run a cartridge, as declared by its game system. */
     public static List<String> compatible(String cartridge) {
-        String core = defaultMappings().get(cartridge);
-        return core == null ? List.of() : List.of(core);
+        for (var system : Consoles.systems())
+            if (system.id().toString().equals(cartridge)) return system.cores();
+        return List.of();
     }
 
     public static Set<String> ids() {

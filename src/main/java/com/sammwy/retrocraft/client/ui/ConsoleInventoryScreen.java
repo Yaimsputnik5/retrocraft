@@ -1,7 +1,10 @@
 package com.sammwy.retrocraft.client.ui;
 
+import java.util.*;
+
 import org.lwjgl.glfw.GLFW;
 
+import com.sammwy.retrocraft.server.console.component.ComponentStorage;
 import com.sammwy.retrocraft.server.screen.ConsoleScreenHandler;
 
 import net.minecraft.client.gui.DrawContext;
@@ -10,6 +13,7 @@ import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 
 public final class ConsoleInventoryScreen extends HandledScreen<ConsoleScreenHandler> {
     private SettingsWidgets.Flat power, eject;
@@ -102,11 +106,29 @@ public final class ConsoleInventoryScreen extends HandledScreen<ConsoleScreenHan
                     x + slot.x + i * 4,
                     y + slot.y + 20,
                     0xffd7b15a);
+        // Component ports: a smaller dark socket with a pin strip along its top edge.
+        for (int i = 1; i < handler.machineSlots(); i++) {
+            var port = handler.slots.get(i);
+            context.fill(
+                    x + port.x - 3, y + port.y - 3, x + port.x + 19, y + port.y + 19, 0xff0f1116);
+            context.fill(
+                    x + port.x - 2,
+                    y + port.y - 2,
+                    x + port.x + 18,
+                    y + port.y + 18,
+                    ConsoleTheme.shade(shell, .4f));
+            for (int k = 0; k < 4; k++)
+                context.fill(
+                        x + port.x + 2 + k * 4,
+                        y + port.y - 2,
+                        x + port.x + 4 + k * 4,
+                        y + port.y - 1,
+                        0xffb8bcc6);
+        }
         // Player items that cannot go into this console (other cartridges, anything else) get a red
         // backing.
         for (var s : handler.slots) {
-            boolean wrong =
-                    !s.getStack().isEmpty() && !s.getStack().isOf(handler.definition().cartridge());
+            boolean wrong = !s.getStack().isEmpty() && !accepted(s.getStack());
             context.fill(
                     x + s.x - 1,
                     y + s.y - 1,
@@ -116,6 +138,26 @@ public final class ConsoleInventoryScreen extends HandledScreen<ConsoleScreenHan
             context.fill(
                     x + s.x, y + s.y, x + s.x + 16, y + s.y + 16, wrong ? 0xff5a1f1f : 0xff181c24);
         }
+    }
+
+    private boolean accepted(ItemStack stack) {
+        if (stack.isOf(handler.definition().cartridge())) return true;
+        var component = ComponentStorage.component(stack);
+        return handler.definition().componentSlots().stream().anyMatch(s -> s.accepts(component));
+    }
+
+    /** Empty component ports name themselves and what they take. */
+    private void drawPortTooltip(DrawContext context, int mouseX, int mouseY) {
+        if (focusedSlot == null || focusedSlot.hasStack()) return;
+        int index = handler.slots.indexOf(focusedSlot);
+        if (index < 1 || index >= handler.machineSlots()) return;
+        var port = handler.definition().componentSlots().get(index - 1);
+        List<Text> lines = new ArrayList<>();
+        lines.add(port.displayName());
+        for (var component : port.accepts())
+            lines.add(
+                    Text.literal("  ").append(component.displayName()).formatted(Formatting.GRAY));
+        context.drawTooltip(textRenderer, lines, mouseX, mouseY);
     }
 
     @Override
@@ -138,7 +180,10 @@ public final class ConsoleInventoryScreen extends HandledScreen<ConsoleScreenHan
             UiDrawing.pop(context, x + backgroundWidth / 2f, y + backgroundHeight / 2f, visibility);
             int mx = acceptingInput() ? mouseX : -1, my = acceptingInput() ? mouseY : -1;
             super.render(context, mx, my, delta);
-            if (acceptingInput()) drawMouseoverTooltip(context, mx, my);
+            if (acceptingInput()) {
+                drawMouseoverTooltip(context, mx, my);
+                drawPortTooltip(context, mx, my);
+            }
         } finally {
             context.setShaderColor(1, 1, 1, 1);
             context.getMatrices().pop();

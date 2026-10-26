@@ -4,11 +4,14 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import com.sammwy.retrocraft.cores.stream.*;
+import com.sammwy.retrocraft.cores.worker.HardwareProfile;
 import com.sammwy.retrocraft.cores.worker.PadInput;
 import com.sammwy.retrocraft.cores.worker.WorkerProtocol;
 
@@ -66,7 +69,13 @@ public final class WorkerProcess implements AutoCloseable {
                 .toString();
     }
 
-    public record Output(FrameCodec.Frame frame, byte[] audio) {}
+    public record Rumble(int strong, int weak) {}
+
+    public record Output(FrameCodec.Frame frame, byte[] audio, List<Rumble> rumble) {
+        public Output(FrameCodec.Frame frame, byte[] audio) {
+            this(frame, audio, List.of());
+        }
+    }
 
     private final Process process;
     private final Path log;
@@ -89,6 +98,20 @@ public final class WorkerProcess implements AutoCloseable {
 
     public WorkerProcess(
             Path workerJar, Path core, Path rom, Path state, Path bios, Path log, Path nativeSaves)
+            throws IOException {
+        this(workerJar, core, rom, state, bios, log, nativeSaves, HardwareProfile.NONE);
+    }
+
+    /** {@code hardware}: core options and port devices from the console's installed components. */
+    public WorkerProcess(
+            Path workerJar,
+            Path core,
+            Path rom,
+            Path state,
+            Path bios,
+            Path log,
+            Path nativeSaves,
+            HardwareProfile hardware)
             throws IOException {
         String token = UUID.randomUUID().toString();
         Files.createDirectories(state.getParent());
@@ -118,7 +141,8 @@ public final class WorkerProcess implements AutoCloseable {
                                     bios == null ? "" : bios.toAbsolutePath().toString(),
                                     nativeSaves == null
                                             ? ""
-                                            : nativeSaves.toAbsolutePath().toString())
+                                            : nativeSaves.toAbsolutePath().toString(),
+                                    hardware.encode())
                             .redirectErrorStream(true)
                             .redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile()))
                             .start();
@@ -196,6 +220,14 @@ public final class WorkerProcess implements AutoCloseable {
         return sampleRate;
     }
 
+    /** Apply advertised runtime options on the worker thread, without resetting the game. */
+    public boolean options(HardwareProfile profile) throws IOException {
+        out.writeByte(WorkerProtocol.OPTIONS);
+        out.writeUTF(profile.encode());
+        out.flush();
+        return in.readBoolean();
+    }
+
     public Output advance(int mask) throws IOException {
         return advance(new int[] {mask}, true, true);
     }
@@ -232,7 +264,13 @@ public final class WorkerProcess implements AutoCloseable {
                 throw new IOException("Invalid worker audio");
             byte[] audio = new byte[length];
             in.readFully(audio);
-            return new Output(width == 0 ? null : new FrameCodec.Frame(width, height, rgb), audio);
+            List<Rumble> rumble = new ArrayList<>();
+            for (int port = 0; port < WorkerProtocol.PORTS; port++)
+                rumble.add(new Rumble(in.readUnsignedShort(), in.readUnsignedShort()));
+            return new Output(
+                    width == 0 ? null : new FrameCodec.Frame(width, height, rgb),
+                    audio,
+                    List.copyOf(rumble));
         } catch (EOFException ex) {
             throw workerExited("running a frame", ex);
         }

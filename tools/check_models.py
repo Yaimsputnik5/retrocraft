@@ -112,17 +112,21 @@ def main():
         if d["textures"]["screen"] == on["textures"]["screen"]:
             raise ValueError(f"{name}: no powered LCD texture")
     # Check Java selection bounds against the actual model, including its rotation-sensitive depth.
-    java = (
-        ROOT / "src/main/java/com/sammwy/retrocraft/server/console/Consoles.java"
-    ).read_text()
+    # Each console class passes its outline to its super constructor, inline or as a constant.
+    console = ROOT / "src/main/java/com/sammwy/retrocraft/server/console"
+    java = "\n".join(
+        p.read_text()
+        for p in [console / "ArcadeConsole.java", *sorted((console / "builtin").glob("*.java"))]
+    )
     named = dict(re.findall(r"(\w+)\s*=\s*new Bounds\(([^)]+)\)", java))
     outlines = [
         (name, inline or named[variable])
         for name, inline, variable in re.findall(
-            r'docked\(\s*"(\w+)",\s*"[^"]*",\s*(?:\w+|system\("\w+", \w+\)),\s*'
-            r"(?:new Bounds\(([^)]+)\)|(\w+))\)",
+            r'super\(\s*"(\w+)",\s*"[^"]*",\s*[\w.]+,\s*'
+            r"(?:new Bounds\(([^)]+)\)|(?:\w+\.)?(\w+))",
             java,
         )
+        if inline or variable in named
     ]
     arcades = ("arcade", "arcade_tetris", "arcade_space_invaders", "arcade_cabinet")
     outlines += [(name, named["CABINET"]) for name in arcades]
